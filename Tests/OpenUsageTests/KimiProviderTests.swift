@@ -1,6 +1,11 @@
 import XCTest
 @testable import OpenUsage
 
+/// Frozen clock shared by the suites: `now` closures are `@Sendable` under strict concurrency, so
+/// they must not capture a non-Sendable test-case `self`.
+private let kimiNow = Date(timeIntervalSince1970: 1_800_000_000)
+private let kimiEpoch = 1_800_000_000
+
 private func credentialsJSON(
     accessToken: String = "access",
     refreshToken: String = "refresh",
@@ -19,10 +24,8 @@ private func credentialsJSON(
 // MARK: - KimiAuthStoreTests
 
 final class KimiAuthStoreTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 1_800_000_000)
-
     private func store(_ files: [String: String]) -> KimiAuthStore {
-        KimiAuthStore(files: FakeFiles(files), now: { now })
+        KimiAuthStore(files: FakeFiles(files), now: { kimiNow })
     }
 
     func testLoadsCredentialsFromKimiCLIFile() {
@@ -40,7 +43,7 @@ final class KimiAuthStoreTests: XCTestCase {
     }
 
     func testNeedsRefreshUsesExpiresAtWithSlack() {
-        let epoch = Int(now.timeIntervalSince1970)
+        let epoch = kimiEpoch
         let cases: [(name: String, expiresAt: Int?, expected: Bool)] = [
             ("fresh token", epoch + 900, false),
             ("inside the slack window", epoch + 30, true),
@@ -59,13 +62,13 @@ final class KimiAuthStoreTests: XCTestCase {
 
     func testSaveWritesBackRotatedCredentials() throws {
         let files = FakeFiles([KimiAuthStore.credentialsPath: credentialsJSON()])
-        var credentials = try XCTUnwrap(KimiAuthStore(files: files, now: { now }).loadCredentials())
+        var credentials = try XCTUnwrap(KimiAuthStore(files: files, now: { kimiNow }).loadCredentials())
 
         credentials.accessToken = "rotated-access"
         credentials.refreshToken = "rotated-refresh"
-        try KimiAuthStore(files: files, now: { now }).save(credentials)
+        try KimiAuthStore(files: files, now: { kimiNow }).save(credentials)
 
-        let reloaded = try XCTUnwrap(KimiAuthStore(files: files, now: { now }).loadCredentials())
+        let reloaded = try XCTUnwrap(KimiAuthStore(files: files, now: { kimiNow }).loadCredentials())
         XCTAssertEqual(reloaded.accessToken, "rotated-access")
         XCTAssertEqual(reloaded.refreshToken, "rotated-refresh")
     }
@@ -269,8 +272,6 @@ private extension MetricLine {
 
 @MainActor
 final class KimiProviderTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 1_800_000_000)
-    private let epoch = 1_800_000_000
 
     private func provider(
         files: [String: String] = [:],
@@ -280,9 +281,9 @@ final class KimiProviderTests: XCTestCase {
         let http = ScriptedHTTPClient(responses)
         return (
             KimiProvider(
-                authStore: KimiAuthStore(files: files, now: { [self] in now }),
+                authStore: KimiAuthStore(files: files, now: { kimiNow }),
                 usageClient: KimiUsageClient(http: http),
-                now: { [self] in now }
+                now: { kimiNow }
             ),
             http,
             files
@@ -300,12 +301,13 @@ final class KimiProviderTests: XCTestCase {
 
         XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
         XCTAssertTrue(http.requests.isEmpty, "no network call without credentials")
-        XCTAssertFalse(await provider.hasLocalCredentials())
+        let seeded = await provider.hasLocalCredentials()
+        XCTAssertFalse(seeded)
     }
 
     func testFreshTokenFetchesUsageWithoutRefresh() async throws {
         let (provider, http, _) = provider(
-            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: epoch + 600)],
+            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: kimiEpoch + 600)],
             responses: [ok(usageBody)]
         )
 
@@ -315,12 +317,13 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertEqual(http.requestURLs, [KimiUsageClient.cnUsageURL.absoluteString])
         XCTAssertEqual(snapshot.lines.first { $0.label == "Weekly" }?.progressUsed, 79)
         XCTAssertEqual(snapshot.plan, "Advanced")
-        XCTAssertTrue(await provider.hasLocalCredentials())
+        let seeded = await provider.hasLocalCredentials()
+        XCTAssertTrue(seeded)
     }
 
     func testExpiredTokenRefreshesThenFetchesAndPersistsRotatedPair() async throws {
         let (provider, http, files) = provider(
-            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: epoch - 1)],
+            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: kimiEpoch - 1)],
             responses: [ok(refreshBody), ok(usageBody)]
         )
 
@@ -333,16 +336,16 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertTrue(http.requestBodies.first?.contains("refresh_token=refresh") == true)
 
         let persisted = try XCTUnwrap(
-            KimiAuthStore(files: files, now: { self.now }).loadCredentials()
+            KimiAuthStore(files: files, now: { kimiNow }).loadCredentials()
         )
         XCTAssertEqual(persisted.accessToken, "new-access")
         XCTAssertEqual(persisted.refreshToken, "new-refresh")
-        XCTAssertEqual(persisted.expiresAt, epoch + 900)
+        XCTAssertEqual(persisted.expiresAt, kimiEpoch + 900)
     }
 
     func testUsage401RefreshesOnceAndRetries() async throws {
         let (provider, http, files) = provider(
-            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: epoch + 600)],
+            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: kimiEpoch + 600)],
             responses: [
                 HTTPResponse(statusCode: 401, headers: [:], body: Data()),
                 ok(refreshBody),
@@ -357,14 +360,14 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertEqual(http.requestURLs.last, KimiUsageClient.cnUsageURL.absoluteString)
 
         let persisted = try XCTUnwrap(
-            KimiAuthStore(files: files, now: { self.now }).loadCredentials()
+            KimiAuthStore(files: files, now: { kimiNow }).loadCredentials()
         )
         XCTAssertEqual(persisted.refreshToken, "new-refresh")
     }
 
     func testSecond401SurfacesSessionExpired() async {
         let (provider, http, _) = provider(
-            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: epoch + 600)],
+            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: kimiEpoch + 600)],
             responses: [
                 HTTPResponse(statusCode: 401, headers: [:], body: Data()),
                 ok(refreshBody),
@@ -380,7 +383,7 @@ final class KimiProviderTests: XCTestCase {
 
     func testInvalidGrantOnRefreshSurfacesSessionExpired() async {
         let (provider, http, _) = provider(
-            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: epoch - 1)],
+            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: kimiEpoch - 1)],
             responses: [
                 HTTPResponse(
                     statusCode: 400, headers: [:],
@@ -398,7 +401,7 @@ final class KimiProviderTests: XCTestCase {
     func testGlobalRegionSelectsKimiAIHost() async {
         let (provider, http, _) = provider(
             files: [
-                KimiAuthStore.credentialsPath: liveCredentials(expiresAt: epoch + 600),
+                KimiAuthStore.credentialsPath: liveCredentials(expiresAt: kimiEpoch + 600),
                 KimiAuthStore.regionPath: "global"
             ],
             responses: [ok(usageBody)]
@@ -412,7 +415,7 @@ final class KimiProviderTests: XCTestCase {
     func testRefreshSendsDeviceHeadersAndFormBody() async throws {
         let (provider, http, _) = provider(
             files: [
-                KimiAuthStore.credentialsPath: liveCredentials(expiresAt: epoch - 1),
+                KimiAuthStore.credentialsPath: liveCredentials(expiresAt: kimiEpoch - 1),
                 KimiAuthStore.deviceIDPath: "device-uuid"
             ],
             responses: [ok(refreshBody), ok(usageBody)]
@@ -429,7 +432,7 @@ final class KimiProviderTests: XCTestCase {
     func testEmptyLinesAppendNoDataBadge() async {
         let emptyUsage = Data(#"{"usage":{"used":"0","limit":"0"}}"#.utf8)
         let (provider, _, _) = provider(
-            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: epoch + 600)],
+            files: [KimiAuthStore.credentialsPath: liveCredentials(expiresAt: kimiEpoch + 600)],
             responses: [ok(emptyUsage)]
         )
 
