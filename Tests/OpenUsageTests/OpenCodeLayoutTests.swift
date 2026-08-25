@@ -28,7 +28,7 @@ final class OpenCodeLayoutTests: XCTestCase {
     func testNothingPinnedByDefault() {
         XCTAssertFalse(
             DefaultLayout.pinnedMetricIDs.contains { $0.hasPrefix("opencode.") },
-            "a freshly auto-enabled provider adds no menu-bar pins (matches Grok/Devin)"
+            "a freshly auto-enabled provider adds no menu-bar pins (matches Devin)"
         )
     }
 }
