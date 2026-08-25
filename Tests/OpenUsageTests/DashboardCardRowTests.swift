@@ -17,6 +17,28 @@ final class DashboardCardRowTests: XCTestCase {
         XCTAssertEqual(rows.map { $0.groups.map(\.id) }, [["claude"]])
     }
 
+    func testConsecutiveAccountFamilyGetsDedicatedRow() {
+        let groups = ["claude", "codex", "codex@first", "cursor", "grok"].map(dummyGroup)
+        let rows = DashboardCardRow.rows(from: groups)
+
+        XCTAssertEqual(rows.map { $0.groups.map(\.id) }, [
+            ["claude"],
+            ["codex", "codex@first"],
+            ["cursor", "grok"]
+        ])
+    }
+
+    func testThreeAccountFamilyWrapsWithoutMixingNextProvider() {
+        let groups = ["codex", "codex@first", "codex@second", "cursor", "grok"].map(dummyGroup)
+        let rows = DashboardCardRow.rows(from: groups)
+
+        XCTAssertEqual(rows.map { $0.groups.map(\.id) }, [
+            ["codex", "codex@first"],
+            ["codex@second"],
+            ["cursor", "grok"]
+        ])
+    }
+
     func testEmptyGroupsYieldNoRows() {
         XCTAssertTrue(DashboardCardRow.rows(from: []).isEmpty)
     }

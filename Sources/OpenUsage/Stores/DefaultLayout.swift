@@ -69,7 +69,7 @@ enum DefaultLayout {
         "copilot.premium",
         "openrouter.credits",
         "zai.session", "zai.weekly",
-        "kimi.weekly"
+        "kimi.session", "kimi.weekly"
     ]
 
     /// Metrics placed in the per-provider On Demand section on a fresh install. This is

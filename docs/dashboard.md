@@ -1,6 +1,6 @@
 # Dashboard
 
-The popover that opens from the menu bar icon. Provider cards sit in a two-column grid, filling left to right; each card shows the metrics you've enabled. Total Spend stays full width above the grid.
+The popover that opens from the menu bar icon. Provider cards sit in a two-column grid, filling left to right; each card shows the metrics you've enabled. Consecutive cards for different accounts of the same provider stay together on dedicated rows, while ordinary single-account providers continue to pack two per row. Total Spend stays full width above the grid.
 
 ## First launch
 

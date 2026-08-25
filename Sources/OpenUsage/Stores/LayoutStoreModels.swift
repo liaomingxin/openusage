@@ -17,12 +17,50 @@ struct DashboardCardRow: Identifiable {
     let groups: [ProviderGroup]
     var id: String { groups.map(\.id).joined(separator: "|") }
 
-    /// Walk `groups` left-to-right, two per row. A leftover last card is a one-item row (full width).
+    /// Walk `groups` left-to-right while keeping a consecutive multi-account family together. Ordinary
+    /// single-card providers still pack two per row; a family run owns dedicated rows so two Codex
+    /// accounts sit side by side instead of straddling unrelated cards. A leftover card is full width.
     static func rows(from groups: [ProviderGroup], columns: Int = 2) -> [DashboardCardRow] {
         guard columns > 0, !groups.isEmpty else { return [] }
-        return stride(from: 0, to: groups.count, by: columns).map { start in
-            DashboardCardRow(groups: Array(groups[start..<min(start + columns, groups.count)]))
+
+        var rows: [DashboardCardRow] = []
+        var pendingSingletons: [ProviderGroup] = []
+
+        func appendChunks(_ chunkGroups: [ProviderGroup]) {
+            for start in stride(from: 0, to: chunkGroups.count, by: columns) {
+                rows.append(DashboardCardRow(
+                    groups: Array(chunkGroups[start..<min(start + columns, chunkGroups.count)])
+                ))
+            }
         }
+
+        func flushSingletons() {
+            appendChunks(pendingSingletons)
+            pendingSingletons.removeAll(keepingCapacity: true)
+        }
+
+        var start = 0
+        while start < groups.count {
+            let family = ProviderAccountID.family(of: groups[start].provider.id)
+            var end = start + 1
+            while end < groups.count,
+                  ProviderAccountID.family(of: groups[end].provider.id) == family {
+                end += 1
+            }
+
+            let familyRun = Array(groups[start..<end])
+            if familyRun.count == 1 {
+                pendingSingletons.append(familyRun[0])
+                if pendingSingletons.count == columns { flushSingletons() }
+            } else {
+                flushSingletons()
+                appendChunks(familyRun)
+            }
+            start = end
+        }
+
+        flushSingletons()
+        return rows
     }
 }
 
