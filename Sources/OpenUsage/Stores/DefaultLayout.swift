@@ -27,6 +27,8 @@ enum DefaultLayout {
         "grok.weekly", "grok.trend",
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
 
+        "kimi.session", "kimi.weekly",
+
         "opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend",
         "opencode.today", "opencode.yesterday", "opencode.last30",
 
@@ -66,7 +68,8 @@ enum DefaultLayout {
         "cursor.auto", "cursor.api",
         "copilot.premium",
         "openrouter.credits",
-        "zai.session", "zai.weekly"
+        "zai.session", "zai.weekly",
+        "kimi.weekly"
     ]
 
     /// Metrics placed in the per-provider On Demand section on a fresh install. This is
@@ -102,6 +105,9 @@ enum DefaultLayout {
         // sit below the caret.
         "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
         // Z.ai: Session meter stays above the fold; Web Searches (monthly count) sits below the caret.
-        "zai.webSearches"
+        "zai.webSearches",
+        // Kimi Code: Session + Weekly stay above the fold; the booster wallet (pay-as-you-go only,
+        // absent on subscription accounts) sits below the caret.
+        "kimi.booster"
     ]
 }

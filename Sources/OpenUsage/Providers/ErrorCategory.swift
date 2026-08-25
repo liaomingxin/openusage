@@ -206,6 +206,26 @@ extension OpenRouterUsageError: CategorizedError {
     }
 }
 
+extension KimiAuthError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .notLoggedIn: .notLoggedIn
+        case .sessionExpired: .authExpired
+        case .invalidAuthPayload: .authInvalid
+        }
+    }
+}
+
+extension KimiUsageError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .connectionFailed: .network
+        case .invalidResponse: .decoding
+        case .requestFailed(let status): ErrorCategory.http(status)
+        }
+    }
+}
+
 extension ZAIAuthError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {

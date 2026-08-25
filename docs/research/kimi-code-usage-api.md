@@ -1,8 +1,8 @@
 # Kimi Code Usage API: How the Subscription Meter Works
 
 Research + live verification of the Kimi Code CLI's subscription-usage query, done
-2026-08-25. Kimi Code is not yet an OpenUsage provider — this is the protocol
-reference for adding one, in the same spirit as the Codex reset-credit notes.
+2026-08-25. Kimi Code shipped as an OpenUsage provider (`Sources/OpenUsage/Providers/Kimi/`) the same day — this note is the
+protocol reference behind it, in the same spirit as the Codex reset-credit notes.
 
 Sources: static reverse engineering of the `kimi` 0.38.0 binary (Node SEA
 single-executable, `packages/oauth/src/managed-usage.ts` and friends extracted
