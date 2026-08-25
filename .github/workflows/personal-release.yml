@@ -1,0 +1,81 @@
+name: Personal Release
+
+# Fork-only lightweight release: a DMG built from script/build_and_run.sh's staging (which handles
+# the CLI helper, Sparkle framework, resource bundles, and SDK restamping), ad-hoc signed — for
+# personal multi-device use. The upstream release.yml (Developer ID + notarization + Sparkle
+# appcast) needs secrets only the upstream owner has.
+# Trigger: push a tag like v0.7.10-kimi.1 (suffix keeps it from colliding with upstream tags).
+on:
+  push:
+    tags: ["v*-kimi.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.7.10-kimi.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          TAG="${{ inputs.tag }}"
+          [ -z "$TAG" ] && TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          {
+            echo "tag=$TAG"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and stage the app
+        env:
+          OPENUSAGE_VERSION: ${{ steps.meta.outputs.version }}
+          # Same bundle id as the official app: personal installs replace/update the real app
+          # cleanly, and settings/keychain grants carry over.
+          BUNDLE_ID: com.robinebers.openusage
+        run: |
+          # build_and_run.sh builds (release config), stages dist/OpenUsage.app, signs; MODE=build
+          # stops before launch. APP_VERSION is hardcoded in the script — inject the tag version
+          # and the real (non-dev) CFBundleShortVersionString via sed.
+          sed -i '' "s/^APP_VERSION=\"0.7.0\"/APP_VERSION=\"$OPENUSAGE_VERSION\"/" script/build_and_run.sh
+          sed -i '' 's|<string>$APP_VERSION-dev</string>|<string>$APP_VERSION</string>|' script/build_and_run.sh
+          ./script/build_and_run.sh build
+
+      - name: Wrap in DMG
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          hdiutil create -volname "OpenUsage" \
+            -srcfolder "$GITHUB_WORKSPACE/dist/OpenUsage.app" \
+            -ov -format UDZO \
+            "$GITHUB_WORKSPACE/dist/OpenUsage-$VERSION.dmg"
+          ls -la "$GITHUB_WORKSPACE/dist/"
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: OpenUsage ${{ steps.meta.outputs.version }} (personal build)
+          body: |
+            Personal fork build — includes the Kimi Code provider.
+
+            **Install:** open the DMG, drag OpenUsage to /Applications (replacing any older copy),
+            then run once in Terminal:
+            `xattr -rd com.apple.quarantine /Applications/OpenUsage.app`
+            (unsigned personal build — Gatekeeper needs that one-time nudge).
+          prerelease: true
+          files: dist/OpenUsage-${{ steps.meta.outputs.version }}.dmg
