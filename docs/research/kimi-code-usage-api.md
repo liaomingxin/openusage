@@ -133,10 +133,10 @@ Notes on the shape:
 
 - `usage` → summary row `{name?, window?, used, limit, resetAt}`; `used`/`limit`
   fall back to 0, `resetTime` maps to `resetAt`.
-- Each `limits[]` entry → `{name: <entry name or detail name>, window,
-  used: limit-remaining? …}` — the CLI reads `detail.used` (falling back to 0)
-  and `detail.limit`; `remaining` is kept by the server but the CLI works from
-  used/limit.
+- Each `limits[]` entry → row with `{name: <entry name or detail.name>, window, used, limit, resetAt}`; the
+  CLI reads `detail.used` and `detail.limit` directly (either may be absent → 0; a row missing both is
+  dropped). It never computes `used = limit - remaining` — `remaining` is carried by the server but
+  ignored by the parser.
 - Missing both `used` and `limit` drops the row.
 
 ## Mapping to OpenUsage metrics
