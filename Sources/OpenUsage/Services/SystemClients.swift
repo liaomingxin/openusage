@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import LocalAuthentication
 import Security
 
 protocol EnvironmentReading: Sendable {
@@ -298,11 +299,13 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     /// keychain, denied) reports `nil` ("unknown"), never a definite answer, so callers can pick
     /// their safe side.
     func genericPasswordExists(service: String) -> Bool? {
+        let context = LAContext()
+        context.interactionNotAllowed = true
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
+            kSecUseAuthenticationContext as String: context,
         ]
         switch SecItemCopyMatching(query as CFDictionary, nil) {
         case errSecSuccess: return true

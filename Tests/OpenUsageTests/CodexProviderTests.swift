@@ -473,37 +473,48 @@ final class CodexUsageMapperTests: XCTestCase {
 @MainActor
 final class CodexProviderTests: XCTestCase {
     func testNoUsageDataBadgeIsDroppedWhenLocalLogsHaveSpend() async throws {
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026, month: 2, day: 20, hour: 16
+        )))
+        let turnTimestamp = OpenUsageISO8601.string(from: now.addingTimeInterval(-2 * 60 * 60))
+        let usageTimestamp = OpenUsageISO8601.string(from: now.addingTimeInterval(-60 * 60))
         // The live usage API returns nothing mappable (empty body -> no metric lines)...
         let httpClient = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8)))
         let home = try CodexLogFixture.makeHome(files: [
             "sessions/rollout-1.jsonl": [
-                CodexLogFixture.turnContext(timestamp: "2026-02-20T14:00:00.000Z", model: "gpt-5.2"),
+                CodexLogFixture.turnContext(timestamp: turnTimestamp, model: "gpt-5.2"),
                 CodexLogFixture.tokenCount(
-                    timestamp: "2026-02-20T14:01:00.000Z",
+                    timestamp: usageTimestamp,
                     last: CodexLogFixture.usage(input: 100, output: 50)
                 )
             ].joined(separator: "\n")
         ])
+        let fixturePricing = ModelPricing(
+            supplement: PricingSupplement(),
+            primary: PricingCatalog(entries: ["gpt-5.2": ModelRates(
+                inputPerMillion: 1000, outputPerMillion: 3000,
+                cacheWritePerMillion: 1000, cacheReadPerMillion: 100
+            )]),
+            secondary: PricingCatalog(entries: [:])
+        )
+        let fixtureScanner = CodexLogFixture.scanner(home: home)
         let provider = CodexProvider(
+            // A unique id prevents this isolated test from merging the developer machine's real
+            // `codex` entries from PiUsageScanner.shared into the fixture result.
+            id: "codex-fixture",
             authStore: CodexAuthStore(
                 environment: FakeEnvironment(["CODEX_HOME": "/tmp/codex-home"]),
                 files: FakeFiles(["/tmp/codex-home/auth.json": #"{"tokens":{"access_token":"token"}}"#]),
                 keychain: FakeKeychain()
             ),
             usageClient: CodexUsageClient(http: httpClient),
-            logUsageScanner: CodexLogFixture.scanner(home: home),
+            logUsageScanner: fixtureScanner,
             now: { now },
             pricing: {
                 // 150 tokens -> $0.25 at these fixture rates: (100 x 1000 + 50 x 3000) / 1M.
-                ModelPricing(
-                    supplement: PricingSupplement(),
-                    primary: PricingCatalog(entries: ["gpt-5.2": ModelRates(
-                        inputPerMillion: 1000, outputPerMillion: 3000,
-                        cacheWritePerMillion: 1000, cacheReadPerMillion: 100
-                    )]),
-                    secondary: PricingCatalog(entries: [:])
-                )
+                fixturePricing
             }
         )
 

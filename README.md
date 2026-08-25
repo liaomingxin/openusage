@@ -4,6 +4,12 @@ Track your AI coding subscriptions from the macOS menu bar — native Swift edit
 
 OpenUsage shows how much of your AI coding plans you've used: session and weekly limits, credits, and spend, all in one popover. Pin your most important metrics straight into the menu bar.
 
+> **Fork note:** this checkout is `liaomingxin/openusage`, which adds Kimi Code and Codex
+> multi-account discovery from cli-proxy credential dumps. See [FORK.md](FORK.md) and the
+> [fork releases](https://github.com/liaomingxin/openusage/releases) for personal builds. The
+> Homebrew and direct-download instructions below install the signed upstream app and do not include
+> those fork-only features.
+
 <p align="center">
   <img src="assets/screenshot.jpg?v=20260706" alt="OpenUsage menu bar tracker showing Claude and Codex session, weekly, and spend usage" width="900">
 </p>
@@ -29,6 +35,7 @@ Either way, the app updates itself in place via signed, notarized [Sparkle](docs
 - **[Cursor](docs/providers/cursor.md)** — credits, total usage, Grok Bot, Cursor Models, Other Models, requests, on-demand, per-day spend
 - **[Devin](docs/providers/devin.md)** — weekly and daily quota, extra usage balance
 - **[Grok](docs/providers/grok.md)** — weekly shared pool, pay-as-you-go, local daily spend
+- **[Kimi Code](docs/providers/kimi.md)** — session, weekly, and booster-wallet usage from the Kimi CLI login
 - **[OpenCode](docs/providers/opencode.md)** — Go session/weekly/monthly caps, Zen spend, local daily spend
 - **[OpenRouter](docs/providers/openrouter.md)** — credit balance, daily/weekly/monthly spend (API key)
 - **[Z.ai](docs/providers/zai.md)** — session, weekly, web-search quotas (GLM Coding Plan, API key)

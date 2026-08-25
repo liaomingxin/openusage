@@ -26,7 +26,7 @@ git checkout -b feat/xxx
 
 # ……开发、测试……
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # 本机装了 Xcode 但 xcode-select 仍指向 CLT 时需要
-swift test                          # 全量测试（有一个预先存在的 Codex 本地日志测试失败，与 fork 无关）
+swift test                          # 全量测试
 swift test --filter "Kimi"          # 只跑 kimi 相关
 ./script/build_and_run.sh           # 构建并启动 dev app（bundle id .dev，与正式安装互不干扰）
 
@@ -101,8 +101,6 @@ git push origin main
 
 - **本机工具链**：`xcode-select` 指向 CLT；Xcode 装在 `/Applications/Xcode.app`，构建/测试前
   `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`（或干脆 `sudo xcode-select -s` 切过去）
-- **预先存在的测试失败**：`CodexProviderTests.testNoUsageDataBadgeIsDroppedWhenLocalLogsHaveSpend`
-  在上游 main 也挂（依赖本机 Codex 日志状态），不是 fork 引入的
 - **Provider SVG 图标**：解析器只支持 `M/L/H/V/C/S/Q/T/Z`，**不支持圆弧 `A/a`**——新图标用贝塞尔写
 - **本地 API 端口**：`127.0.0.1:6736` 只有一个实例能绑；dev 和正式版同时跑时，curl 打到的可能是旧实例
 - **正式版 app 与 dev 版**：同机共存没问题（bundle id 不同），但装了正式版时注意别 curl 到旧实例
