@@ -1,6 +1,6 @@
 # Dashboard
 
-The popover that opens from the menu bar icon. Providers are sections; each section shows the metrics you've enabled.
+The popover that opens from the menu bar icon. Provider cards sit in a two-column grid, filling left to right; each card shows the metrics you've enabled. Total Spend stays full width above the grid.
 
 ## First launch
 
@@ -8,9 +8,11 @@ A fresh install doesn't turn on every provider OpenUsage knows about. It starts 
 
 This full detection only happens on a brand-new install. Updates never change the providers you already have on or off — but when an update ships a provider you've never seen, the same local check runs once for just that provider and turns it on only if you actually have the tool. See [Which Providers Are On](provider-enablement.md) for the full lifecycle.
 
+A second Codex login (a distinct ChatGPT account) shows as its own card next to Codex, named with that account's email. Extra cards stay tied to the original Codex card — same rows, same order, same Always Visible / On Demand split. See [Codex](providers/codex.md).
+
 Each provider card leads with its **Always Visible** metrics. Any metrics you've moved below the **On Demand** line are tucked away behind the in-card caret — click it to reveal them below the caret, click again to collapse. Open cards stay open across popover closes and app restarts. A provider with neither On Demand metrics nor quick links shows no caret.
 
-When you expand a card, the tucked-away metrics open below the caret as a single-column list, so each detail row keeps the full card width.
+When you expand a card, the tucked-away metrics open below the caret as a single-column list, so each detail row keeps that card's width.
 
 A provider card can also show **quick-link buttons** pinned at the bottom of its expanded section — Status, Console, Dashboard, and the like — that open the provider's own pages in your default browser. They're part of the expander, so collapsing the caret hides them along with the tucked-away metrics. Buttons lay out up to three across, wrapping to a second row when there are more.
 

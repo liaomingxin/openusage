@@ -110,4 +110,26 @@ enum DefaultLayout {
         // absent on subscription accounts) sits below the caret.
         "kimi.booster"
     ]
+
+    /// Copy a family's default metric ids onto extra account cards already in `registry`
+    /// (`codex.weekly` → `codex@ab12cd34.weekly`). Used for Reset / seed-tracking; the dashboard
+    /// itself shares the family's live layout rather than these copies. Extra cards never inherit
+    /// pins — the default card keeps the family's menu-bar slots.
+    static func includingInstances(_ ids: [String], registry: WidgetRegistry) -> [String] {
+        var result = ids
+        for provider in registry.providers {
+            let family = ProviderAccountID.family(of: provider.id)
+            guard provider.id != family else { continue }
+            result.append(contentsOf: translated(ids, family: family, instanceID: provider.id))
+        }
+        return result
+    }
+
+    static func translated(_ ids: [String], family: String, instanceID: String) -> [String] {
+        let prefix = family + "."
+        return ids.compactMap { id in
+            guard id.hasPrefix(prefix) else { return nil }
+            return instanceID + "." + String(id.dropFirst(prefix.count))
+        }
+    }
 }

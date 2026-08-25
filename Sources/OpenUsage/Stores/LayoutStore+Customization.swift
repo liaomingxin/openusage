@@ -1,3 +1,6 @@
+import CryptoKit
+import Foundation
+
 extension LayoutStore {
     func provider(id: String) -> Provider? { registry.provider(id: id) }
 
@@ -9,6 +12,48 @@ extension LayoutStore {
         registry.descriptor(id: widget.descriptorID)?.providerID
     }
 
+    /// Extra account cards (`codex@hash`) share the family's metric layout. Reads and writes for
+    /// `codex@hash.weekly` go through `codex.weekly`, so every account card stays in lockstep.
+    func layoutOwnerID(for providerID: String) -> String {
+        let family = ProviderAccountID.family(of: providerID)
+        if providerID != family, registry.provider(id: family) != nil { return family }
+        return providerID
+    }
+
+    func layoutOwnerMetricID(_ descriptorID: String) -> String {
+        guard let providerID = registry.descriptor(id: descriptorID)?.providerID else { return descriptorID }
+        let owner = layoutOwnerID(for: providerID)
+        return remappedMetricID(descriptorID, from: providerID, to: owner) ?? descriptorID
+    }
+
+    func remappedMetricID(_ id: String, from sourceProviderID: String, to targetProviderID: String) -> String? {
+        if sourceProviderID == targetProviderID { return id }
+        let prefix = sourceProviderID + "."
+        guard id.hasPrefix(prefix) else { return nil }
+        let mapped = targetProviderID + "." + id.dropFirst(prefix.count)
+        return registry.descriptor(id: mapped) == nil ? nil : mapped
+    }
+
+    func isOnDemandMetric(_ descriptorID: String) -> Bool {
+        expandedMetricIDs.contains(layoutOwnerMetricID(descriptorID))
+    }
+
+    private func alignedDividerID(_ dividerID: String, from providerID: String, to ownerID: String) -> String {
+        if providerID == ownerID || !dividerID.hasPrefix(providerID) { return dividerID }
+        return ownerID + String(dividerID.dropFirst(providerID.count))
+    }
+
+    private static func alignedWidgetID(for descriptorID: String) -> UUID {
+        let digest = SHA256.hash(data: Data("openusage.aligned.\(descriptorID)".utf8))
+        let bytes = Array(digest.prefix(16))
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        ))
+    }
+
     var visiblePlaced: [PlacedWidget] {
         placed.filter { widget in
             guard let providerID = providerID(of: widget) else { return true }
@@ -17,7 +62,8 @@ extension LayoutStore {
     }
 
     func isMetricEnabled(_ descriptorID: String) -> Bool {
-        placed.contains { $0.descriptorID == descriptorID }
+        let ownerID = layoutOwnerMetricID(descriptorID)
+        return placed.contains { $0.descriptorID == ownerID }
     }
 
     /// Whether any enabled provider ships the local spend tiles — the capability gate for the
@@ -52,18 +98,28 @@ extension LayoutStore {
     /// Enabled (and provider-enabled) widgets grouped by provider, in the user's provider order, each
     /// provider's metrics kept in the provider's custom metric order. Drives the grouped dashboard list; providers with
     /// no visible metric are dropped so the dashboard only shows groups that have something to show.
+    /// Extra account cards reuse the family's enabled set, order, and Always Visible / On Demand split.
     var displayGroups: [ProviderGroup] {
         orderedProviders().compactMap { provider in
-            let widgetsByDescriptor = Dictionary(
-                visiblePlaced
-                    .filter { providerID(of: $0) == provider.id }
+            guard isProviderEnabled(provider.id) else { return nil }
+            let ownerID = layoutOwnerID(for: provider.id)
+            let widgetsByOwnerDescriptor = Dictionary(
+                placed
+                    .filter { providerID(of: $0) == ownerID }
                     .map { ($0.descriptorID, $0) },
                 uniquingKeysWith: { first, _ in first }
             )
-            let widgets = metricOrder(for: provider.id).compactMap { widgetsByDescriptor[$0] }
+            let widgets: [PlacedWidget] = metricOrder(for: ownerID).compactMap { ownerMetricID in
+                guard widgetsByOwnerDescriptor[ownerMetricID] != nil else { return nil }
+                if ownerID == provider.id { return widgetsByOwnerDescriptor[ownerMetricID] }
+                guard let instanceID = remappedMetricID(ownerMetricID, from: ownerID, to: provider.id) else {
+                    return nil
+                }
+                return PlacedWidget(id: Self.alignedWidgetID(for: instanceID), descriptorID: instanceID)
+            }
             guard !widgets.isEmpty else { return nil }
-            let alwaysShown = widgets.filter { !expandedMetricIDs.contains($0.descriptorID) }
-            let expanded = widgets.filter { expandedMetricIDs.contains($0.descriptorID) }
+            let alwaysShown = widgets.filter { !isOnDemandMetric($0.descriptorID) }
+            let expanded = widgets.filter { isOnDemandMetric($0.descriptorID) }
             // A provider whose only enabled metrics are all marked expanded would otherwise render an
             // empty card with a caret — promote them to always-shown so the card always has rows.
             if alwaysShown.isEmpty {
@@ -82,8 +138,8 @@ extension LayoutStore {
             guard !metrics.isEmpty else { return nil }
             return ProviderMetrics(
                 provider: provider,
-                alwaysShownMetrics: metrics.filter { !expandedMetricIDs.contains($0.id) },
-                expandedMetrics: metrics.filter { expandedMetricIDs.contains($0.id) }
+                alwaysShownMetrics: metrics.filter { !isOnDemandMetric($0.id) },
+                expandedMetrics: metrics.filter { isOnDemandMetric($0.id) }
             )
         }
     }
@@ -118,8 +174,8 @@ extension LayoutStore {
         guard !metrics.isEmpty else { return nil }
         return ProviderMetrics(
             provider: provider,
-            alwaysShownMetrics: metrics.filter { !expandedMetricIDs.contains($0.id) },
-            expandedMetrics: metrics.filter { expandedMetricIDs.contains($0.id) }
+            alwaysShownMetrics: metrics.filter { !isOnDemandMetric($0.id) },
+            expandedMetrics: metrics.filter { isOnDemandMetric($0.id) }
         )
     }
 
@@ -130,9 +186,9 @@ extension LayoutStore {
 
     func metricOrderWithDivider(for providerID: String, dividerID: String) -> [String] {
         let ordered = orderedSupportedMetrics(for: providerID).map(\.id)
-        return ordered.filter { !expandedMetricIDs.contains($0) }
+        return ordered.filter { !isOnDemandMetric($0) }
             + [dividerID]
-            + ordered.filter { expandedMetricIDs.contains($0) }
+            + ordered.filter { isOnDemandMetric($0) }
     }
 
     /// Pinned metrics grouped by provider, in the user's Customize order (provider order, then each
@@ -145,8 +201,8 @@ extension LayoutStore {
             let metrics = orderedSupportedMetrics(for: provider.id).filter { pinnedMetricIDs.contains($0.id) }
             return metrics.isEmpty ? nil : ProviderMetrics(
                 provider: provider,
-                alwaysShownMetrics: metrics.filter { !expandedMetricIDs.contains($0.id) },
-                expandedMetrics: metrics.filter { expandedMetricIDs.contains($0.id) }
+                alwaysShownMetrics: metrics.filter { !isOnDemandMetric($0.id) },
+                expandedMetrics: metrics.filter { isOnDemandMetric($0.id) }
             )
         }
     }
@@ -177,7 +233,14 @@ extension LayoutStore {
     /// the drag gestures key haptics off it.
     @discardableResult
     func reorderMetric(dragged: String, target: String, in providerID: String) -> Bool {
-        recordingUndoStep { reorderMetricImpl(dragged: dragged, target: target, in: providerID) }
+        recordingUndoStep {
+            let owner = layoutOwnerID(for: providerID)
+            return reorderMetricImpl(
+                dragged: layoutOwnerMetricID(dragged),
+                target: layoutOwnerMetricID(target),
+                in: owner
+            )
+        }
     }
 
     private func reorderMetricImpl(dragged: String, target: String, in providerID: String) -> Bool {
@@ -228,7 +291,17 @@ extension LayoutStore {
     @discardableResult
     func applyMetricDividerOrder(_ orderedIDsWithDivider: [String], dragged: String, dividerID: String, in providerID: String) -> Bool {
         recordingUndoStep {
-            applyMetricDividerOrderImpl(orderedIDsWithDivider, dragged: dragged, dividerID: dividerID, in: providerID)
+            let owner = layoutOwnerID(for: providerID)
+            let ownerDivider = alignedDividerID(dividerID, from: providerID, to: owner)
+            let remapped = orderedIDsWithDivider.map { id in
+                id == dividerID ? ownerDivider : layoutOwnerMetricID(id)
+            }
+            return applyMetricDividerOrderImpl(
+                remapped,
+                dragged: layoutOwnerMetricID(dragged),
+                dividerID: ownerDivider,
+                in: owner
+            )
         }
     }
 

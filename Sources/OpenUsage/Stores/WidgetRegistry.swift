@@ -50,8 +50,17 @@ struct WidgetRegistry: Sendable {
         let defaults = providers.map(\.id)
         let known = Set(defaults)
         let saved = savedOrder.filter { known.contains($0) }
+        var result = saved
         let savedIDs = Set(saved)
-        return saved + defaults.filter { !savedIDs.contains($0) }
+        for id in defaults where !savedIDs.contains(id) {
+            let family = ProviderAccountID.family(of: id)
+            if let index = result.lastIndex(where: { ProviderAccountID.family(of: $0) == family }) {
+                result.insert(id, at: result.index(after: index))
+            } else {
+                result.append(id)
+            }
+        }
+        return result
     }
 
     var limitDescriptorsByProvider: [String: [WidgetDescriptor]] {

@@ -46,6 +46,9 @@ protocol TextFileAccessing: Sendable {
     /// Remove the file at `path`. A missing file is not an error — the caller wants the key gone, and
     /// it already is. Used by the in-app API-key editor's Remove / Clear-override actions.
     func remove(_ path: String) throws
+    /// Immediate `*.json` children of `directory` (not recursive). Empty when the directory is
+    /// missing or unreadable. Used by extra-account discovery so tests can inject a file map.
+    func jsonFilePaths(in directory: String) -> [String]
 }
 
 extension TextFileAccessing {
@@ -55,6 +58,8 @@ extension TextFileAccessing {
         guard exists(path) else { return nil }
         return try readText(path)
     }
+
+    func jsonFilePaths(in directory: String) -> [String] { [] }
 }
 
 struct LocalTextFileAccessor: TextFileAccessing {
@@ -77,6 +82,15 @@ struct LocalTextFileAccessor: TextFileAccessing {
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             return nil
         }
+    }
+
+    func jsonFilePaths(in directory: String) -> [String] {
+        let expanded = expandHome(directory).trimmingTrailingSlashes
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: expanded) else { return [] }
+        return names
+            .filter { $0.hasSuffix(".json") && !$0.hasPrefix(".") }
+            .map { expanded + "/" + $0 }
+            .sorted()
     }
 
     func writeText(_ path: String, _ text: String) throws {

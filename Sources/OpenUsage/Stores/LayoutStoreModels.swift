@@ -12,6 +12,20 @@ struct ProviderGroup: Identifiable {
     var hasExpandedMetrics: Bool { !expandedWidgets.isEmpty }
 }
 
+/// One dashboard grid row: one full-width card, or two cards sitting side by side.
+struct DashboardCardRow: Identifiable {
+    let groups: [ProviderGroup]
+    var id: String { groups.map(\.id).joined(separator: "|") }
+
+    /// Walk `groups` left-to-right, two per row. A leftover last card is a one-item row (full width).
+    static func rows(from groups: [ProviderGroup], columns: Int = 2) -> [DashboardCardRow] {
+        guard columns > 0, !groups.isEmpty else { return [] }
+        return stride(from: 0, to: groups.count, by: columns).map { start in
+            DashboardCardRow(groups: Array(groups[start..<min(start + columns, groups.count)]))
+        }
+    }
+}
+
 /// A provider and every metric it supports, in the provider's custom order, split between Always
 /// Visible and On Demand. Drives the Customize screen and the menu-bar pin grouping.
 struct ProviderMetrics: Identifiable {

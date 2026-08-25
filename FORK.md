@@ -93,6 +93,7 @@ git push origin main
 - `Sources/OpenUsage/Providers/Kimi/`：Kimi Code provider（OAuth 读 `~/.kimi-code/`，Session/Weekly/Booster）
 - `DefaultLayout.swift`、`ProviderCatalog.swift`、`ErrorCategory.swift`、`LocalLimitsAPITests.swift`、`ProviderMarksTests.swift` 里的 kimi 条目
 - `docs/providers/kimi.md`、`docs/research/kimi-code-usage-api.md`
+- Codex 多账号：扫描 `~/.cli-proxy-api/codex-*.json`，额外 ChatGPT 登录各自一张卡（`codex@<hash>`），布局跟默认 Codex 卡绑定
 - `.github/workflows/personal-release.yml`
 - tag 序列 `v0.7.10-kimi.N`
 

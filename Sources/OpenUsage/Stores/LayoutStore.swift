@@ -123,19 +123,24 @@ final class LayoutStore {
         self.registry = registry
         let persistence = LayoutPersistence(defaults: defaults, storageKey: storageKey)
         self.persistence = persistence
-        self.defaultMetricIDs = defaultMetricIDs
+        // Extra account cards (`codex@hash`) share the family's metric layout at display time. Their
+        // default ids still translate so Reset / seed-tracking know the instance metrics. Pins stay
+        // family-only.
+        let instanceMetricIDs = DefaultLayout.includingInstances(defaultMetricIDs, registry: registry)
+        let instanceExpandedMetricIDs = DefaultLayout.includingInstances(defaultExpandedMetricIDs, registry: registry)
+        self.defaultMetricIDs = instanceMetricIDs
         self.defaultPinnedMetricIDs = defaultPinnedMetricIDs
-        self.defaultExpandedMetricIDs = defaultExpandedMetricIDs
+        self.defaultExpandedMetricIDs = instanceExpandedMetricIDs
         self.isProviderEnabled = isProviderEnabled
 
         let initial = LayoutBootstrap.load(
             registry: registry,
             persistence: persistence,
             defaults: LayoutDefaultSet(
-                metricIDs: defaultMetricIDs,
+                metricIDs: instanceMetricIDs,
                 migrationBaselineMetricIDs: migrationBaselineMetricIDs,
                 pinnedMetricIDs: defaultPinnedMetricIDs,
-                expandedMetricIDs: defaultExpandedMetricIDs
+                expandedMetricIDs: instanceExpandedMetricIDs
             )
         )
         placed = initial.placed
@@ -175,15 +180,16 @@ final class LayoutStore {
     /// Toggle a metric on (add to the placed list) or off (remove it). The single seam the Customize
     /// switches drive, so on/off goes through the same add/remove path the rest of the app uses.
     func setMetricEnabled(_ descriptorID: String, _ enabled: Bool) {
+        let ownerID = layoutOwnerMetricID(descriptorID)
         recordingUndoStep {
             if enabled {
-                if defaultExpandedOnEnableIDs.remove(descriptorID) != nil {
-                    expandedMetricIDs.insert(descriptorID)
+                if defaultExpandedOnEnableIDs.remove(ownerID) != nil {
+                    expandedMetricIDs.insert(ownerID)
                     persistExpanded()
                     persistExpandOnEnable()
                 }
-                add(descriptorID)
-            } else if let widget = placed.first(where: { $0.descriptorID == descriptorID }) {
+                add(ownerID)
+            } else if let widget = placed.first(where: { $0.descriptorID == ownerID }) {
                 remove(widget.id)
             }
         }
@@ -405,6 +411,7 @@ final class LayoutStore {
     /// per-provider effect, scoped to one `providerID` instead of the whole layout. No-op for an
     /// unknown provider.
     func resetProvider(_ providerID: String) {
+        let providerID = layoutOwnerID(for: providerID)
         guard registry.provider(id: providerID) != nil else { return }
         cancelDrag()
         // A reset is its own action, not an undoable edit. Snapshots are whole-layout, so there's no
@@ -469,8 +476,15 @@ final class LayoutStore {
 
     func metricOrder(for providerID: String) -> [String] {
         let valid = registry.descriptors(for: providerID).map(\.id)
-        let saved = metricOrderByProvider[providerID] ?? []
-        return LayoutOrdering.normalizedMetricIDs(saved, validIDs: valid)
+        let owner = layoutOwnerID(for: providerID)
+        if owner == providerID {
+            let saved = metricOrderByProvider[providerID] ?? []
+            return LayoutOrdering.normalizedMetricIDs(saved, validIDs: valid)
+        }
+        let remapped = metricOrder(for: owner).compactMap {
+            remappedMetricID($0, from: owner, to: providerID)
+        }
+        return LayoutOrdering.normalizedMetricIDs(remapped, validIDs: valid)
     }
 
     func syncPlacedOrder(persistChanges: Bool = true) {

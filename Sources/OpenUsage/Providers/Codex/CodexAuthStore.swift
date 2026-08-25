@@ -26,9 +26,21 @@ struct CodexAuth: Codable, Hashable, Sendable {
     }
 }
 
+/// How an on-disk Codex credential is laid out. The Codex CLI writes a nested `tokens` object;
+/// cli-proxy-api (and similar dumps) flatten the same fields to the top level and add `type`/`email`.
+enum CodexAuthFileFormat: String, Hashable, Sendable {
+    case nestedTokens
+    case flattened
+}
+
+struct CodexAccountIdentity: Equatable, Sendable {
+    var identityKey: String
+    var label: String?
+}
+
 struct CodexAuthState: Hashable, Sendable {
     enum Source: Hashable, Sendable {
-        case file(path: String)
+        case file(path: String, format: CodexAuthFileFormat)
         case keychain
     }
 
@@ -93,17 +105,22 @@ struct CodexAuthStore: Sendable {
     var files: TextFileAccessing
     var keychain: KeychainAccessing
     var now: @Sendable () -> Date
+    /// When set, this store reads and writes only that one credential file — used for extra-account
+    /// cards so they never fall through to another home or the keychain.
+    var scopedAuthPath: String?
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         files: TextFileAccessing = LocalTextFileAccessor(),
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        scopedAuthPath: String? = nil
     ) {
         self.environment = environment
         self.files = files
         self.keychain = keychain
         self.now = now
+        self.scopedAuthPath = scopedAuthPath
     }
 
     func loadAuthCandidates() -> [CodexAuthState] {
@@ -122,10 +139,13 @@ struct CodexAuthStore: Sendable {
         else {
             return nil
         }
-        return CodexAuthState(auth: auth, source: .file(path: path))
+        return CodexAuthState(auth: auth, source: .file(path: path, format: Self.detectFormat(text)))
     }
 
     func loadKeychainAuth() -> CodexAuthState? {
+        // Extra-account cards are file-scoped: a shared keychain item belongs to whoever last wrote
+        // it, not this card, so falling through would stamp the wrong account on the snapshot.
+        guard scopedAuthPath == nil else { return nil }
         guard let value = try? keychain.readGenericPassword(service: Self.keychainService),
               let auth = Self.parseAuth(value),
               Self.hasTokenLikeAuth(auth)
@@ -136,19 +156,27 @@ struct CodexAuthStore: Sendable {
     }
 
     func save(_ state: CodexAuthState) throws {
+        switch state.source {
+        case .file(let path, .flattened):
+            try saveFlattened(state.auth, at: path)
+        case .file(let path, .nestedTokens):
+            try files.writeText(path, try encodeAuth(state.auth, prettyPrinted: true))
+        case .keychain:
+            try keychain.writeGenericPassword(
+                service: Self.keychainService,
+                value: try encodeAuth(state.auth, prettyPrinted: false)
+            )
+        }
+    }
+
+    private func encodeAuth(_ auth: CodexAuth, prettyPrinted: Bool) throws -> String {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = state.source.isFile ? [.prettyPrinted, .sortedKeys] : []
-        let data = try encoder.encode(state.auth)
+        encoder.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : []
+        let data = try encoder.encode(auth)
         guard let text = String(data: data, encoding: .utf8) else {
             throw CodexAuthError.invalidAuthPayload
         }
-
-        switch state.source {
-        case .file(let path):
-            try files.writeText(path, text)
-        case .keychain:
-            try keychain.writeGenericPassword(service: Self.keychainService, value: text)
-        }
+        return text
     }
 
     /// Whether the access token should be proactively refreshed.
@@ -181,6 +209,9 @@ struct CodexAuthStore: Sendable {
     }
 
     func authPaths() -> [String] {
+        if let scopedAuthPath {
+            return [scopedAuthPath]
+        }
         if let codexHome = codexHome() {
             return [joinPath(codexHome, Self.authFile)]
         }
@@ -197,7 +228,42 @@ struct CodexAuthStore: Sendable {
     }
 
     static func parseAuth(_ text: String) -> CodexAuth? {
-        ProviderParse.decodeJSONWithHexFallback(text, as: CodexAuth.self)
+        if let nested = ProviderParse.decodeJSONWithHexFallback(text, as: CodexAuth.self),
+           hasTokenLikeAuth(nested) {
+            return nested
+        }
+        guard let flattened = ProviderParse.decodeJSONWithHexFallback(text, as: FlattenedCodexAuthFile.self)
+        else {
+            return nil
+        }
+        let auth = flattened.asCodexAuth()
+        return hasTokenLikeAuth(auth) ? auth : nil
+    }
+
+    /// Nested Codex CLI `auth.json` vs a flattened dump (`access_token` at the top level). A file
+    /// with both is treated as nested — that's the CLI shape, and flattening it on save would drop
+    /// fields the CLI still reads.
+    static func detectFormat(_ text: String) -> CodexAuthFileFormat {
+        guard let object = ProviderParse.jsonObject(Data(text.utf8)) else { return .nestedTokens }
+        if object["tokens"] is [String: Any] { return .nestedTokens }
+        if object["access_token"] is String { return .flattened }
+        return .nestedTokens
+    }
+
+    /// Strict identity: `tokens.account_id`, else the id_token's ChatGPT account claim. No path-derived
+    /// fallback — a credential that can't name its account never becomes a card.
+    static func accountIdentity(from auth: CodexAuth, emailOverride: String? = nil) -> CodexAccountIdentity? {
+        let payload = auth.tokens?.idToken.flatMap { ProviderParse.jwtPayload($0) }
+        let email = emailOverride?.nilIfEmpty
+            ?? (payload?["email"] as? String)?.nilIfEmpty
+        if let accountID = auth.tokens?.accountID?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            return CodexAccountIdentity(identityKey: accountID.lowercased(), label: email)
+        }
+        if let claimID = DefaultAccountObserver.chatGPTAccountID(inIDTokenPayload: payload) {
+            return CodexAccountIdentity(identityKey: claimID.lowercased(), label: email)
+        }
+        return nil
     }
 
     static func hasTokenLikeAuth(_ auth: CodexAuth) -> Bool {
@@ -206,15 +272,64 @@ struct CodexAuthStore: Sendable {
         return false
     }
 
+    /// Rewrite only the token fields of a flattened dump so sibling keys (`email`, `type`, `expired`,
+    /// `disabled`) survive a refresh.
+    private func saveFlattened(_ auth: CodexAuth, at path: String) throws {
+        var object: [String: Any] = [:]
+        if let existing = try files.readTextIfPresent(path),
+           let parsed = ProviderParse.jsonObject(Data(existing.utf8)) {
+            object = parsed
+        }
+        if object["type"] == nil { object["type"] = "codex" }
+        if let token = auth.tokens?.accessToken { object["access_token"] = token }
+        if let token = auth.tokens?.refreshToken { object["refresh_token"] = token }
+        if let token = auth.tokens?.idToken { object["id_token"] = token }
+        if let accountID = auth.tokens?.accountID { object["account_id"] = accountID }
+        if let lastRefresh = auth.lastRefresh { object["last_refresh"] = lastRefresh }
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw CodexAuthError.invalidAuthPayload
+        }
+        try files.writeText(path, text)
+    }
+
     private func joinPath(_ base: String, _ leaf: String) -> String {
         base.trimmingTrailingSlashes + "/" + leaf
     }
 }
 
-private extension CodexAuthState.Source {
-    var isFile: Bool {
-        if case .file = self { return true }
-        return false
+/// Flattened Codex credential dump (cli-proxy-api `codex-*.json` and similar). Same OAuth fields as
+/// the CLI's nested `tokens` object, plus dump-specific metadata we preserve on save.
+private struct FlattenedCodexAuthFile: Codable {
+    var type: String?
+    var accessToken: String?
+    var refreshToken: String?
+    var idToken: String?
+    var accountID: String?
+    var email: String?
+    var lastRefresh: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case idToken = "id_token"
+        case accountID = "account_id"
+        case email
+        case lastRefresh = "last_refresh"
+    }
+
+    func asCodexAuth() -> CodexAuth {
+        CodexAuth(
+            tokens: CodexTokens(
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                idToken: idToken,
+                accountID: accountID
+            ),
+            lastRefresh: lastRefresh,
+            apiKey: nil
+        )
     }
 }
 

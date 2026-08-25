@@ -6,7 +6,8 @@ import AppKit
 /// cramped Default", so Compact changes type and structure, not just whitespace. This enum is the
 /// single source for every density-dependent dimension — views read these properties instead of
 /// hardcoding sizes, so a third level later is one more case here. The popover width is *not*
-/// density-dependent (deliberate: switching density shouldn't move the popover's left edge).
+/// density-dependent (deliberate: switching density shouldn't move the popover's left edge; the
+/// panel is a two-column card grid at `PanelGeometry.width`).
 enum DensitySetting: String, Hashable, Sendable, CaseIterable {
     case regular
     case compact

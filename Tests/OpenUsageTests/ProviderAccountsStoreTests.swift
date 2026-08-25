@@ -39,6 +39,22 @@ final class ProviderAccountsStoreTests: XCTestCase {
         XCTAssertTrue(records[0].sources.contains(where: \.holdsDefaultSource))
     }
 
+    func testCredentialDumpWithoutDefaultBadgeNeverTakesTheBareID() {
+        let store = ProviderAccountsStore(defaults: makeScratchDefaults())
+        let records = store.reconcile(with: [
+            ProviderAccountsStore.Observation(
+                family: "codex",
+                identityKey: "acct-dump",
+                label: "dump@example.com",
+                sources: [ProviderAccountSource(kind: .credentialFile, anchor: "/tmp/dump.json", holdsDefaultSource: false)]
+            )
+        ])
+
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].id, ProviderAccountID.make(family: "codex", identityKey: "acct-dump"))
+        XCTAssertNil(store.defaultBadgeHolder(family: "codex"))
+    }
+
     func testSwappedDefaultMintsAHashIDAndTakesTheBadge() {
         let store = ProviderAccountsStore(defaults: makeScratchDefaults())
         store.reconcile(with: [defaultHomeObservation(family: "claude", identityKey: "acct-a")])

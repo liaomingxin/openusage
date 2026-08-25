@@ -5,7 +5,8 @@ import AppKit
 /// AppKit.
 @MainActor
 final class PanelHeightController {
-    static let panelWidth: CGFloat = 320
+    /// Two dashboard cards side by side: 14pt insets + two ~292pt cards + a section gap.
+    static let panelWidth: CGFloat = PanelGeometry.width
     static let defaultHeight: CGFloat = 800
 
     private let panel: MenuBarPanel
@@ -139,6 +140,8 @@ final class PanelHeightController {
 
 /// Pure panel geometry, kept separate so display clamping can be tested without opening a window.
 enum PanelGeometry {
+    /// Dashboard is a two-column card grid. 14pt insets + two cards + the section gap.
+    static let width: CGFloat = 624
     static let topGap: CGFloat = 4
     static let screenMargin: CGFloat = 8
     static let minimumHeight: CGFloat = 200

@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// The dashboard display: one inset group per provider (System Settings style). A provider's icon + name
-/// sits above a rounded container holding its metric rows, so heterogeneous metric sets read as belonging
-/// to their provider. Rows are the shared `WidgetRowView`, fed by the same `WidgetDataStore` the menu bar
-/// uses.
+/// The dashboard display: a two-column grid of provider cards (System Settings style). A provider's
+/// icon + name sits above a rounded container holding its metric rows. Rows are the shared
+/// `WidgetRowView`, fed by the same `WidgetDataStore` the menu bar uses.
 ///
 /// Reordering works here directly (no Customize needed): drag any metric row to reorder it within its
 /// provider, or drag a provider's header line to reorder whole providers. Customize stays the discoverable,
@@ -23,11 +22,17 @@ struct WidgetGroupedListView: View {
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
 
     var body: some View {
-        // Provider-section spacing is noticeably wider than the in-card row rhythm (so groups
-        // still read as groups); the exact step comes from the density setting.
+        // Two-up grid: consecutive providers fill left-to-right, wrapping to the next row. The
+        // leftover last card (odd count) is a one-item row and takes the full width. Gap matches
+        // section spacing so the grid reads as even on both axes.
         VStack(alignment: .leading, spacing: density.sectionSpacing) {
-            ForEach(layout.displayGroups) { group in
-                section(group)
+            ForEach(DashboardCardRow.rows(from: layout.displayGroups)) { row in
+                HStack(alignment: .top, spacing: density.sectionSpacing) {
+                    ForEach(row.groups) { group in
+                        section(group)
+                            .frame(maxWidth: .infinity, alignment: .top)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,7 +236,8 @@ struct WidgetGroupedListView: View {
             data: data,
             onToggleResetDisplay: { dataStore.resetDisplayMode.toggle() },
             onToggleMeterStyle: { dataStore.meterStyle.toggle() },
-            condensedTop: condensedTop
+            condensedTop: condensedTop,
+            providerID: providerID
         )
             .contentShape(Rectangle())
             .opacity(activeMetricID == descriptor.id ? 0 : 1)

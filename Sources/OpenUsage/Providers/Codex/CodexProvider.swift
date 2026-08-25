@@ -2,53 +2,63 @@ import Foundation
 
 @MainActor
 final class CodexProvider: ProviderRuntime {
-    let provider = Provider(
-        id: "codex",
-        displayName: "Codex",
-        icon: .providerMark("codex"),
-        links: [
-            .init(label: "Status", url: "https://status.openai.com/"),
-            .init(label: "Dashboard", url: "https://chatgpt.com/codex/settings/usage")
-        ]
-    )
+    let provider: Provider
 
     let authStore: CodexAuthStore
     let usageClient: CodexUsageClient
     let logUsageScanner: CodexLogUsageScanner
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
+    /// Extra-account cards (credential dumps without a Codex home) skip local JSONL spend so they
+    /// don't inherit the default home's sessions.
+    let scansLocalLogs: Bool
 
     init(
+        id: String = "codex",
+        displayName: String = "Codex",
         authStore: CodexAuthStore = CodexAuthStore(),
         usageClient: CodexUsageClient = CodexUsageClient(),
         logUsageScanner: CodexLogUsageScanner = CodexLogUsageScanner(),
         now: @escaping @Sendable () -> Date = Date.init,
-        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
+        scansLocalLogs: Bool = true
     ) {
+        self.provider = Provider(
+            id: id,
+            displayName: displayName,
+            icon: .providerMark("codex"),
+            links: [
+                .init(label: "Status", url: "https://status.openai.com/"),
+                .init(label: "Dashboard", url: "https://chatgpt.com/codex/settings/usage")
+            ]
+        )
         self.authStore = authStore
         self.usageClient = usageClient
         self.logUsageScanner = logUsageScanner
         self.now = now
         self.pricing = pricing
+        self.scansLocalLogs = scansLocalLogs
     }
+
+    private func metricID(_ name: String) -> String { "\(provider.id).\(name)" }
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
-            .percent(id: "codex.session", provider: provider, title: "Session")
+            .percent(id: metricID("session"), provider: provider, title: "Session")
                 .exportingLimit("session", unit: "percent"),
-            .percent(id: "codex.weekly", provider: provider, title: "Weekly")
+            .percent(id: metricID("weekly"), provider: provider, title: "Weekly")
                 .exportingLimit("weekly", unit: "percent"),
             // Model-specific Spark limits (GPT-5.3-Codex-Spark), parsed from `additional_rate_limits`.
             // Declared right after Weekly so they group with the core rate-limit meters; seeded On
             // Demand (below the caret) and unpinned in `DefaultLayout`.
-            .percent(id: "codex.spark", provider: provider, title: "Spark")
+            .percent(id: metricID("spark"), provider: provider, title: "Spark")
                 .exportingLimit("spark", unit: "percent"),
-            .percent(id: "codex.sparkWeekly", provider: provider, title: "Spark Weekly")
+            .percent(id: metricID("sparkWeekly"), provider: provider, title: "Spark Weekly")
                 .exportingLimit("sparkWeekly", unit: "percent"),
-            .combined(id: "codex.credits", provider: provider, title: "Extra Usage", metricLabel: "Credits")
+            .combined(id: metricID("credits"), provider: provider, title: "Extra Usage", metricLabel: "Credits")
                 .exportingLimit("credits", kind: .balance, unit: "credits", source: .value(kind: .count, label: "credits"))
                 .exportingLimit("creditValue", kind: .balance, unit: "usd", source: .value(kind: .dollars)),
-            .values(id: "codex.rateLimitResets", provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
+            .values(id: metricID("rateLimitResets"), provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
                 .exportingLimit("rateLimitResets", kind: .balance, unit: "resets", source: .value(kind: .count, label: "available")),
             .usageTrend(provider: provider)
                 .exportingHistory(
@@ -140,8 +150,10 @@ final class CodexProvider: ProviderRuntime {
         // the shared pricing store, merged with Codex usage that happened inside pi (attributed back
         // here). Both scans run on their scanner actors, off the main actor.
         let pricing = await pricing()
-        let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
-        let piScan = await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
+        let nativeScan = scansLocalLogs ? await logUsageScanner.scan(now: now(), pricing: pricing) : nil
+        let piScan = scansLocalLogs
+            ? await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
+            : nil
         var usageHistory: ProviderUsageHistory?
         // Cancellation can land between the native and pi scans. Treat the pair as one unit so a
         // partial result cannot replace the last-good combined history in WidgetDataStore.
@@ -215,7 +227,7 @@ final class CodexProvider: ProviderRuntime {
     /// rather than re-scanning every candidate path.
     private func reloadLiveAuth(source: CodexAuthState.Source) -> CodexAuthState? {
         switch source {
-        case .file(let path):
+        case .file(let path, _):
             return authStore.loadAuth(at: path)
         case .keychain:
             return authStore.loadKeychainAuth()

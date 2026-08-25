@@ -23,6 +23,9 @@ struct WidgetRowView: View {
     /// their neighbors — the list supplies it — and both densities use it to pull consecutive
     /// one-liners into a single cluster (Compact a step harder).
     var condensedTop: Bool = false
+    /// The card this row belongs to, used to route a Codex reset-credit claim. `nil` in static
+    /// contexts (previews, share cards, reorder) so the timeline stays read-only.
+    var providerID: String? = nil
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
     @Environment(\.reduceAnimations) private var reduceAnimations
@@ -377,11 +380,16 @@ struct WidgetRowView: View {
                         // Rows with reset expiries are Codex-only today, so the Codex claim service is
                         // the right backing; absent from the environment (previews, share renders) the
                         // timeline is read-only.
-                        claim: codexResetClaim.map { service in
-                            { expiry, redeemRequestID in
-                                await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID)
+                        claim: {
+                            guard let router = codexResetClaim, let providerID else { return nil }
+                            return { expiry, redeemRequestID in
+                                await router.claim(
+                                    providerID: providerID,
+                                    creditExpiringAt: expiry,
+                                    redeemRequestID: redeemRequestID
+                                )
                             }
-                        }
+                        }()
                     )
                 }
             }

@@ -212,7 +212,7 @@ private final class TooltipPresenter {
     private let anchorGap: CGFloat = 10
 
     /// Bubble width past which a tooltip wraps onto multiple lines instead of stretching ever wider
-    /// (#696). Sits comfortably under the 320pt popover so a wrapped tooltip never reads as a second panel.
+    /// (#696). Narrower than one dashboard card so a wrapped tooltip never reads as a second panel.
     private let maxTooltipWidth: CGFloat = 280
 
     private let host = NSHostingView(rootView: AnyView(EmptyView()))

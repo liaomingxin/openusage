@@ -246,14 +246,37 @@ final class CodexResetClaimService {
     }
 }
 
-/// Hands the claim service to the resets popover through the environment: `nil` (the default — previews,
+/// Routes a reset-credit claim to the Codex card it belongs to. Extra accounts must never spend the
+/// default card's credits (or vice versa).
+@MainActor
+final class CodexResetClaimRouter {
+    private let services: [String: CodexResetClaimService]
+
+    init(services: [String: CodexResetClaimService]) {
+        self.services = services
+    }
+
+    func claim(
+        providerID: String,
+        creditExpiringAt expiry: Date,
+        redeemRequestID: String
+    ) async -> ResetClaimOutcome {
+        guard let service = services[providerID] else {
+            AppLog.error(LogTag.plugin("codex"), "reset claim: no service for \(providerID)")
+            return .failed
+        }
+        return await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID)
+    }
+}
+
+/// Hands the claim router to the resets popover through the environment: `nil` (the default — previews,
 /// share-card renders, reorder previews) renders the timeline read-only with no "Use" affordance.
 private struct CodexResetClaimServiceKey: EnvironmentKey {
-    static let defaultValue: CodexResetClaimService? = nil
+    static let defaultValue: CodexResetClaimRouter? = nil
 }
 
 extension EnvironmentValues {
-    var codexResetClaim: CodexResetClaimService? {
+    var codexResetClaim: CodexResetClaimRouter? {
         get { self[CodexResetClaimServiceKey.self] }
         set { self[CodexResetClaimServiceKey.self] = newValue }
     }
