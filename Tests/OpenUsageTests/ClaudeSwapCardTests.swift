@@ -28,21 +28,33 @@ final class ClaudeSwapProviderTests: XCTestCase {
         )
     }
 
+    /// The cache tier on its own: an empty stash means the live tier has no token to spend, and the
+    /// refusing HTTP client proves the card doesn't reach the network to find that out.
     private func provider(files: [String: String]) -> ClaudeSwapProvider {
         let fake = FakeFiles(files)
         return ClaudeSwapProvider(
             card: card(),
             usageClient: ClaudeSwapUsageClient(files: fake, homeDirectory: { ClaudeSwapFixtures.home }),
+            credentialReader: ClaudeSwapCredentialReader(keychain: SlotKeychain()),
+            liveUsageClient: ClaudeUsageClient(httpClient: UsageOnlyHTTPClient.refusingEverything()),
             files: fake,
             now: { [now] in now }
         )
     }
 
-    func testDescriptorsAreTheClaudeQuotaMetersUnderTheCardID() {
+    /// Every API-derived row the active Claude card declares, in the same order — that card reads the
+    /// same endpoint with the same mapper, so the rows it can produce are exactly the rows this card
+    /// can produce.
+    func testDescriptorsAreTheClaudeAPIMetersUnderTheCardID() {
         let descriptors = provider(files: [:]).widgetDescriptors
         XCTAssertEqual(descriptors.map(\.id), [
-            "claude@abcd1234.session", "claude@abcd1234.weekly", "claude@abcd1234.fable"
+            "claude@abcd1234.session", "claude@abcd1234.weekly", "claude@abcd1234.fable",
+            "claude@abcd1234.sonnet", "claude@abcd1234.extra"
         ])
+        let claudeAPIRows = ClaudeProvider().widgetDescriptors
+            .map { $0.id.dropFirst("claude.".count) }
+            .filter { !["trend", "today", "yesterday", "last30"].contains(String($0)) }
+        XCTAssertEqual(descriptors.map { $0.id.dropFirst("claude@abcd1234.".count) }, claudeAPIRows)
         // No local-log rows: the scanned trend and spend tiles belong to whichever account is active
         // in ~/.claude, never to a stashed one.
         XCTAssertFalse(descriptors.contains { $0.id.hasSuffix(".trend") })
@@ -127,7 +139,7 @@ final class ClaudeSwapCatalogAndLayoutTests: XCTestCase {
         let group = try XCTUnwrap(store.displayGroups.first { $0.provider.id == cardID })
         XCTAssertEqual(
             group.alwaysShownWidgets.map(\.descriptorID) + group.expandedWidgets.map(\.descriptorID),
-            ["\(cardID).session", "\(cardID).weekly", "\(cardID).fable"]
+            ["\(cardID).session", "\(cardID).weekly", "\(cardID).fable", "\(cardID).extra"]
         )
         XCTAssertEqual(
             store.pinnedGroups.flatMap { $0.metrics.map(\.id) },

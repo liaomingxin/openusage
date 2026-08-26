@@ -1,40 +1,53 @@
 import Foundation
 
-/// One extra Claude card backed by a claude-swap slot. Everything it shows comes from claude-swap's
-/// own stash on disk — the config snapshot names the account, the usage cache holds the numbers — so a
-/// refresh is a file read, never a network call and never a token touch. claude-swap's OAuth material
-/// (Keychain service `claude-swap`) is deliberately out of reach: refreshing it here would race
-/// claude-swap's own rotation and strand its refresh tokens.
+/// One extra Claude card backed by a claude-swap slot: an account parked in claude-swap's stash
+/// rather than signed in at `~/.claude`.
+///
+/// The card reads live usage the same way the active Claude card does — one `GET` to Anthropic's
+/// usage endpoint — using the access token claude-swap has already stashed for that account, so a
+/// stashed account shows the same meters, including Extra Usage. That read is strictly read-only.
+/// OpenUsage never refreshes, rotates, or writes claude-swap's OAuth material and never builds a
+/// `ClaudeAuthStore` for these cards: rotating a refresh token here would race claude-swap's own
+/// rotation and strand its sign-ins. When the stashed token is expired, rejected, or unreachable, the
+/// card falls back to claude-swap's own usage cache on disk (Session / Weekly / Fable percentages)
+/// and says so in the log — a fallback, never a refresh.
 @MainActor
 final class ClaudeSwapProvider: ProviderRuntime {
     let provider: Provider
     let card: ClaudeSwapCard
     let usageClient: ClaudeSwapUsageClient
+    let credentialReader: ClaudeSwapCredentialReader
+    let liveUsageClient: ClaudeUsageClient
     let files: TextFileAccessing
     let now: @Sendable () -> Date
 
-    /// The last thing this card logged about its own state. A card parked in the no-data or
-    /// poll-failed state would otherwise write the same line on every refresh tick for as long as it
-    /// stayed there, so only a change is worth recording.
-    private var lastLoggedState: String?
+    /// The last thing each tier logged about its own state. A card parked in the no-data, fallen-back,
+    /// or poll-failed state would otherwise write the same line on every refresh tick for as long as it
+    /// stayed there, so only a change is worth recording. The tiers keep separate slots so a card that
+    /// is steadily serving the cache doesn't re-log both lines on alternating ticks.
+    private var lastLoggedLiveState: String?
+    private var lastLoggedCacheState: String?
 
     init(
         card: ClaudeSwapCard,
         usageClient: ClaudeSwapUsageClient = ClaudeSwapUsageClient(),
+        credentialReader: ClaudeSwapCredentialReader = ClaudeSwapCredentialReader(),
+        liveUsageClient: ClaudeUsageClient = ClaudeUsageClient(),
         files: TextFileAccessing = LocalTextFileAccessor(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.provider = ClaudeProvider.makeProvider(id: card.id, displayName: card.displayName)
         self.card = card
         self.usageClient = usageClient
+        self.credentialReader = credentialReader
+        self.liveUsageClient = liveUsageClient
         self.files = files
         self.now = now
     }
 
-    /// The same three quota meters the Claude card leads with, so `DefaultLayout`'s claude rows and
-    /// pins translate onto this card unchanged. There is no Usage Trend or spend tile: those come from
-    /// local Claude Code logs, which belong to whichever account is active in `~/.claude`, not to a
-    /// stashed one.
+    /// The Claude card's API-derived meters, so `DefaultLayout`'s claude rows and pins translate onto
+    /// this card unchanged. There is no Usage Trend or spend tile: those come from local Claude Code
+    /// session logs, which belong to whichever account is active in `~/.claude`, not to a stashed one.
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "\(provider.id).session", provider: provider, title: "Session",
@@ -43,17 +56,124 @@ final class ClaudeSwapProvider: ProviderRuntime {
             .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
                 .exportingLimit("weekly", unit: "percent"),
             .percent(id: "\(provider.id).fable", provider: provider, title: "Fable")
-                .exportingLimit("fable", unit: "percent")
+                .exportingLimit("fable", unit: "percent"),
+            .percent(id: "\(provider.id).sonnet", provider: provider, title: "Sonnet")
+                .exportingLimit("sonnet", unit: "percent"),
+            .boundedDollars(id: "\(provider.id).extra", provider: provider, title: "Extra Usage",
+                            metricLabel: "Extra usage spent", limit: 100, valueWord: "spent")
+                .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars))
         ]
     }
 
-    /// Probe only: the slot's config snapshot is still in claude-swap's stash. No token is read.
+    /// Probe only: the slot's config snapshot is still in claude-swap's stash. Deliberately a plain
+    /// file check — first-run detection must never reach for the Keychain, which would put another
+    /// app's access prompt in front of a user who hasn't even seen the dashboard yet.
     func hasLocalCredentials() async -> Bool {
         let path = card.configPath
         return await loadOffMainActor { [files] in files.exists(path) }
     }
 
     func refresh() async -> ProviderSnapshot {
+        if let live = await liveSnapshot() { return live }
+        return await cachedSnapshot()
+    }
+
+    // MARK: - Live tier
+
+    /// Live usage for the stashed account: claude-swap's access token, spent read-only against the
+    /// same endpoint and read by the same mapper the active Claude card uses — which is what gives a
+    /// stashed account its Extra Usage and per-model weekly rows.
+    ///
+    /// `nil` means "serve the cache tier instead", and it is the answer to every unhappy path: no
+    /// email to name the stash by, no stashed item, an expired token, a Keychain that wouldn't open, a
+    /// rejected token, an unreachable API. The answer that is never given is a refresh.
+    private func liveSnapshot() async -> ProviderSnapshot? {
+        guard let stashed = await stashedToken() else { return nil }
+
+        let response: HTTPResponse
+        do {
+            response = try await liveUsageClient.fetchUsage(
+                accessToken: stashed.accessToken, config: ClaudeSwapOAuth.readOnlyConfig
+            )
+        } catch {
+            logLive("couldn't reach Anthropic for live usage; showing claude-swap's cached usage", level: .warn)
+            return nil
+        }
+
+        do {
+            let mapped = try ClaudeUsageMapper.mapUsageResponse(
+                response, credentials: ClaudeOAuth(), now: now()
+            )
+            guard !mapped.lines.isEmpty else {
+                logLive("Anthropic reported no usage windows; showing claude-swap's cached usage", level: .warn)
+                return nil
+            }
+            logLive(nil, level: .info)
+            return ProviderSnapshot.make(
+                provider: provider, plan: mapped.plan, lines: mapped.lines, refreshedAt: now(),
+                warning: mapped.warning
+            )
+        } catch ClaudeAuthError.tokenExpired {
+            // A rejected token is the one case where the obvious remedy is forbidden: refreshing it
+            // would rotate claude-swap's refresh token and strand its own sign-ins. So the card falls
+            // back to claude-swap's cached percentages and says loudly why, which is what makes a
+            // genuinely dead login visible instead of silently stale.
+            logLive(
+                "claude-swap's stashed token was rejected. OpenUsage never refreshes it — run `cswap` "
+                + "to re-authenticate this account. Showing claude-swap's cached usage.",
+                level: .warn
+            )
+            return nil
+        } catch {
+            logLive("live usage failed (\(error.localizedDescription)); showing claude-swap's cached usage", level: .warn)
+            return nil
+        }
+    }
+
+    /// claude-swap's stashed access token for this slot, when there is a fresh one to spend. Every
+    /// other outcome logs its reason and reads as "no live tier".
+    private func stashedToken() async -> ClaudeSwapStashedToken? {
+        guard let email = card.email?.nilIfEmpty else {
+            logLive("the slot's snapshot names no email, so its stashed login can't be located", level: .info)
+            return nil
+        }
+        let slot = card.slot
+        let stashed: ClaudeSwapStashedToken?
+        do {
+            stashed = try await loadOffMainActor { [credentialReader] in
+                try credentialReader.stashedToken(slot: slot, email: email)
+            }
+        } catch {
+            logLive(
+                "couldn't read claude-swap's stashed login (\(error.localizedDescription)); "
+                + "showing its cached usage",
+                level: .warn
+            )
+            return nil
+        }
+        guard let stashed else {
+            logLive("claude-swap has no stashed login for this slot; showing its cached usage", level: .info)
+            return nil
+        }
+        guard stashed.isFresh(now: now()) else {
+            // Not an error: claude-swap renews its own tokens, so an expired one usually just means we
+            // looked between two of its refreshes. Waiting costs a few stale minutes; refreshing it
+            // ourselves would cost claude-swap its refresh token.
+            logLive(
+                "claude-swap's stashed token has expired; showing its cached usage until claude-swap renews it",
+                level: .info
+            )
+            return nil
+        }
+        return stashed
+    }
+
+    // MARK: - Cache tier
+
+    /// The fallback: the row claude-swap last wrote for this slot in its own usage cache. Session,
+    /// Weekly, and Fable percentages only — claude-swap doesn't record Extra Usage — and subject to
+    /// its own freshness and poll-failure rules.
+    private func cachedSnapshot() async -> ProviderSnapshot {
         let slot = card.slot
         let entry: ClaudeSwapUsageEntry?
         do {
@@ -69,30 +189,42 @@ final class ClaudeSwapProvider: ProviderRuntime {
             now: now()
         ) {
         case .usage(let lines, let warning):
-            logStateChange(warning.map { "serving claude-swap's last-good usage — \($0)" }, level: .warn)
+            logCache(warning.map { "serving claude-swap's last-good usage — \($0)" }, level: .warn)
             return ProviderSnapshot.make(
                 provider: provider, plan: nil, lines: lines, refreshedAt: now(), warning: warning
             )
         case .noData(let reason):
-            logStateChange("no usage to show — \(reason)", level: .info)
+            logCache("no usage to show — \(reason)", level: .info)
             var lines: [MetricLine] = []
             MetricLine.appendNoDataIfNeeded(&lines)
             return ProviderSnapshot.make(provider: provider, plan: nil, lines: lines, refreshedAt: now())
         case .failure(let error):
             // The error snapshot is the loud signal here; tracking it still keeps a later transition
             // back into no-data from being swallowed as "unchanged".
-            lastLoggedState = "failure: \(error.localizedDescription)"
+            lastLoggedCacheState = "failure: \(error.localizedDescription)"
             return ProviderSnapshot.error(provider: provider, error: error)
         }
     }
 
+    // MARK: - Logging
+
     private enum LogLevel { case warn, info }
 
-    /// Record `message` only when it differs from what this card last said about itself. `nil` is the
+    /// Record `message` only when it differs from what this tier last said about itself. `nil` is the
     /// healthy state — nothing to log, but still a change worth remembering.
-    private func logStateChange(_ message: String?, level: LogLevel) {
-        guard lastLoggedState != message else { return }
-        lastLoggedState = message
+    private func logLive(_ message: String?, level: LogLevel) {
+        guard lastLoggedLiveState != message else { return }
+        lastLoggedLiveState = message
+        emit(message, level: level)
+    }
+
+    private func logCache(_ message: String?, level: LogLevel) {
+        guard lastLoggedCacheState != message else { return }
+        lastLoggedCacheState = message
+        emit(message, level: level)
+    }
+
+    private func emit(_ message: String?, level: LogLevel) {
         guard let message else { return }
         switch level {
         case .warn: AppLog.warn(LogTag.plugin("claude"), "\(provider.id): \(message)")

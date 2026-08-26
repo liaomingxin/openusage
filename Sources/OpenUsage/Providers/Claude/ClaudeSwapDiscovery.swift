@@ -4,9 +4,9 @@ import Foundation
 /// `cswap` keeps exactly one account live in `~/.claude` and backs the rest up as full `~/.claude.json`
 /// snapshots under `~/.claude-swap-backup/configs/.claude-config-<slot>-<email>.json`. Each snapshot
 /// carries the same `oauthAccount` object the default-home observer reads, so an inactive account can
-/// name itself without touching claude-swap's OAuth tokens (those live in the `claude-swap` Keychain
-/// service, which OpenUsage never reads — a rotation race there would strand claude-swap's own
-/// refresh tokens).
+/// name itself from a plain file — no Keychain, and so no access prompt on the launch path. Reading a
+/// slot's *usage* is a separate step (`ClaudeSwapCredentialReader`), and read-only: claude-swap's own
+/// token rotation must never be raced.
 ///
 /// A snapshot that can't name its Claude account never becomes a card — the same strict identity rule
 /// the default-home observer applies.

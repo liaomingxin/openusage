@@ -87,8 +87,8 @@ struct ClaudeSwapUsageEntry: Equatable, Sendable {
     var lastError: String?
 }
 
-/// Reads claude-swap's usage table. Purely local: no network, no credentials, no Keychain — the OAuth
-/// tokens claude-swap manages are never touched.
+/// Reads claude-swap's usage table — the fallback tier behind `ClaudeSwapProvider`'s live fetch, used
+/// whenever the stashed token can't be spent. Purely local: no network, no credentials, no Keychain.
 struct ClaudeSwapUsageClient: Sendable {
     static let cachePath = ClaudeSwapDiscovery.stashDirectory + "/cache/usage.json"
     /// claude-swap's `SCHEMA_VERSION`. It stamps every table it writes, so a different number means
