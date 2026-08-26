@@ -4,7 +4,10 @@ import Foundation
 struct CodexExtraCard: Equatable, Sendable {
     var id: String
     var identityKey: String
-    var displayName: String
+    /// The account this card tracks: the dump's ChatGPT email, or the card id's hash suffix when the
+    /// dump names no email. The dashboard shows it on hover of the card title; everywhere else it is
+    /// folded into `Provider.displayName` ("Codex — extra@example.com").
+    var accountLabel: String
     var credentialPath: String
 }
 
@@ -12,7 +15,9 @@ struct ClaudeAccountCard: Equatable, Sendable {
     let id: String
     let identityKey: String
     let organizationID: String
-    let displayName: String
+    /// The organization this card tracks ("SUNSTORY", "Personal"). Only a dashboard with more than one
+    /// Claude card uses it — see `ProviderCatalog`.
+    let accountLabel: String
     let usesDesktopCredentials: Bool
     let allowsUnattributedPiUsage: Bool
 }
@@ -201,7 +206,7 @@ struct ProviderAccountAssembly {
             extraCards.append(CodexExtraCard(
                 id: record.id,
                 identityKey: record.identityKey,
-                displayName: codexDisplayName(label: record.label, id: record.id),
+                accountLabel: codexAccountLabel(label: record.label, id: record.id),
                 credentialPath: path
             ))
         }
@@ -222,7 +227,7 @@ struct ProviderAccountAssembly {
             } ?? "Organization"
             cards.append(ClaudeAccountCard(
                 id: record.id, identityKey: defaultIdentity, organizationID: String(organization),
-                displayName: "Claude — \(label)", usesDesktopCredentials: false,
+                accountLabel: label, usesDesktopCredentials: false,
                 allowsUnattributedPiUsage: allowsUnattributedPiUsage
             ))
             identityKeys.removeValue(forKey: "claude")
@@ -236,7 +241,7 @@ struct ProviderAccountAssembly {
             guard !cards.contains(where: { $0.id == cardID }) else { continue }
             cards.append(ClaudeAccountCard(
                 id: cardID, identityKey: organization.identityKey, organizationID: organization.id,
-                displayName: "Claude — \(organizationLabel(record.label) ?? organization.label)",
+                accountLabel: organizationLabel(record.label) ?? organization.label,
                 usesDesktopCredentials: true, allowsUnattributedPiUsage: allowsUnattributedPiUsage
             ))
             identityKeys[cardID] = organization.identityKey
@@ -285,10 +290,11 @@ struct ProviderAccountAssembly {
         return result
     }
 
-    static func codexDisplayName(label: String?, id: String) -> String {
-        if let label, !label.isEmpty { return "Codex — \(label)" }
-        let suffix = id.split(separator: "@").last.map(String.init) ?? id
-        return "Codex — \(suffix)"
+    /// An extra Codex card's account label: the dump's email, or the card id's hash suffix when the
+    /// dump names no account.
+    static func codexAccountLabel(label: String?, id: String) -> String {
+        if let label, !label.isEmpty { return label }
+        return id.split(separator: "@").last.map(String.init) ?? id
     }
 
     private struct DesktopOrganization {

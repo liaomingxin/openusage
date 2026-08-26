@@ -146,7 +146,7 @@ final class CodexExtraAccountAssemblyTests: XCTestCase {
         XCTAssertEqual(store.defaultBadgeHolder(family: "codex")?.id, "codex")
         let extraID = ProviderAccountID.make(family: "codex", identityKey: "acct-extra-1")
         XCTAssertEqual(assembly.extraCodexCards.map(\.id), [extraID])
-        XCTAssertEqual(assembly.extraCodexCards.first?.displayName, "Codex — extra@example.com")
+        XCTAssertEqual(assembly.extraCodexCards.first?.accountLabel, "extra@example.com")
         XCTAssertEqual(assembly.identityKeysByCard[extraID], "acct-extra-1")
         XCTAssertEqual(assembly.identityKeysByCard["codex"], "acct-default")
     }
@@ -198,11 +198,13 @@ final class CodexExtraCardCatalogTests: XCTestCase {
     func testExtraCardUsesPrefixedMetricIDsAndSkipsLocalLogs() {
         let extra = CodexProvider(
             id: "codex@deadbeef",
-            displayName: "Codex — extra@example.com",
+            accountLabel: "extra@example.com",
             scansLocalLogs: false
         )
 
         XCTAssertEqual(extra.provider.id, "codex@deadbeef")
+        XCTAssertEqual(extra.provider.familyName, "Codex")
+        XCTAssertEqual(extra.provider.displayName, "Codex — extra@example.com")
         XCTAssertTrue(extra.widgetDescriptors.contains { $0.id == "codex@deadbeef.weekly" })
         XCTAssertFalse(extra.widgetDescriptors.contains { $0.id == "codex.weekly" })
         XCTAssertFalse(extra.scansLocalLogs)
@@ -214,7 +216,7 @@ final class CodexExtraCardCatalogTests: XCTestCase {
             CodexExtraCard(
                 id: extraID,
                 identityKey: "acct-extra-1",
-                displayName: "Codex — extra@example.com",
+                accountLabel: "extra@example.com",
                 credentialPath: "/tmp/extra.json"
             )
         ])
@@ -243,7 +245,7 @@ final class CodexExtraLayoutTests: XCTestCase {
         let extraID = "codex@abcd1234"
         let registry = WidgetRegistry.from([
             CodexProvider(),
-            CodexProvider(id: extraID, displayName: "Codex — extra", scansLocalLogs: false)
+            CodexProvider(id: extraID, accountLabel: "extra", scansLocalLogs: false)
         ])
         let store = LayoutStore(registry: registry, defaults: makeLayoutDefaults("ExtraPins"), storageKey: "layout")
 
@@ -324,7 +326,7 @@ final class CodexExtraLayoutTests: XCTestCase {
     private func makeLinkedStore(_ name: String, extraID: String, placed: [String]) -> LayoutStore {
         let registry = WidgetRegistry.from([
             CodexProvider(),
-            CodexProvider(id: extraID, displayName: "Codex — extra", scansLocalLogs: false)
+            CodexProvider(id: extraID, accountLabel: "extra", scansLocalLogs: false)
         ])
         let defaults = makeLayoutDefaults(name)
         let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
@@ -346,7 +348,7 @@ final class CodexExtraLayoutTests: XCTestCase {
     func testOrderedProviderIDsInsertExtraCardAfterFamily() {
         let claude = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
         let codex = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
-        let extra = Provider(id: "codex@abcd", displayName: "Codex — extra", icon: .providerMark("codex"))
+        let extra = Provider(id: "codex@abcd", familyName: "Codex", accountLabel: "extra", icon: .providerMark("codex"))
         let cursor = Provider(id: "cursor", displayName: "Cursor", icon: .providerMark("cursor"))
         let registry = WidgetRegistry(providers: [claude, codex, extra, cursor], descriptors: [])
 

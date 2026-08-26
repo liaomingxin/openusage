@@ -1260,9 +1260,9 @@ final class LayoutStoreTests: XCTestCase {
         let extraCodexID = "codex@ef567890"
         let registry = WidgetRegistry.from([
             ClaudeProvider(),
-            ClaudeProvider(provider: ClaudeProvider.makeProvider(id: extraClaudeID, displayName: "Claude — Work")),
+            ClaudeProvider(provider: ClaudeProvider.makeProvider(id: extraClaudeID, accountLabel: "Work")),
             CodexProvider(),
-            CodexProvider(id: extraCodexID, displayName: "Codex — extra", scansLocalLogs: false)
+            CodexProvider(id: extraCodexID, accountLabel: "extra", scansLocalLogs: false)
         ])
         // Exactly what AppContainer hands the store: every `claude.*` default followed by its copy
         // on each extra Claude card. Codex extra cards are NOT pre-expanded (fork design).

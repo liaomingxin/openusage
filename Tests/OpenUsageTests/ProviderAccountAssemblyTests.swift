@@ -95,11 +95,11 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         let extraID = ProviderAccountID.make(family: "codex", identityKey: "acct-extra-1")
 
         XCTAssertEqual(assembly.claudeCards.map(\.id), ["claude"])
-        XCTAssertEqual(assembly.claudeCards.map(\.displayName), ["Claude — SUNSTORY"])
+        XCTAssertEqual(assembly.claudeCards.map(\.accountLabel), ["SUNSTORY"])
         XCTAssertEqual(assembly.claudeCards.first?.organizationID, "org-9")
         XCTAssertEqual(assembly.claudeCards.first?.usesDesktopCredentials, false)
         XCTAssertEqual(assembly.extraCodexCards.map(\.id), [extraID])
-        XCTAssertEqual(assembly.extraCodexCards.first?.displayName, "Codex — extra@example.com")
+        XCTAssertEqual(assembly.extraCodexCards.first?.accountLabel, "extra@example.com")
         XCTAssertEqual(assembly.identityKeysByCard, [
             "claude": "acct-1|org-9", "codex": "acct-default", extraID: "acct-extra-1"
         ])
@@ -112,7 +112,13 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             claudeIdentityKeys: assembly.identityKeysByCard
         ).map(\.provider)
         XCTAssertEqual(ids.prefix(4).map(\.id), ["claude", "codex", extraID, "cursor"])
+        // The lone Claude card carries no account label; the extra Codex card keeps the family name
+        // as its title and the email as its label, folded into the full display name.
         XCTAssertEqual(ids.first?.displayName, "Claude")
+        XCTAssertNil(ids.first?.accountLabel)
+        XCTAssertEqual(ids[2].familyName, "Codex")
+        XCTAssertEqual(ids[2].accountLabel, "extra@example.com")
+        XCTAssertEqual(ids[2].displayName, "Codex — extra@example.com")
     }
 
     func testNothingObservedLeavesRegistryAndKeysEmpty() {

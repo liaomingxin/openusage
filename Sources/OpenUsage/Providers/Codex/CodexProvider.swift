@@ -13,9 +13,10 @@ final class CodexProvider: ProviderRuntime {
     /// don't inherit the default home's sessions.
     let scansLocalLogs: Bool
 
+    /// `accountLabel` is the extra card's ChatGPT email (or id suffix); `nil` for the default-home card.
     init(
         id: String = "codex",
-        displayName: String = "Codex",
+        accountLabel: String? = nil,
         authStore: CodexAuthStore = CodexAuthStore(),
         usageClient: CodexUsageClient = CodexUsageClient(),
         logUsageScanner: CodexLogUsageScanner = CodexLogUsageScanner(),
@@ -25,7 +26,8 @@ final class CodexProvider: ProviderRuntime {
     ) {
         self.provider = Provider(
             id: id,
-            displayName: displayName,
+            familyName: "Codex",
+            accountLabel: accountLabel,
             icon: .providerMark("codex"),
             links: [
                 .init(label: "Status", url: "https://status.openai.com/"),

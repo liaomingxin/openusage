@@ -3,10 +3,13 @@ import Foundation
 
 @MainActor
 final class ClaudeProvider: ProviderRuntime {
-    static func makeProvider(id: String = "claude", displayName: String = "Claude") -> Provider {
+    /// `accountLabel` names the card's organization when the dashboard has more than one Claude card;
+    /// `ProviderCatalog` passes `nil` for a lone card so it stays a plain "Claude".
+    static func makeProvider(id: String = "claude", accountLabel: String? = nil) -> Provider {
         Provider(
             id: id,
-            displayName: displayName,
+            familyName: "Claude",
+            accountLabel: accountLabel,
             icon: .providerMark("claude"),
             links: [
                 .init(label: "Status", url: "https://status.anthropic.com/"),
