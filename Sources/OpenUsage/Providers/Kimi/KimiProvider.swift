@@ -26,8 +26,12 @@ final class KimiProvider: ProviderRuntime {
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
+            // Kimi's mapper divides raw used/limit counts into a full-precision percent (no
+            // whole-percent rounding), so any touched window reads above 0 — `used == 0` really does
+            // mean the rolling 5-hour window is untouched. The signal is additionally gated on a
+            // future `resetsAt`, so a payload without a reset time renders exactly as it does today.
             .percent(id: "kimi.session", provider: provider, title: "Session",
-                     metricLabel: "Session")
+                     metricLabel: "Session", sessionStartSignal: .zeroUsage)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "kimi.weekly", provider: provider, title: "Weekly",
                      metricLabel: "Weekly")

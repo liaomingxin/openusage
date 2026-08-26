@@ -14,6 +14,10 @@ quotas the `kimi` CLI reports with its `/usage` command.
 When Kimi reports your membership level, OpenUsage shows it beside the provider name (e.g.
 "Advanced").
 
+While the rolling 5-hour session window has no usage yet, the Session row reads **Not started** on
+the trailing label instead of a reset countdown; hover explains that the session begins after your
+first message. The Weekly meter always shows a normal reset countdown.
+
 ## Where credentials come from
 
 Kimi Code's usage API is OAuth-only — there is no API-key path — so OpenUsage reuses the login the

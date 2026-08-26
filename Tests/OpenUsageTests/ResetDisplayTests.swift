@@ -78,7 +78,7 @@ final class ResetDisplayTests: XCTestCase {
         let providers: [ProviderRuntime] = [
             ClaudeProvider(), CodexProvider(), CursorProvider(),
             AntigravityProvider(), CopilotProvider(), DevinProvider(),
-            GrokProvider(), OpenRouterProvider(), ZAIProvider(), OpenCodeProvider()
+            GrokProvider(), KimiProvider(), OpenRouterProvider(), ZAIProvider(), OpenCodeProvider()
         ]
         let descriptors = providers.flatMap(\.widgetDescriptors)
         let signals = Dictionary(uniqueKeysWithValues: descriptors
@@ -86,6 +86,7 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertEqual(signals, ["claude.session": .missingResetDate,
                                  "antigravity.geminiPro": .zeroUsage,
                                  "antigravity.claude": .zeroUsage,
+                                 "kimi.session": .zeroUsage,
                                  "opencode.session": .zeroUsage])
 
         // Same wiring pin for the menu-bar tray suffix (it replaced a title-string match).
