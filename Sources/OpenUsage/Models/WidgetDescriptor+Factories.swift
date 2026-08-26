@@ -149,13 +149,24 @@ extension WidgetDescriptor {
                                 kind: .count, used: 0, limit: nil))
     }
 
-    /// The Usage Trend row: a day-by-day token sparkline backed by a provider `.chart` line. Not
-    /// pinnable — the tray can't draw a chart — but otherwise a normal Customize metric (toggle,
-    /// reorder, hide). `isChart` tells the dashboard how to render live chart points.
+    /// The Usage Trend row: a day-by-day token sparkline backed by a provider `.chart` line.
     static func usageTrend(provider: Provider) -> WidgetDescriptor {
-        var sample = WidgetData(title: "Usage Trend", icon: provider.icon, kind: .count, used: 0, limit: nil)
+        chart(id: "\(provider.id).trend", provider: provider, title: "Usage Trend")
+    }
+
+    /// A day-by-day token sparkline backed by a provider `.chart` line. Not pinnable — the tray can't
+    /// draw a chart — but otherwise a normal Customize metric (toggle, reorder, hide). `isChart` tells
+    /// the dashboard how to render live chart points. A provider may declare more than one (Codex has
+    /// its machine-local Usage Trend beside an account-wide one), so the id and title are the caller's.
+    static func chart(
+        id: String,
+        provider: Provider,
+        title: String,
+        metricLabel: String? = nil
+    ) -> WidgetDescriptor {
+        var sample = WidgetData(title: title, icon: provider.icon, kind: .count, used: 0, limit: nil)
         sample.isChart = true
-        return make(id: "\(provider.id).trend", provider: provider, metricLabel: "Usage Trend",
+        return make(id: id, provider: provider, metricLabel: metricLabel ?? title,
                     sample: sample, pinnable: false)
     }
 

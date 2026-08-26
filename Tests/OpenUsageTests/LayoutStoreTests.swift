@@ -665,6 +665,7 @@ final class LayoutStoreTests: XCTestCase {
             "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly",
             "codex.gptReserve", "codex.gptReserveWeekly", "codex.trend",
             "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+            "codex.accountTrend", "codex.lifetimeTokens", "codex.dayStreak", "codex.threads",
             "codex.renews",
             "devin.daily", "devin.weekly", "devin.extra",
             "grok.weekly", "grok.trend",
@@ -705,6 +706,8 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(expandedByProvider["codex"], [
             "codex.spark", "codex.sparkWeekly", "codex.gptReserve", "codex.gptReserveWeekly",
             "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+            // OpenAI's account-wide rows sit beside the local spend history they never merge with.
+            "codex.accountTrend", "codex.lifetimeTokens", "codex.dayStreak", "codex.threads",
             // The subscription row is account metadata, so it closes the On Demand section.
             "codex.renews"
         ])

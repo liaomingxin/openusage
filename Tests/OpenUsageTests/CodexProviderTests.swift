@@ -651,6 +651,100 @@ final class CodexProviderTests: XCTestCase {
         })
     }
 
+    /// The account-wide rollup is a supplementary +1 request. A failure there must degrade to exactly
+    /// what the app showed before it existed — never blank the live meters or fail the refresh.
+    func testAccountStatsFailureLeavesEveryExistingCodexRowIntact() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.profileURL {
+                return HTTPResponse(statusCode: 503, headers: [:], body: Data("upstream down".utf8))
+            }
+            if request.url == CodexUsageClient.usageURL {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data("""
+                {"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":5,"reset_after_seconds":60}}}
+                """.utf8))
+            }
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8))
+        }
+
+        let snapshot = await makeProvider(http: http, now: now).refresh()
+
+        XCTAssertFalse(snapshot.lines.contains(where: \.isError))
+        XCTAssertEqual(progress(snapshot.lines, "Session")?.used, 5)
+        XCTAssertEqual(snapshot.plan, "Pro 20x")
+        // The account rows simply don't render; nothing else changes.
+        for label in ["Account Trend", "Lifetime Tokens", "Day Streak", "Threads"] {
+            XCTAssertFalse(snapshot.lines.contains { $0.label == label }, label)
+        }
+    }
+
+    func testAccountStatsAddRowsWithoutTouchingTheMachineLocalHistory() async throws {
+        let now = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 27, hour: 10)))
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.profileURL {
+                return CodexAccountStatsFixtures.response()
+            }
+            if request.url == CodexUsageClient.usageURL {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data("""
+                {"rate_limit":{"primary_window":{"used_percent":5,"reset_after_seconds":60}}}
+                """.utf8))
+            }
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8))
+        }
+
+        let snapshot = await makeProvider(http: http, now: now).refresh()
+
+        XCTAssertEqual(values(snapshot.lines, "Lifetime Tokens")?.first?.number, 1_588_515_077)
+        XCTAssertTrue(snapshot.lines.contains { $0.label == "Account Trend" })
+        // The account-wide rollup is never promoted into the snapshot's normalized history: that field
+        // carries only this Mac's scanned logs, and it is what feeds the spend tiles and the iCloud
+        // sync file. This card scans no local logs, so it stays nil rather than picking up account data.
+        XCTAssertNil(snapshot.usageHistory)
+        XCTAssertFalse(snapshot.lines.contains { $0.label == "Usage Trend" })
+        for label in ["Today", "Yesterday", "Last 30 Days"] {
+            XCTAssertFalse(snapshot.lines.contains { $0.label == label }, label)
+        }
+    }
+
+    /// Codex now declares two history resources. Everything downstream (last-good history, the iCloud
+    /// document, the cross-Mac merge) works on the machine-local scan, so that is what must resolve.
+    func testCodexResolvesToItsMachineLocalHistoryDescriptor() {
+        let registry = WidgetRegistry.from([CodexProvider()])
+
+        XCTAssertEqual(registry.historyDescriptorsByProvider["codex"]?.scope, .machineLocal)
+        XCTAssertEqual(registry.descriptors(for: "codex").compactMap(\.historyResource).count, 2)
+        XCTAssertEqual(
+            registry.descriptor(id: "codex.accountTrend")?.historyResource?.scope, .accountWide
+        )
+        // Tokens only: an account-wide source that never carries dollars can't claim an estimate.
+        XCTAssertEqual(
+            registry.descriptor(id: "codex.accountTrend")?.historyResource?.estimatedCost, false
+        )
+    }
+
+    private func makeProvider(http: RoutingHTTPClient, now: Date) -> CodexProvider {
+        CodexProvider(
+            // A unique id keeps `PiUsageScanner.shared` from folding the developer machine's real
+            // Codex entries into this fixture card.
+            id: "codex-account-fixture",
+            authStore: CodexAuthStore(
+                environment: FakeEnvironment(["CODEX_HOME": "/tmp/codex-home"]),
+                files: FakeFiles(["/tmp/codex-home/auth.json": #"{"tokens":{"access_token":"token"}}"#]),
+                keychain: FakeKeychain()
+            ),
+            usageClient: CodexUsageClient(http: http),
+            now: { now },
+            scansLocalLogs: false
+        )
+    }
+
+    private func progress(_ lines: [MetricLine], _ label: String) -> (used: Double, limit: Double)? {
+        guard case .progress(_, let used, let limit, _, _, _, _, _) = lines.first(where: { $0.label == label }) else {
+            return nil
+        }
+        return (used, limit)
+    }
+
     private func values(_ lines: [MetricLine], _ label: String) -> [MetricValue]? {
         guard case .values(_, let values, _, _, _, _) = lines.first(where: { $0.label == label }) else {
             return nil
