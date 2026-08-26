@@ -8,11 +8,13 @@ enum ProviderCatalog {
         defaults: UserDefaults = .standard,
         extraCodexCards: [CodexExtraCard] = [],
         claudeCards: [ClaudeAccountCard] = [],
+        claudeSwapCards: [ClaudeSwapCard] = [],
         claudeIdentityKeys: [String: String] = [:]
     ) -> [ProviderRuntime] {
         // Default provider order (see AGENTS.md "## Providers"): the three established providers first,
-        // then every other provider alphabetically by display name. Extra Codex cards sit immediately
-        // after the default Codex card so a family stays grouped.
+        // then every other provider alphabetically by display name. Extra account cards sit immediately
+        // after their family's default card (claude-swap cards after Claude, credential dumps after
+        // Codex) so a family stays grouped.
         var providers: [ProviderRuntime]
         if claudeCards.isEmpty {
             providers = [ClaudeProvider()]
@@ -40,6 +42,7 @@ enum ProviderCatalog {
                 )
             }
         }
+        providers += claudeSwapCards.map { ClaudeSwapProvider(card: $0) }
         providers.append(CodexProvider())
         providers += extraCodexCards.map { card in
             CodexProvider(

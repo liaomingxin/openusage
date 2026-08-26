@@ -73,6 +73,17 @@ extension ClaudeUsageError: CategorizedError {
     }
 }
 
+extension ClaudeSwapUsageError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .cacheUnreadable: .credentialAccess
+        case .invalidCache: .decoding
+        // claude-swap's own error token carries the shape of its failed poll.
+        case .pollFailed(let token): ClaudeSwapUsageError.category(forPollFailure: token)
+        }
+    }
+}
+
 extension CodexAuthError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {

@@ -87,9 +87,9 @@ git push origin main
 | 文件 | 冲突场景 | 解法 |
 |---|---|---|
 | `Sources/OpenUsage/Stores/DefaultLayout.swift` | 上游增删 metric 或其他分支（如 grok 钉菜单栏）同改 | 合并两边的数组项，保持 kimi 的三行（metricIDs/pinned/expanded） |
-| `Sources/OpenUsage/Providers/ProviderCatalog.swift` | 上游新增 provider；或上游改 `make()` 的签名（2026-08 加了 `claudeCards:`/`claudeIdentityKeys:`） | 合并两边参数与数组，顺序固定为 **Claude 卡 → `CodexProvider()` → fork 的额外 Codex 卡 → Cursor → 字母序尾巴（kimi 在 Grok 后）** |
-| `Sources/OpenUsage/Services/ProviderAccountAssembly.swift` | **最难的一个。** 上游加 Claude 多账号卡（`ClaudeAccountCard`、Desktop 组织发现），fork 加 Codex 额外卡（`CodexExtraCard`、`mergedObservations`），两边改同一批函数 | **两边都留**：一个 `make(observer:accountsStore:families:extraCodex:desktop:listDesktopOrganizationDirectories:)`，先塞额外 Codex observation，再跑 Claude Desktop 组织发现，然后**只 reconcile 一次**（走 `mergedObservations`，同一身份合成一条记录），最后两份卡各建一份。上游原来的两处 early return 要改成「发现流程的判断条件」，否则那些分支会漏掉 Codex 额外卡 |
-| `Sources/OpenUsage/App/AppContainer.swift`、`Sources/OpenUsage/Services/UsageReader.swift` | `ProviderCatalog.make(...)` 调用点，两边各加各的参数 | 三个参数一起传：`extraCodexCards:` + `claudeCards:` + `claudeIdentityKeys:`；`UsageReader` 里保留上游把 `ProviderEnablementStore(defaults:)` 放在 registry 之后的位置 |
+| `Sources/OpenUsage/Providers/ProviderCatalog.swift` | 上游新增 provider；或上游改 `make()` 的签名（2026-08 加了 `claudeCards:`/`claudeIdentityKeys:`，fork 又加了 `claudeSwapCards:`） | 合并两边参数与数组，顺序固定为 **Claude 卡 → fork 的 claude-swap 卡 → `CodexProvider()` → fork 的额外 Codex 卡 → Cursor → 字母序尾巴（kimi 在 Grok 后）** |
+| `Sources/OpenUsage/Services/ProviderAccountAssembly.swift` | **最难的一个。** 上游加 Claude 多账号卡（`ClaudeAccountCard`、Desktop 组织发现），fork 加 Codex 额外卡（`CodexExtraCard`、`mergedObservations`）和 claude-swap 卡（`ClaudeSwapCard`），两边改同一批函数 | **三边都留**：一个 `make(observer:accountsStore:families:extraCodex:claudeSwap:desktop:listDesktopOrganizationDirectories:)`，先塞额外 Codex observation，再塞 claude-swap 槽位 observation（family 是 `claude`），再跑 Claude Desktop 组织发现，然后**只 reconcile 一次**（走 `mergedObservations`，同一身份合成一条记录），最后三份卡各建一份。上游原来的两处 early return 要改成「发现流程的判断条件」，否则那些分支会漏掉额外卡 |
+| `Sources/OpenUsage/App/AppContainer.swift`、`Sources/OpenUsage/Services/UsageReader.swift` | `ProviderCatalog.make(...)` 调用点，两边各加各的参数 | 四个参数一起传：`extraCodexCards:` + `claudeCards:` + `claudeSwapCards:` + `claudeIdentityKeys:`；`UsageReader` 里保留上游把 `ProviderEnablementStore(defaults:)` 放在 registry 之后的位置 |
 | `Tests/OpenUsageTests/LocalLimitsAPITests.swift` | 上游新增 provider 的 key 清单 | expected 字典里补上两边的条目 |
 | `Sources/OpenUsage/Providers/ErrorCategory.swift` | 同上 | 保留两边的 CategorizedError 扩展 |
 | `Sources/OpenUsage/Providers/Kimi/`（整个目录） | **上游官方也实现了 kimi** | 二选一：保留自己的版本（删上游的），或采用上游的（删 `Providers/Kimi/`、DefaultLayout/Catalog/测试里的 kimi 条目） |
@@ -102,11 +102,24 @@ git push origin main
 - `DefaultLayout.swift`、`ProviderCatalog.swift`、`ErrorCategory.swift`、`LocalLimitsAPITests.swift`、`ProviderMarksTests.swift` 里的 kimi 条目
 - `docs/providers/kimi.md`、`docs/research/kimi-code-usage-api.md`
 - Codex 多账号：扫描 `~/.cli-proxy-api/codex-*.json`，额外 ChatGPT 登录各自一张卡（`codex@<hash>`），布局跟默认 Codex 卡绑定
+- **claude-swap 多账号（fork 独有，未来必冲突）**：扫描 `~/.claude-swap-backup/configs/.claude-config-<N>-<email>.json`
+  （cswap 的备份快照，隐藏文件），非当前登录的账号各自一张卡（`claude@<hash>`），数值只读
+  `~/.claude-swap-backup/cache/usage.json`（Session/Weekly/Fable，超过 2h 不新鲜就显示 No data）。
+  **绝不碰 cswap 的 OAuth token**（keychain service `claude-swap`）——刷新会和 cswap 自己的轮换打架，
+  把它的 refresh token 弄废。相关文件：`Providers/Claude/ClaudeSwap{Discovery,UsageClient,UsageMapper,Provider}.swift`、
+  `Tests/OpenUsageTests/ClaudeSwapTests.swift`、`docs/providers/claude.md` 的「claude-swap accounts」一节。
+  另外为了列出隐藏的 `.json` 快照，`TextFileAccessing.jsonFilePaths` 加了 `includingHidden:` 参数
+  （`SystemClients.swift` + `TestSupport.swift` 的 `FakeFiles`），合上游时注意保留
 - **`ProviderAccountAssembly.swift` / `ProviderCatalog.swift` 现在是「共管文件」**：同时装着上游的
   Claude 账号卡（`ClaudeAccountCard`、Desktop 组织发现、`allowsUnattributedPiUsage`）和 fork 的
-  Codex 额外卡（`CodexExtraCard`、`extraCodexCards`）。以后每次合上游都必须两边都活下来——
-  只留一边就等于悄悄删功能，回归测试见
-  `ProviderAccountAssemblyTests.testExtraCodexCardsAndClaudeOrganizationCardComeFromOneReconcilePass`
+  Codex 额外卡（`CodexExtraCard`、`extraCodexCards`）**以及 claude-swap 卡（`ClaudeSwapCard`、
+  `claudeSwapCards`）**。三份卡都在同一次 `mergedObservations` → 单次 reconcile 里产生；
+  claude-swap 的槽位以 `.credentialFile` observation 进入 **claude** family，和默认 home / Desktop
+  同身份时只挂 source、不出第二张卡。以后每次合上游都必须三边都活下来——只留一边就等于悄悄删功能，
+  回归测试见 `ProviderAccountAssemblyTests` 的
+  `testExtraCodexCardsAndClaudeOrganizationCardComeFromOneReconcilePass` 与
+  `testClaudeSwapAndCodexExtraCardsComeFromOneReconcilePass`。
+  卡片顺序固定为 **Claude 卡 → claude-swap 卡 → `CodexProvider()` → 额外 Codex 卡 → Cursor → 字母序尾巴**
 - 两种额外卡的**钉菜单栏规则已和上游统一**：每张账号卡都自带 Session/Weekly 两个钉（上限按卡计）。
   Claude 卡由 `AppContainer` 预展开 `pinnedMetricIDs`，Codex 额外卡由 `LayoutStore.init` 里的
   `DefaultLayout.includingInstances` 翻译，两条路径去重后落到同一份默认钉列表

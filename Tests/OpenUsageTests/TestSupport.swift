@@ -279,12 +279,12 @@ final class FakeFiles: TextFileAccessing, @unchecked Sendable {
         files.removeValue(forKey: path)
     }
 
-    func jsonFilePaths(in directory: String) -> [String] {
+    func jsonFilePaths(in directory: String, includingHidden: Bool) -> [String] {
         let prefix = directory.trimmingTrailingSlashes + "/"
         return files.keys.filter { path in
             guard path.hasPrefix(prefix), path.hasSuffix(".json") else { return false }
             let rest = path.dropFirst(prefix.count)
-            return !rest.contains("/")
+            return !rest.contains("/") && (includingHidden || !rest.hasPrefix("."))
         }.sorted()
     }
 }

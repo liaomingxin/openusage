@@ -8,6 +8,26 @@ struct CodexExtraCard: Equatable, Sendable {
     var credentialPath: String
 }
 
+/// One extra Claude card minted from a claude-swap slot: an account parked in claude-swap's stash
+/// rather than signed in at `~/.claude`.
+struct ClaudeSwapCard: Equatable, Sendable {
+    var id: String
+    var identityKey: String
+    var displayName: String
+    /// The slot's config snapshot — the source anchor, and the file whose presence is the card's
+    /// local-credential probe.
+    var configPath: String
+    /// claude-swap's slot number, which is also the key of its row in claude-swap's usage cache.
+    var slot: String
+
+    /// The organization half of the identity key, used to fence the cache row against a slot
+    /// renumbering. `nil` for a legacy identity that names no organization.
+    var organizationID: String? {
+        let parts = identityKey.split(separator: "|")
+        return parts.count == 2 ? String(parts[1]) : nil
+    }
+}
+
 struct ClaudeAccountCard: Equatable, Sendable {
     let id: String
     let identityKey: String
@@ -30,15 +50,19 @@ struct ProviderAccountAssembly {
     let extraCodexCards: [CodexExtraCard]
     /// Claude cards discovered this launch (default-home organization plus Desktop organizations).
     let claudeCards: [ClaudeAccountCard]
+    /// Extra Claude cards discovered this launch in claude-swap's stash (never the active account).
+    let claudeSwapCards: [ClaudeSwapCard]
 
     init(
         identityKeysByCard: [String: String],
         extraCodexCards: [CodexExtraCard] = [],
-        claudeCards: [ClaudeAccountCard] = []
+        claudeCards: [ClaudeAccountCard] = [],
+        claudeSwapCards: [ClaudeSwapCard] = []
     ) {
         self.identityKeysByCard = identityKeysByCard
         self.extraCodexCards = extraCodexCards
         self.claudeCards = claudeCards
+        self.claudeSwapCards = claudeSwapCards
     }
 
     /// `waitsForLoginShell`: true for the menu-bar app (a Finder/Dock launch inherits no shell
@@ -67,17 +91,20 @@ struct ProviderAccountAssembly {
         if families.count < ProviderAccountID.families.count {
             AppLog.info(.config, "account identity read skipped for \(ProviderAccountID.families.subtracting(families).sorted().joined(separator: ", ")): login shell cold and no shell-environment snapshot exists yet")
         }
-        // Extra Codex dumps live at ~/.cli-proxy-api, not under CODEX_HOME, so they are safe to
-        // read even when the default-home family is skipped for a cold login shell.
+        // Extra Codex dumps live at ~/.cli-proxy-api and claude-swap's stash at ~/.claude-swap-backup,
+        // neither of which moves with CODEX_HOME / CLAUDE_CONFIG_DIR — so both are safe to read even
+        // when the default-home family is skipped for a cold login shell.
         let extraCodex = CodexAccountDiscovery().extraCredentials()
-        guard !families.isEmpty || !extraCodex.isEmpty else {
+        let claudeSwap = ClaudeSwapDiscovery().extraCredentials()
+        guard !families.isEmpty || !extraCodex.isEmpty || !claudeSwap.isEmpty else {
             return ProviderAccountAssembly(identityKeysByCard: [:])
         }
         return make(
             observer: DefaultAccountObserver(),
             accountsStore: ProviderAccountsStore(defaults: defaults),
             families: families,
-            extraCodex: extraCodex
+            extraCodex: extraCodex,
+            claudeSwap: claudeSwap
         )
     }
 
@@ -93,12 +120,14 @@ struct ProviderAccountAssembly {
     /// store. `families` limits the pass to the families whose home facts are readable this launch
     /// (see `make(defaults:waitsForLoginShell:)`); a family left out is simply not observed —
     /// no identity key, no reconciliation, exactly as if the pass never ran for it. Extra Codex
-    /// credential dumps are independent of that skip and always mint their cards.
+    /// credential dumps and claude-swap's stashed slots are independent of that skip and always mint
+    /// their cards.
     static func make(
         observer: DefaultAccountObserver,
         accountsStore: ProviderAccountsStore,
         families: Set<String> = ProviderAccountID.families,
         extraCodex: [CodexAccountDiscovery.ExtraCredential] = [],
+        claudeSwap: [ClaudeSwapDiscovery.ExtraCredential] = [],
         desktop: ClaudeDesktopAuthStore? = nil,
         listDesktopOrganizationDirectories: @escaping @Sendable (URL) -> [String] = { root in
             let urls = (try? FileManager.default.contentsOfDirectory(
@@ -149,6 +178,16 @@ struct ProviderAccountAssembly {
                 sources: [ProviderAccountSource(kind: .credentialFile, anchor: extra.path, holdsDefaultSource: false)]
             ))
             AppLog.info(.config, "accounts: extra Codex credential \(extra.path) identity \(extra.identityKey)")
+        }
+
+        for slot in claudeSwap {
+            observations.append(ProviderAccountsStore.Observation(
+                family: "claude",
+                identityKey: slot.identityKey,
+                label: slot.label,
+                sources: [ProviderAccountSource(kind: .credentialFile, anchor: slot.path, holdsDefaultSource: false)]
+            ))
+            AppLog.info(.config, "accounts: claude-swap slot \(slot.slot) (\(slot.path)) identity \(slot.identityKey)")
         }
 
         // Claude Desktop organizations join the same pass: only when the Claude family took part in
@@ -242,9 +281,41 @@ struct ProviderAccountAssembly {
             identityKeys[cardID] = organization.identityKey
         }
 
+        // claude-swap slots that are not already a card: a slot holding the same account as the
+        // default home (or a Desktop organization) attached as an extra source on that record above
+        // and must not mint a second card.
+        var swapCards: [ClaudeSwapCard] = []
+        for slot in claudeSwap {
+            guard slot.identityKey != defaultClaudeIdentity else { continue }
+            guard let record = records.first(where: {
+                $0.family == "claude" && $0.identityKey == slot.identityKey && !$0.removedTombstone
+            }) else { continue }
+            guard record.id != "claude", !record.sources.contains(where: \.holdsDefaultSource) else { continue }
+            guard !cards.contains(where: { $0.id == record.id }),
+                  !swapCards.contains(where: { $0.id == record.id })
+            else { continue }
+            swapCards.append(ClaudeSwapCard(
+                id: record.id,
+                identityKey: record.identityKey,
+                displayName: claudeSwapDisplayName(label: slot.label ?? record.label, id: record.id),
+                configPath: slot.path,
+                slot: slot.slot
+            ))
+            identityKeys[record.id] = record.identityKey
+        }
+
         return ProviderAccountAssembly(
-            identityKeysByCard: identityKeys, extraCodexCards: extraCards, claudeCards: cards
+            identityKeysByCard: identityKeys, extraCodexCards: extraCards, claudeCards: cards,
+            claudeSwapCards: swapCards
         )
+    }
+
+    /// "Claude — someone@example.com", falling back to the card's hash when claude-swap's snapshot
+    /// carried no email.
+    static func claudeSwapDisplayName(label: String?, id: String) -> String {
+        if let label, !label.isEmpty { return "Claude — \(label)" }
+        let suffix = id.split(separator: "@").last.map(String.init) ?? id
+        return "Claude — \(suffix)"
     }
 
     /// One observation per (family, identity). A default-home login and an extra credential dump of

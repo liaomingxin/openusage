@@ -115,6 +115,133 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertEqual(ids.first?.displayName, "Claude")
     }
 
+    /// A claude-swap slot holding the account that is currently signed in at `~/.claude` is the SAME
+    /// account seen twice: it attaches as another source on that record, never as a second card.
+    func testActiveClaudeSwapSlotAttachesAsASourceNotASecondCard() throws {
+        let store = ProviderAccountsStore(defaults: makeScratchDefaults())
+        let home = URL(fileURLWithPath: "/Users/dev")
+        let slotPath = "/Users/dev/.claude-swap-backup/configs/.claude-config-1-dev@example.com.json"
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles([
+                "/Users/dev/.claude.json": #"{"oauthAccount":{"accountUuid":"ACCT-1","organizationUuid":"ORG-9","emailAddress":"dev@example.com","organizationName":"SUNSTORY"}}"#,
+            ]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { home }
+        )
+
+        let assembly = ProviderAccountAssembly.make(
+            observer: observer,
+            accountsStore: store,
+            claudeSwap: [
+                ClaudeSwapDiscovery.ExtraCredential(
+                    path: slotPath, slot: "1", identityKey: "acct-1|org-9", label: "dev@example.com"
+                )
+            ],
+            desktop: ClaudeDesktopAuthStore(files: FakeFiles(), homeDirectory: { home })
+        )
+
+        XCTAssertTrue(assembly.claudeSwapCards.isEmpty, "the active account already has a card")
+        XCTAssertEqual(store.records.count { $0.family == "claude" }, 1)
+        let record = try XCTUnwrap(store.records.first { $0.family == "claude" })
+        XCTAssertEqual(record.id, "claude")
+        XCTAssertEqual(Set(record.sources.map(\.kind)), [.defaultHome, .credentialFile])
+        XCTAssertEqual(record.sources.first { $0.kind == .credentialFile }?.anchor, slotPath)
+    }
+
+    /// The fork's two extra-card models plus upstream's Claude organization card, all minted by one
+    /// pass: a stashed claude-swap account becomes its own `claude@<hash>` card, sitting between the
+    /// Claude family card and Codex, and every card's identity lands in `identityKeysByCard`.
+    func testClaudeSwapAndCodexExtraCardsComeFromOneReconcilePass() throws {
+        let store = ProviderAccountsStore(defaults: makeScratchDefaults())
+        let home = URL(fileURLWithPath: "/Users/dev")
+        let slotPath = "/Users/dev/.claude-swap-backup/configs/.claude-config-2-other@example.com.json"
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles([
+                "/Users/dev/.claude.json": #"{"oauthAccount":{"accountUuid":"ACCT-1","organizationUuid":"ORG-9","emailAddress":"dev@example.com","organizationName":"SUNSTORY"}}"#,
+                "/Users/dev/.codex/auth.json": #"{"tokens":{"access_token":"at-1","account_id":"acct-default"}}"#,
+            ]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { home }
+        )
+
+        let assembly = ProviderAccountAssembly.make(
+            observer: observer,
+            accountsStore: store,
+            extraCodex: [
+                CodexAccountDiscovery.ExtraCredential(
+                    path: "/Users/dev/.cli-proxy-api/codex-extra.json",
+                    identityKey: "acct-extra-1", label: "extra@example.com"
+                )
+            ],
+            claudeSwap: [
+                ClaudeSwapDiscovery.ExtraCredential(
+                    path: slotPath, slot: "2", identityKey: "acct-2|org-2", label: "other@example.com"
+                )
+            ],
+            desktop: ClaudeDesktopAuthStore(files: FakeFiles(), homeDirectory: { home })
+        )
+        let swapID = ProviderAccountID.make(family: "claude", identityKey: "acct-2|org-2")
+        let codexID = ProviderAccountID.make(family: "codex", identityKey: "acct-extra-1")
+
+        XCTAssertEqual(assembly.claudeSwapCards, [
+            ClaudeSwapCard(
+                id: swapID, identityKey: "acct-2|org-2",
+                displayName: "Claude — other@example.com", configPath: slotPath, slot: "2"
+            )
+        ])
+        XCTAssertEqual(assembly.claudeSwapCards.first?.organizationID, "org-2")
+        XCTAssertEqual(assembly.claudeCards.map(\.id), ["claude"])
+        XCTAssertEqual(assembly.extraCodexCards.map(\.id), [codexID])
+        XCTAssertEqual(assembly.identityKeysByCard, [
+            "claude": "acct-1|org-9", swapID: "acct-2|org-2",
+            "codex": "acct-default", codexID: "acct-extra-1",
+        ])
+        // One pass, one reconcile: four records, no duplicate card for any account.
+        XCTAssertEqual(Set(store.records.map(\.id)), ["claude", swapID, "codex", codexID])
+        // A second Claude account exists, so unattributed pi sessions can no longer be assumed to
+        // belong to the default card.
+        XCTAssertEqual(assembly.claudeCards.first?.allowsUnattributedPiUsage, false)
+
+        let ids = ProviderCatalog.make(
+            extraCodexCards: assembly.extraCodexCards,
+            claudeCards: assembly.claudeCards,
+            claudeSwapCards: assembly.claudeSwapCards,
+            claudeIdentityKeys: assembly.identityKeysByCard
+        ).map(\.provider.id)
+        XCTAssertEqual(Array(ids.prefix(5)), ["claude", swapID, "codex", codexID, "cursor"])
+    }
+
+    /// claude-swap's stash sits at a fixed path, so a launch that skips the Claude family for a cold
+    /// login shell still mints its cards — and a stashed account never steals the bare `claude` id
+    /// from the default-home card that may resolve on the next launch.
+    func testClaudeSwapCardsMintWhenTheClaudeFamilyIsSkipped() throws {
+        let store = ProviderAccountsStore(defaults: makeScratchDefaults())
+        let home = URL(fileURLWithPath: "/Users/dev")
+        let slotPath = "/Users/dev/.claude-swap-backup/configs/.claude-config-2-other@example.com.json"
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]), files: FakeFiles([:]),
+            keychain: FakeKeychain(nil), homeDirectory: { home }
+        )
+
+        let assembly = ProviderAccountAssembly.make(
+            observer: observer,
+            accountsStore: store,
+            families: [],
+            claudeSwap: [
+                ClaudeSwapDiscovery.ExtraCredential(
+                    path: slotPath, slot: "2", identityKey: "acct-2|org-2", label: "other@example.com"
+                )
+            ]
+        )
+        let swapID = ProviderAccountID.make(family: "claude", identityKey: "acct-2|org-2")
+
+        XCTAssertEqual(assembly.claudeSwapCards.map(\.id), [swapID])
+        XCTAssertEqual(store.records.map(\.id), [swapID])
+        XCTAssertNil(store.defaultBadgeHolder(family: "claude"), "a stashed account never takes the default badge")
+    }
+
     func testNothingObservedLeavesRegistryAndKeysEmpty() {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)

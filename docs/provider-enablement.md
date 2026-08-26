@@ -15,7 +15,7 @@ The same detection runs for providers that arrive later. On the first launch aft
 
 This check happens **once per provider**. After that, the provider is yours to manage: if you turn it off, no update will ever turn it back on, and installing the tool later won't flip it on behind your back either — head to Customize when you want it.
 
-A newly discovered extra Codex account (a second ChatGPT login) is treated the same way: it appears once, on the launch that first sees its credential file, and then stays under your toggle.
+A newly discovered extra Codex account (a second ChatGPT login) is treated the same way: it appears once, on the launch that first sees its credential file, and then stays under your toggle. So is a Claude account managed by [claude-swap](providers/claude.md#claude-swap-accounts), which appears on the launch that first sees its stashed config snapshot.
 
 ## Your choices always stick
 

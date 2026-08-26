@@ -60,6 +60,7 @@ public struct UsageReader {
             defaults: defaults,
             extraCodexCards: accountAssembly.extraCodexCards,
             claudeCards: accountAssembly.claudeCards,
+            claudeSwapCards: accountAssembly.claudeSwapCards,
             claudeIdentityKeys: accountAssembly.identityKeysByCard
         )
         let registry = WidgetRegistry.from(providers)

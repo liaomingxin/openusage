@@ -49,7 +49,9 @@ protocol TextFileAccessing: Sendable {
     func remove(_ path: String) throws
     /// Immediate `*.json` children of `directory` (not recursive). Empty when the directory is
     /// missing or unreadable. Used by extra-account discovery so tests can inject a file map.
-    func jsonFilePaths(in directory: String) -> [String]
+    /// `includingHidden` also returns dot-prefixed names: claude-swap stashes each managed account's
+    /// config snapshot as `.claude-config-<slot>-<email>.json`, which the visible-only listing skips.
+    func jsonFilePaths(in directory: String, includingHidden: Bool) -> [String]
 }
 
 extension TextFileAccessing {
@@ -60,7 +62,12 @@ extension TextFileAccessing {
         return try readText(path)
     }
 
-    func jsonFilePaths(in directory: String) -> [String] { [] }
+    func jsonFilePaths(in directory: String, includingHidden: Bool) -> [String] { [] }
+
+    /// The common case: visible `*.json` children only.
+    func jsonFilePaths(in directory: String) -> [String] {
+        jsonFilePaths(in: directory, includingHidden: false)
+    }
 }
 
 struct LocalTextFileAccessor: TextFileAccessing {
@@ -85,11 +92,11 @@ struct LocalTextFileAccessor: TextFileAccessing {
         }
     }
 
-    func jsonFilePaths(in directory: String) -> [String] {
+    func jsonFilePaths(in directory: String, includingHidden: Bool) -> [String] {
         let expanded = expandHome(directory).trimmingTrailingSlashes
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: expanded) else { return [] }
         return names
-            .filter { $0.hasSuffix(".json") && !$0.hasPrefix(".") }
+            .filter { $0.hasSuffix(".json") && (includingHidden || !$0.hasPrefix(".")) }
             .map { expanded + "/" + $0 }
             .sorted()
     }
