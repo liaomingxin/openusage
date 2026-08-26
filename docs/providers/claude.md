@@ -51,7 +51,8 @@ If one source holds an expired or "locked out" token, OpenUsage falls back to th
 ## claude-swap accounts
 
 If you manage several Claude logins with [claude-swap](https://github.com/realiti4/claude-swap) (`cswap`),
-each account it keeps in reserve gets its own card, named **Claude — your@email**. Only the account
+each account it keeps in reserve gets its own card — titled **Claude** with the email in the title's hover
+tooltip, and named `Claude — your@email` everywhere the name stands alone. Only the account
 currently signed in to `~/.claude` is the live Claude card, but the reserve cards show live numbers too:
 OpenUsage asks Anthropic for each stashed account's usage using the login claude-swap has already saved.
 

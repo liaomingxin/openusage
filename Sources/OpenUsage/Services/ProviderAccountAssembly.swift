@@ -16,7 +16,10 @@ struct CodexExtraCard: Equatable, Sendable {
 struct ClaudeSwapCard: Equatable, Sendable {
     var id: String
     var identityKey: String
-    var displayName: String
+    /// The slot's account label — its email, or the card id's hash suffix when the snapshot carried
+    /// no email. The card title stays "Claude"; the label rides in the title's hover tooltip and is
+    /// folded into `displayName` everywhere the name stands alone.
+    var accountLabel: String
     /// The slot's config snapshot — the source anchor, and the file whose presence is the card's
     /// local-credential probe.
     var configPath: String
@@ -317,7 +320,7 @@ struct ProviderAccountAssembly {
             swapCards.append(ClaudeSwapCard(
                 id: record.id,
                 identityKey: record.identityKey,
-                displayName: claudeSwapDisplayName(label: slot.label ?? record.label, id: record.id),
+                accountLabel: claudeSwapAccountLabel(label: slot.label ?? record.label, id: record.id),
                 configPath: slot.path,
                 slot: slot.slot,
                 email: slot.label
@@ -331,12 +334,11 @@ struct ProviderAccountAssembly {
         )
     }
 
-    /// "Claude — someone@example.com", falling back to the card's hash when claude-swap's snapshot
-    /// carried no email.
-    static func claudeSwapDisplayName(label: String?, id: String) -> String {
-        if let label, !label.isEmpty { return "Claude — \(label)" }
-        let suffix = id.split(separator: "@").last.map(String.init) ?? id
-        return "Claude — \(suffix)"
+    /// A claude-swap card's account label: the slot's email, or the card id's hash suffix when
+    /// claude-swap's snapshot carried no email. Same shape as `codexAccountLabel`.
+    static func claudeSwapAccountLabel(label: String?, id: String) -> String {
+        if let label, !label.isEmpty { return label }
+        return id.split(separator: "@").last.map(String.init) ?? id
     }
 
     /// One observation per (family, identity). A default-home login and an extra credential dump of

@@ -69,7 +69,7 @@ final class ClaudeSwapProvider: ProviderRuntime {
         files: TextFileAccessing = LocalTextFileAccessor(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
-        self.provider = ClaudeProvider.makeProvider(id: card.id, displayName: card.displayName)
+        self.provider = ClaudeProvider.makeProvider(id: card.id, accountLabel: card.accountLabel)
         self.card = card
         self.usageClient = usageClient
         self.credentialReader = credentialReader

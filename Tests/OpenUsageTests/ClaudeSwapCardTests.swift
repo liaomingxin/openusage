@@ -5,7 +5,7 @@ import XCTest
 private func progress(
     _ lines: [MetricLine], _ label: String
 ) -> (used: Double, limit: Double, resetsAt: Date?, periodDurationMs: Int?)? {
-    guard case .progress(_, let used, let limit, _, let resetsAt, let periodDurationMs, _) =
+    guard case .progress(_, let used, let limit, _, let resetsAt, let periodDurationMs, _, _) =
         lines.first(where: { $0.label == label })
     else {
         return nil
@@ -21,7 +21,7 @@ final class ClaudeSwapProviderTests: XCTestCase {
         ClaudeSwapCard(
             id: id,
             identityKey: "acct-2|0a6595d2-b78c-4f2a-a1a1-da26d8958537",
-            displayName: "Claude — two@example.com",
+            accountLabel: "two@example.com",
             configPath: ClaudeSwapFixtures.configPath(slot: "2", email: "two@example.com"),
             slot: "2",
             email: "two@example.com"
@@ -107,7 +107,7 @@ final class ClaudeSwapCatalogAndLayoutTests: XCTestCase {
         ClaudeSwapCard(
             id: cardID,
             identityKey: "acct-2|org-2",
-            displayName: "Claude — two@example.com",
+            accountLabel: "two@example.com",
             configPath: ClaudeSwapFixtures.configPath(slot: "2", email: "two@example.com"),
             slot: "2",
             email: "two@example.com"
