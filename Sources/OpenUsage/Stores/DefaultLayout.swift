@@ -117,10 +117,17 @@ enum DefaultLayout {
     /// pins — the default card keeps the family's menu-bar slots.
     static func includingInstances(_ ids: [String], registry: WidgetRegistry) -> [String] {
         var result = ids
+        // A caller may hand us a list that already names some instance metrics — `AppContainer`
+        // pre-expands Claude's defaults onto every extra Claude card before the store is built. The
+        // translation below would mint those same ids a second time, and duplicates survive all the
+        // way into `placed` (and the persisted layout), so keep the first occurrence and drop repeats.
+        var seen = Set(ids)
         for provider in registry.providers {
             let family = ProviderAccountID.family(of: provider.id)
             guard provider.id != family else { continue }
-            result.append(contentsOf: translated(ids, family: family, instanceID: provider.id))
+            for id in translated(ids, family: family, instanceID: provider.id) where seen.insert(id).inserted {
+                result.append(id)
+            }
         }
         return result
     }

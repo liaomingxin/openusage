@@ -1249,6 +1249,57 @@ final class LayoutStoreTests: XCTestCase {
         )
     }
 
+    // MARK: - Multi-account instance ids
+
+    /// `AppContainer` pre-expands Claude's defaults onto every extra Claude card before building the
+    /// store, and `LayoutStore` then runs the same list through `DefaultLayout.includingInstances`.
+    /// Both steps mint `claude@<hash>.*`, so without deduping the extra card's rows land twice — in
+    /// the defaults, in `placed`, and from there in the persisted layout, telemetry, and refresh order.
+    func testPreExpandedClaudeDefaultsDoNotDuplicateInstanceMetrics() {
+        let extraClaudeID = "claude@ab12cd34"
+        let extraCodexID = "codex@ef567890"
+        let registry = WidgetRegistry.from([
+            ClaudeProvider(),
+            ClaudeProvider(provider: ClaudeProvider.makeProvider(id: extraClaudeID, displayName: "Claude — Work")),
+            CodexProvider(),
+            CodexProvider(id: extraCodexID, displayName: "Codex — extra", scansLocalLogs: false)
+        ])
+        // Exactly what AppContainer hands the store: every `claude.*` default followed by its copy
+        // on each extra Claude card. Codex extra cards are NOT pre-expanded (fork design).
+        let preExpanded = DefaultLayout.metricIDs.flatMap { id -> [String] in
+            guard id.hasPrefix("claude.") else { return [id] }
+            return [id, extraClaudeID + id.dropFirst("claude".count)]
+        }
+
+        let expanded = DefaultLayout.includingInstances(preExpanded, registry: registry)
+
+        XCTAssertEqual(expanded.count, Set(expanded).count, "includingInstances must not repeat an id")
+        // Both extra cards still get the family's full row set, in the family's order.
+        let claudeRows = DefaultLayout.metricIDs.filter { $0.hasPrefix("claude.") }
+        let codexRows = DefaultLayout.metricIDs.filter { $0.hasPrefix("codex.") }
+        XCTAssertEqual(
+            expanded.filter { $0.hasPrefix(extraClaudeID + ".") },
+            claudeRows.map { extraClaudeID + $0.dropFirst("claude".count) }
+        )
+        XCTAssertEqual(
+            expanded.filter { $0.hasPrefix(extraCodexID + ".") },
+            codexRows.map { extraCodexID + $0.dropFirst("codex".count) }
+        )
+        XCTAssertEqual(claudeRows.count, 8, "the Claude row set this test pins is the one AppContainer copies")
+
+        // …and the same holds once the store turns those defaults into placed widgets.
+        let store = LayoutStore(
+            registry: registry,
+            defaults: makeDefaults("PreExpandedClaudeDefaults"),
+            storageKey: "layout",
+            defaultMetricIDs: preExpanded
+        )
+        let placedIDs = store.placed.map(\.descriptorID)
+        XCTAssertEqual(placedIDs.count, Set(placedIDs).count, "placed must not carry a descriptor twice")
+        XCTAssertEqual(placedIDs.filter { $0.hasPrefix(extraClaudeID + ".") }.count, 8)
+        XCTAssertEqual(placedIDs.filter { $0.hasPrefix("claude.") }.count, 8)
+    }
+
     private func makeStore(_ name: String) -> LayoutStore {
         LayoutStore(registry: .mock, defaults: makeDefaults(name), storageKey: "layout")
     }
