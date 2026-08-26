@@ -28,6 +28,15 @@ final class ClaudeSwapProvider: ProviderRuntime {
     private var lastLoggedLiveState: String?
     private var lastLoggedCacheState: String?
 
+    /// A rate-limit cooldown, carried across refreshes (one provider instance lives per stashed card,
+    /// for as long as the app runs). Anthropic's usage endpoint throttles aggressively, and these cards
+    /// multiply the traffic by however many accounts claude-swap is holding — so a 429 parks this card's
+    /// live tier, honouring `Retry-After`, and the card serves claude-swap's cached usage until the
+    /// cooldown expires rather than re-sending a request that is already being refused. Mirrors the
+    /// active Claude card's `rateLimitedUntil`.
+    private var liveRateLimitedUntil: Date?
+    private static let rateLimitCooldown: TimeInterval = 5 * 60
+
     init(
         card: ClaudeSwapCard,
         usageClient: ClaudeSwapUsageClient = ClaudeSwapUsageClient(),
@@ -88,6 +97,10 @@ final class ClaudeSwapProvider: ProviderRuntime {
     /// email to name the stash by, no stashed item, an expired token, a Keychain that wouldn't open, a
     /// rejected token, an unreachable API. The answer that is never given is a refresh.
     private func liveSnapshot() async -> ProviderSnapshot? {
+        // Inside an active cooldown the live tier is skipped entirely — no request, and no Keychain
+        // read to prompt for either. Piling more requests onto an endpoint that is already limiting us
+        // only extends the limit, and there is nothing to gain: the answer would be another 429.
+        if let until = liveRateLimitedUntil, now() < until { return nil }
         guard let stashed = await stashedToken() else { return nil }
 
         let response: HTTPResponse
@@ -100,10 +113,20 @@ final class ClaudeSwapProvider: ProviderRuntime {
             return nil
         }
 
+        if response.statusCode == 429 {
+            let retryAfterSeconds = ClaudeUsageMapper.parseRetryAfterSeconds(response, now: now())
+            liveRateLimitedUntil = now().addingTimeInterval(
+                TimeInterval(retryAfterSeconds ?? Int(Self.rateLimitCooldown))
+            )
+            logLive("Anthropic is rate limiting this account; showing claude-swap's cached usage", level: .warn)
+            return nil
+        }
+
         do {
             let mapped = try ClaudeUsageMapper.mapUsageResponse(
                 response, credentials: ClaudeOAuth(), now: now()
             )
+            liveRateLimitedUntil = nil
             guard !mapped.lines.isEmpty else {
                 logLive("Anthropic reported no usage windows; showing claude-swap's cached usage", level: .warn)
                 return nil

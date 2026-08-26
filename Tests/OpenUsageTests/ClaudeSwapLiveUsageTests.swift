@@ -322,6 +322,59 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         }
     }
 
+    /// The one way these cards could make a user's situation worse: re-sending a throttled account's
+    /// usage request every few minutes, once per stashed login. A 429 parks the live tier for as long
+    /// as `Retry-After` says, and the parked card doesn't even open the Keychain.
+    func testRateLimitParksTheLiveTierUntilTheCooldownExpires() async {
+        let http = UsageOnlyHTTPClient { _ in
+            HTTPResponse(statusCode: 429, headers: ["retry-after": "600"], body: Data("{}".utf8))
+        }
+        let keychain = SlotKeychain([ClaudeSwapLiveFixtures.accountLabel: freshBlob()])
+        let provider = provider(keychain: keychain, http: http)
+
+        _ = await provider.refresh()
+        XCTAssertEqual(http.requests.count, 1)
+
+        let second = await provider.refresh()
+        XCTAssertEqual(http.requests.count, 1, "a throttled account must not be asked again during the cooldown")
+        XCTAssertEqual(keychain.reads.count, 1, "a parked card has no reason to open the Keychain either")
+        XCTAssertNil(second.errorCategory)
+        XCTAssertEqual(second.lines.map(\.label), ["Session", "Weekly"])
+
+        // Manual refreshes extend Anthropic's rate limiting, so they wait out the cooldown too — the
+        // same rule the active Claude card follows.
+        let manual = await ProviderRefreshContext.$isManual.withValue(true) { await provider.refresh() }
+        XCTAssertEqual(http.requests.count, 1)
+        XCTAssertEqual(manual.lines.map(\.label), ["Session", "Weekly"])
+    }
+
+    /// The cooldown is a pause, not a latch: once `Retry-After` has run out the card asks again.
+    func testTheLiveTierResumesOnceTheRateLimitCooldownHasExpired() async {
+        let http = UsageOnlyHTTPClient { _ in
+            HTTPResponse(statusCode: 429, headers: ["retry-after": "60"], body: Data("{}".utf8))
+        }
+        let clock = ClaudeSwapTestClock(now)
+        let files = FakeFiles(cachedFiles)
+        let provider = ClaudeSwapProvider(
+            card: card(),
+            usageClient: ClaudeSwapUsageClient(files: files, homeDirectory: { ClaudeSwapFixtures.home }),
+            credentialReader: ClaudeSwapCredentialReader(
+                keychain: SlotKeychain([ClaudeSwapLiveFixtures.accountLabel: freshBlob()])
+            ),
+            liveUsageClient: ClaudeUsageClient(httpClient: http),
+            files: files,
+            now: { clock.now }
+        )
+
+        _ = await provider.refresh()
+        _ = await provider.refresh()
+        XCTAssertEqual(http.requests.count, 1)
+
+        clock.set(now.addingTimeInterval(61))
+        _ = await provider.refresh()
+        XCTAssertEqual(http.requests.count, 2)
+    }
+
     func testTransportFailureFallsBackToTheCache() async {
         let http = UsageOnlyHTTPClient { _ in throw URLError(.timedOut) }
         let snapshot = await provider(
@@ -409,5 +462,20 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
                 )
             }
         }
+    }
+}
+
+/// A mutable clock so a test can advance `now` between refreshes to exercise the cooldowns.
+private final class ClaudeSwapTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+    init(_ value: Date) { self.value = value }
+    var now: Date {
+        lock.lock(); defer { lock.unlock() }
+        return value
+    }
+    func set(_ value: Date) {
+        lock.lock(); defer { lock.unlock() }
+        self.value = value
     }
 }
