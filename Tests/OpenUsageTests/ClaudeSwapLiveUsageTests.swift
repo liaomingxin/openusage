@@ -290,8 +290,10 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         ).refresh()
 
         XCTAssertNil(snapshot.errorCategory)
+        // Model-scoped windows now follow the two plan-wide ones in `limits[]` order, so the rows
+        // arrive in the same order the Claude widgets are declared in.
         XCTAssertEqual(snapshot.lines.map(\.label),
-                       ["Session", "Weekly", "Sonnet", "Fable", "Extra usage spent"])
+                       ["Session", "Weekly", "Fable", "Sonnet", "Extra usage spent"])
         XCTAssertEqual(progress(snapshot.lines, "Session")?.used, 33)
         XCTAssertEqual(progress(snapshot.lines, "Weekly")?.used, 44)
         XCTAssertEqual(progress(snapshot.lines, "Sonnet")?.used, 6)

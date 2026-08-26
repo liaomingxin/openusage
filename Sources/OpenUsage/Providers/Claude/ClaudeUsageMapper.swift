@@ -24,10 +24,7 @@ enum ClaudeUsageMapper {
         }
 
         var lines: [MetricLine] = []
-        appendUsageWindow(body["five_hour"], label: "Session", periodDurationMs: sessionPeriodMs, to: &lines)
-        appendUsageWindow(body["seven_day"], label: "Weekly", periodDurationMs: weeklyPeriodMs, to: &lines)
-        appendUsageWindow(body["seven_day_sonnet"], label: "Sonnet", periodDurationMs: weeklyPeriodMs, to: &lines)
-        appendScopedWeeklyLimit(body["limits"], modelName: "Fable", label: "Fable", to: &lines)
+        appendWindows(body, to: &lines)
         appendExtraUsage(body["extra_usage"], to: &lines)
 
         return ClaudeMappedUsage(
@@ -107,8 +104,83 @@ enum ClaudeUsageMapper {
         return "\(base) \(tier[match])"
     }
 
-    private static func appendUsageWindow(_ value: Any?, label: String, periodDurationMs: Int, to lines: inout [MetricLine]) {
-        guard let object = value as? [String: Any],
+    /// The plan-wide window labels. The model-scoped weekly windows name themselves from
+    /// `scope.model.display_name` instead, so a model Anthropic adds later needs no label here.
+    static let sessionLabel = "Session"
+    static let weeklyLabel = "Weekly"
+    static let sonnetLabel = "Sonnet"
+
+    /// The caption written under the bar of the window Anthropic reports as currently binding.
+    static let bindingLabel = "Binding limit"
+
+    /// The `severity` Anthropic reports for a window it is not escalating; anything else is its own
+    /// warning about that window.
+    private static let normalSeverity = "normal"
+
+    /// `limits[]` entry kinds. `weekly_scoped` is a per-model weekly window.
+    private enum LimitKind {
+        static let session = "session"
+        static let weeklyAll = "weekly_all"
+        static let weeklyScoped = "weekly_scoped"
+    }
+
+    /// One `limits[]` entry, normalized. The array is the general form of the usage windows: it
+    /// carries the same percent and reset as the legacy top-level `five_hour` / `seven_day` /
+    /// `seven_day_<model>` keys, plus the two things only it knows — `is_active` (which window is
+    /// currently the binding one) and `severity` (Anthropic's own escalation for that window).
+    private struct LimitEntry {
+        var kind: String
+        var percent: Double
+        var resetsAt: Date?
+        var severity: String?
+        var isActive: Bool
+        var modelName: String?
+    }
+
+    /// The usage windows, driven by `limits[]` with the legacy top-level keys as the second source.
+    ///
+    /// `limits[]` is the shape Anthropic maintains now — the per-model weekly windows already live
+    /// only there (`seven_day_<model>` comes back null) — so every model-scoped entry becomes a row
+    /// named after its model and a model Anthropic adds later arrives without a code change. The
+    /// legacy keys are still sent for Session / Weekly / Sonnet, so a response whose `limits[]` omits
+    /// one of those windows still gets its row from there. A window neither source reports simply has
+    /// no row; that is an absent window, not a failure.
+    private static func appendWindows(_ body: [String: Any], to lines: inout [MetricLine]) {
+        let limits = parseLimits(body["limits"])
+
+        appendWindow(limits.first { $0.kind == LimitKind.session }, legacy: body["five_hour"],
+                     label: sessionLabel, periodDurationMs: sessionPeriodMs, to: &lines)
+        appendWindow(limits.first { $0.kind == LimitKind.weeklyAll }, legacy: body["seven_day"],
+                     label: weeklyLabel, periodDurationMs: weeklyPeriodMs, to: &lines)
+
+        // Model-scoped weekly windows, in the order Anthropic lists them. A model claims one row, so a
+        // repeated display name is ignored rather than rendering the same label twice.
+        var scopedModels: Set<String> = []
+        for entry in limits where entry.kind == LimitKind.weeklyScoped {
+            guard let model = entry.modelName, scopedModels.insert(model).inserted else { continue }
+            lines.append(progressLine(entry, label: model, periodDurationMs: weeklyPeriodMs))
+        }
+        if !scopedModels.contains(sonnetLabel) {
+            appendWindow(nil, legacy: body["seven_day_sonnet"],
+                         label: sonnetLabel, periodDurationMs: weeklyPeriodMs, to: &lines)
+        }
+    }
+
+    /// One window's row: the `limits[]` entry when Anthropic listed it there, otherwise the legacy
+    /// top-level object's `utilization`. Only the `limits[]` path can carry the binding caption —
+    /// the legacy keys never said which window was in force.
+    private static func appendWindow(
+        _ entry: LimitEntry?,
+        legacy: Any?,
+        label: String,
+        periodDurationMs: Int,
+        to lines: inout [MetricLine]
+    ) {
+        if let entry {
+            lines.append(progressLine(entry, label: label, periodDurationMs: periodDurationMs))
+            return
+        }
+        guard let object = legacy as? [String: Any],
               let used = ProviderParse.number(object["utilization"])
         else {
             return
@@ -123,30 +195,63 @@ enum ClaudeUsageMapper {
         ))
     }
 
-    /// A model-scoped weekly limit from the `limits` array — `kind: "weekly_scoped"` with
-    /// `scope.model.display_name` naming the model (e.g. "Fable"). Anthropic moved the per-model
-    /// weekly windows off the legacy top-level `seven_day_<model>` keys (which now come back null)
-    /// and into this array, so each scoped row is read by display name. `percent` is 0–100.
-    private static func appendScopedWeeklyLimit(_ limits: Any?, modelName: String, label: String, to lines: inout [MetricLine]) {
-        guard let array = limits as? [Any] else { return }
-        for entry in array {
-            guard let object = entry as? [String: Any],
-                  object["kind"] as? String == "weekly_scoped",
-                  let scope = object["scope"] as? [String: Any],
-                  let model = scope["model"] as? [String: Any],
-                  model["display_name"] as? String == modelName,
-                  let used = ProviderParse.number(object["percent"])
-            else { continue }
-            lines.append(.progress(
-                label: label,
-                used: used,
-                limit: 100,
-                format: .percent,
-                resetsAt: resetDate(object["resets_at"]),
-                periodDurationMs: weeklyPeriodMs
-            ))
-            return
+    private static func progressLine(_ entry: LimitEntry, label: String, periodDurationMs: Int) -> MetricLine {
+        .progress(
+            label: label,
+            used: entry.percent,
+            limit: 100,
+            format: .percent,
+            resetsAt: entry.resetsAt,
+            periodDurationMs: periodDurationMs,
+            detail: bindingDetail(isActive: entry.isActive, severity: entry.severity)
+        )
+    }
+
+    /// The caption under a window's bar when Anthropic reports that window as the binding one — the
+    /// limit that will actually stop you first. Without it the dashboard shows several equal-looking
+    /// bars and nothing says which is in force: a Fable window at 87% reads no differently from a
+    /// Session window at 21%.
+    ///
+    /// `is_active` is undocumented, so nothing here leans on its shape. Each window is judged on its
+    /// own flag, so an array that marks none — or several — is fine, and an entry that omits the flag
+    /// reads as "not binding" rather than as an error. `severity` is Anthropic's own escalation for
+    /// the same window, and rides along only on the binding row, where it is the actionable one.
+    static func bindingDetail(isActive: Bool, severity: String?) -> String? {
+        guard isActive else { return nil }
+        guard let severity, severity.caseInsensitiveCompare(normalSeverity) != .orderedSame else {
+            return bindingLabel
         }
+        let words = severity.split(whereSeparator: { $0 == "_" || $0 == " " }).joined(separator: " ")
+        return "\(bindingLabel) · Anthropic \(words.lowercased())"
+    }
+
+    /// `limits[]`, normalized. An element the app can't read as a window (no `kind`, no numeric
+    /// `percent`) is skipped: the array is a list of windows, and a shape we don't recognize is a
+    /// window we can't meter rather than a broken response.
+    private static func parseLimits(_ value: Any?) -> [LimitEntry] {
+        guard let array = value as? [Any] else { return [] }
+        return array.compactMap { element in
+            guard let object = element as? [String: Any],
+                  let kind = text(object["kind"]),
+                  let percent = ProviderParse.number(object["percent"])
+            else {
+                return nil
+            }
+            let model = (object["scope"] as? [String: Any])?["model"] as? [String: Any]
+            return LimitEntry(
+                kind: kind,
+                percent: percent,
+                resetsAt: resetDate(object["resets_at"]),
+                severity: text(object["severity"]),
+                isActive: object["is_active"] as? Bool ?? false,
+                modelName: text(model?["display_name"])
+            )
+        }
+    }
+
+    /// A trimmed non-empty string, or `nil` for a missing, non-string, or blank value.
+    private static func text(_ value: Any?) -> String? {
+        (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
     private static func appendExtraUsage(_ value: Any?, to lines: inout [MetricLine]) {
