@@ -174,10 +174,14 @@ final class ClaudeSwapUsageMapperTests: XCTestCase {
     private func map(
         _ cache: String?,
         slot: String = "1",
-        organization: String? = "882cf738-5e37-45ae-9890-cff59b482890"
+        organization: String? = "882cf738-5e37-45ae-9890-cff59b482890",
+        email: String? = "one@example.com"
     ) throws -> ClaudeSwapMappedUsage {
         ClaudeSwapUsageMapper.map(
-            try client(cache).entry(slot: slot), expectedOrganizationUUID: organization, now: now
+            try client(cache).entry(slot: slot),
+            expectedOrganizationUUID: organization,
+            expectedEmail: email,
+            now: now
         )
     }
 
@@ -284,10 +288,12 @@ final class ClaudeSwapUsageMapperTests: XCTestCase {
         XCTAssertEqual(ClaudeSwapUsageError.pollFailed("invalid_grant").errorCategory, .authExpired)
         XCTAssertEqual(ClaudeSwapUsageError.pollFailed("KeyError").errorCategory, .other)
         XCTAssertEqual(ClaudeSwapUsageError.invalidCache.errorCategory, .decoding)
+        XCTAssertEqual(ClaudeSwapUsageError.unsupportedSchema(3).errorCategory, .decoding)
         XCTAssertEqual(ClaudeSwapUsageError.cacheUnreadable("denied").errorCategory, .credentialAccess)
         // Every case must carry user-facing copy — a bare enum name is not a friendly error.
         for error: ClaudeSwapUsageError in [
-            .pollFailed("http-429"), .pollFailed("boom"), .invalidCache, .cacheUnreadable("denied")
+            .pollFailed("http-429"), .pollFailed("boom"), .invalidCache, .cacheUnreadable("denied"),
+            .unsupportedSchema(3)
         ] {
             XCTAssertFalse(error.localizedDescription.isEmpty)
         }
@@ -302,6 +308,43 @@ final class ClaudeSwapUsageMapperTests: XCTestCase {
         )
         guard case .noData = mapped else {
             return XCTFail("expected the no-data state, got \(mapped)")
+        }
+    }
+
+    /// A legacy account names no organization, so the strong half of the fence is unavailable and the
+    /// email carries it instead — otherwise a renumbered slot would render a stranger's percentages.
+    func testLegacyIdentityFencesTheRowOnEmailInstead() throws {
+        let cache = ClaudeSwapFixtures.usageCache("""
+            "1":{"email":"someone-else@example.com","organizationUuid":null,"lastError":null,
+            "lastGood":{"five_hour":{"pct":31.0},"seven_day":{"pct":44.0},"scoped":[]},
+            "fetchedAt":\(now.timeIntervalSince1970 - 60)}
+            """)
+
+        let mismatch = try map(cache, organization: nil, email: "legacy@example.com")
+        guard case .noData = mismatch else {
+            return XCTFail("expected the no-data state, got \(mismatch)")
+        }
+        // The same row read by the account it actually belongs to still renders.
+        let match = try map(cache, organization: nil, email: "SOMEONE-ELSE@example.com")
+        guard case .usage(let lines, _) = match else {
+            return XCTFail("expected usable measurements, got \(match)")
+        }
+        XCTAssertEqual(lines.map(\.label), ["Session", "Weekly"])
+    }
+
+    /// claude-swap stamps every table it writes. A version it wasn't written against may have renamed
+    /// a key or rescaled a percent, so the reader refuses it instead of showing wrong numbers.
+    func testUnsupportedAndUnstampedSchemasAreRefused() {
+        let newer = client(#"{"schemaVersion":3,"accounts":{"1":{"lastGood":{"five_hour":{"pct":12.0}}}}}"#)
+        XCTAssertThrowsError(try newer.entry(slot: "1")) { error in
+            XCTAssertEqual(error as? ClaudeSwapUsageError, .unsupportedSchema(3))
+            XCTAssertEqual((error as? ClaudeSwapUsageError)?.errorCategory, .decoding)
+        }
+
+        // claude-swap's own pre-v2 file carries no stamp at all; it treats that as empty, and so do we.
+        let unstamped = client(#"{"accounts":{"1":{"lastGood":{"five_hour":{"pct":12.0}}}}}"#)
+        XCTAssertThrowsError(try unstamped.entry(slot: "1")) { error in
+            XCTAssertEqual(error as? ClaudeSwapUsageError, .invalidCache)
         }
     }
 
@@ -333,7 +376,8 @@ final class ClaudeSwapProviderTests: XCTestCase {
             identityKey: "acct-2|0a6595d2-b78c-4f2a-a1a1-da26d8958537",
             displayName: "Claude — two@example.com",
             configPath: ClaudeSwapFixtures.configPath(slot: "2", email: "two@example.com"),
-            slot: "2"
+            slot: "2",
+            email: "two@example.com"
         )
     }
 
@@ -406,7 +450,8 @@ final class ClaudeSwapCatalogAndLayoutTests: XCTestCase {
             identityKey: "acct-2|org-2",
             displayName: "Claude — two@example.com",
             configPath: ClaudeSwapFixtures.configPath(slot: "2", email: "two@example.com"),
-            slot: "2"
+            slot: "2",
+            email: "two@example.com"
         )
     }
 

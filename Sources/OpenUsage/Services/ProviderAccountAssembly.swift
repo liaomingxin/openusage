@@ -19,6 +19,10 @@ struct ClaudeSwapCard: Equatable, Sendable {
     var configPath: String
     /// claude-swap's slot number, which is also the key of its row in claude-swap's usage cache.
     var slot: String
+    /// The slot's email address, per its config snapshot. Fences the cache row for a legacy identity
+    /// that names no organization — claude-swap identifies a slot by (email, organizationUuid), and
+    /// without the organization half the email is all that can tell a renumbered slot apart.
+    var email: String?
 
     /// The organization half of the identity key, used to fence the cache row against a slot
     /// renumbering. `nil` for a legacy identity that names no organization.
@@ -307,7 +311,8 @@ struct ProviderAccountAssembly {
                 identityKey: record.identityKey,
                 displayName: claudeSwapDisplayName(label: slot.label ?? record.label, id: record.id),
                 configPath: slot.path,
-                slot: slot.slot
+                slot: slot.slot,
+                email: slot.label
             ))
             identityKeys[record.id] = record.identityKey
         }

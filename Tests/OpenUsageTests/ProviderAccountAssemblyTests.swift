@@ -188,7 +188,8 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertEqual(assembly.claudeSwapCards, [
             ClaudeSwapCard(
                 id: swapID, identityKey: "acct-2|org-2",
-                displayName: "Claude — other@example.com", configPath: slotPath, slot: "2"
+                displayName: "Claude — other@example.com", configPath: slotPath, slot: "2",
+                email: "other@example.com"
             )
         ])
         XCTAssertEqual(assembly.claudeSwapCards.first?.organizationID, "org-2")

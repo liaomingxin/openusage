@@ -23,21 +23,30 @@ enum ClaudeSwapUsageMapper {
     static let scopedModelName = "Fable"
 
     /// Map one slot's row. `entry` is `nil` when claude-swap has never written the slot.
-    /// `expectedOrganizationUUID` fences the row against a slot renumbering: claude-swap keys its cache
-    /// by slot number, so a re-added account can inherit a number whose stored measurement belongs to a
-    /// different organization. A mismatch reads as no data rather than another account's percentages.
+    ///
+    /// The expected identity fences the row against a slot renumbering: claude-swap keys its cache by
+    /// slot number, so a re-added account can inherit a number whose stored measurement belongs to
+    /// somebody else. The organization UUID is the strong half of claude-swap's own (email,
+    /// organizationUuid) identity; a legacy account that names no organization falls back to the
+    /// email, so the fence covers that shape too. Either mismatch reads as no data rather than
+    /// another account's percentages.
     static func map(
         _ entry: ClaudeSwapUsageEntry?,
         expectedOrganizationUUID: String?,
+        expectedEmail: String?,
         now: Date
     ) -> ClaudeSwapMappedUsage {
         guard let entry else {
             return .noData(reason: "claude-swap has not polled this account yet")
         }
-        if let expected = expectedOrganizationUUID?.lowercased(),
-           let stored = entry.organizationUUID?.lowercased(),
-           stored != expected {
-            return .noData(reason: "claude-swap's cached row belongs to another organization")
+        if let expected = expectedOrganizationUUID?.lowercased() {
+            if let stored = entry.organizationUUID?.lowercased(), stored != expected {
+                return .noData(reason: "claude-swap's cached row belongs to another organization")
+            }
+        } else if let expected = expectedEmail?.lowercased(),
+                  let stored = entry.email?.lowercased(),
+                  stored != expected {
+            return .noData(reason: "claude-swap's cached row belongs to another account")
         }
 
         let lines = usageLines(entry)

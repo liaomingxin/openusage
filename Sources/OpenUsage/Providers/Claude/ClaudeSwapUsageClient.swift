@@ -5,6 +5,8 @@ enum ClaudeSwapUsageError: Error, LocalizedError, Equatable {
     case cacheUnreadable(String)
     /// `usage.json` is not the table this reader understands.
     case invalidCache
+    /// `usage.json` is stamped with a schema this reader was not written against.
+    case unsupportedSchema(Int)
     /// claude-swap's own last poll for this account failed; the payload is its stable error token
     /// (`http-429`, `timeout`, `network`, `bad-response`, `invalid_grant`, …).
     case pollFailed(String)
@@ -15,6 +17,8 @@ enum ClaudeSwapUsageError: Error, LocalizedError, Equatable {
             return "Couldn't read claude-swap's usage cache: \(reason)"
         case .invalidCache:
             return "claude-swap's usage cache is not in a readable format."
+        case .unsupportedSchema:
+            return "claude-swap's usage cache uses a newer format than OpenUsage understands."
         case .pollFailed(let token):
             return Self.pollFailureText(token)
         }
@@ -87,6 +91,10 @@ struct ClaudeSwapUsageEntry: Equatable, Sendable {
 /// tokens claude-swap manages are never touched.
 struct ClaudeSwapUsageClient: Sendable {
     static let cachePath = ClaudeSwapDiscovery.stashDirectory + "/cache/usage.json"
+    /// claude-swap's `SCHEMA_VERSION`. It stamps every table it writes, so a different number means
+    /// the layout below may no longer describe the file — fail loudly rather than read a renamed key
+    /// or a rescaled percent as if nothing changed.
+    static let supportedSchemaVersion = 2
 
     var files: TextFileAccessing
     var homeDirectory: @Sendable () -> URL
@@ -110,9 +118,18 @@ struct ClaudeSwapUsageClient: Sendable {
         } catch {
             throw ClaudeSwapUsageError.cacheUnreadable(error.localizedDescription)
         }
-        guard let root = ProviderParse.jsonObject(Data(text.utf8)),
-              let accounts = root["accounts"] as? [String: Any]
-        else {
+        guard let root = ProviderParse.jsonObject(Data(text.utf8)) else {
+            throw ClaudeSwapUsageError.invalidCache
+        }
+        // A version-less file is claude-swap's own pre-v2 legacy shape, which claude-swap itself
+        // treats as empty — it is not a table this reader can trust either.
+        guard let version = ProviderParse.number(root["schemaVersion"]).map({ Int($0) }) else {
+            throw ClaudeSwapUsageError.invalidCache
+        }
+        guard version == Self.supportedSchemaVersion else {
+            throw ClaudeSwapUsageError.unsupportedSchema(version)
+        }
+        guard let accounts = root["accounts"] as? [String: Any] else {
             throw ClaudeSwapUsageError.invalidCache
         }
         guard let row = accounts[slot] as? [String: Any] else { return nil }

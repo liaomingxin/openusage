@@ -58,7 +58,10 @@ final class ClaudeSwapProvider: ProviderRuntime {
         }
 
         switch ClaudeSwapUsageMapper.map(
-            entry, expectedOrganizationUUID: card.organizationID, now: now()
+            entry,
+            expectedOrganizationUUID: card.organizationID,
+            expectedEmail: card.email,
+            now: now()
         ) {
         case .usage(let lines, let warning):
             if let warning {

@@ -77,7 +77,7 @@ extension ClaudeSwapUsageError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
         case .cacheUnreadable: .credentialAccess
-        case .invalidCache: .decoding
+        case .invalidCache, .unsupportedSchema: .decoding
         // claude-swap's own error token carries the shape of its failed poll.
         case .pollFailed(let token): ClaudeSwapUsageError.category(forPollFailure: token)
         }
