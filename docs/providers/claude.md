@@ -49,23 +49,33 @@ If one source holds an expired or "locked out" token, OpenUsage falls back to th
 
 If you manage several Claude logins with [claude-swap](https://github.com/realiti4/claude-swap) (`cswap`),
 each account it keeps in reserve gets its own card, named **Claude — your@email**. Only the account
-currently signed in to `~/.claude` is the live Claude card; the rest read their numbers from claude-swap's
-own files.
+currently signed in to `~/.claude` is the live Claude card, but the reserve cards show live numbers too:
+OpenUsage asks Anthropic for each stashed account's usage using the login claude-swap has already saved.
 
-- **What appears** — Session, Weekly, and Fable for each stashed account. There is no usage trend or spend
-  tile on these cards: local session logs belong to whichever account is active, not to a stashed one.
+- **What appears** — the same live meters the active Claude card shows: Session, Weekly, Fable, Sonnet, and
+  **Extra Usage**. There is no usage trend or spend tile on these cards: local session logs belong to
+  whichever account is active, not to a stashed one.
 - **Where the data comes from** — the account names itself from claude-swap's config snapshot in
-  `~/.claude-swap-backup/configs/`, and the numbers come from claude-swap's usage cache at
-  `~/.claude-swap-backup/cache/usage.json`. OpenUsage only reads those files; it never calls Anthropic for
-  these cards.
-- **Freshness** — claude-swap refreshes that cache every few minutes whenever one of its own surfaces runs
-  (its menu bar, `cswap auto`, `cswap list`). If nothing has run for more than two hours, the card shows
-  **No usage data** instead of an out-of-date percentage. If claude-swap's own last update failed, the card
-  says so — as an amber warning while the stored numbers are still current, and as an error once they are
-  not.
-- **Your tokens are left alone** — OpenUsage never reads, refreshes, or rotates the logins claude-swap
-  manages (they live in a separate `claude-swap` keychain entry). Touching them could break claude-swap's
+  `~/.claude-swap-backup/configs/`, and the numbers come straight from Anthropic, read with the access
+  token claude-swap has already stashed for that account. It's the same usage request the live Claude card
+  makes, just on a stashed account's behalf.
+- **The first refresh asks for Keychain access** — claude-swap keeps each stashed login in a `claude-swap`
+  Keychain item, so macOS asks once whether OpenUsage may read it. Choose **Always Allow** and it won't ask
+  again. Choose Deny and the cards fall back to claude-swap's cached percentages.
+- **Your tokens are left alone** — OpenUsage only ever *reads* that Keychain item, and only takes the
+  access token out of it. It never writes to the Keychain, never refreshes or rotates the logins
+  claude-swap manages, and never reads their refresh tokens at all. Rotating one would break claude-swap's
   own sign-ins, so OpenUsage stays out.
+- **If the stashed token is briefly expired** — claude-swap renews its own logins, so between two of its
+  renewals a stashed token can be a few minutes past its expiry. OpenUsage waits rather than renewing it,
+  and falls back to claude-swap's usage cache at `~/.claude-swap-backup/cache/usage.json` (Session, Weekly,
+  and Fable percentages — no Extra Usage). The same fallback covers a Keychain that wasn't readable, a
+  rejected login, and a rate-limited or unreachable API.
+- **Freshness of that fallback** — claude-swap refreshes its cache every few minutes whenever one of its
+  own surfaces runs (its menu bar, `cswap auto`, `cswap list`). If nothing has run for more than two hours,
+  the card shows **No usage data** instead of an out-of-date percentage. If claude-swap's own last update
+  failed, the card says so — as an amber warning while the stored numbers are still current, and as an
+  error once they are not.
 
 The account that is signed in to `~/.claude` never gets a second card — OpenUsage recognizes it as the same
 account as the live Claude card. One caveat: OpenUsage reads which account is active once per launch, so
@@ -89,10 +99,16 @@ Local spend does not require a Claude OAuth login. If Claude Code uses an API-ke
 - **"Claude Desktop login is stale"** — open Claude Desktop so it can renew the login, then refresh OpenUsage.
 - **"Re-login for live usage"** (an amber warning on the Claude header) — your saved login can authenticate for inference but can't read your subscription limits, because it lacks the `user:profile` access (this is what an inference-only token from `claude setup-token` carries). Run `claude` and sign in again with your Claude account, then refresh; the spend tiles keep working in the meantime.
 - **"Updates blocked by Anthropic"** (an amber warning on the Claude header) — the usage API is throttling OpenUsage. It keeps the last values from the same login, shows when it will retry, and backs off in the meantime. A different login starts with a fresh cache and cooldown.
+- **A claude-swap card shows percentages but no Extra Usage** — it's serving claude-swap's cached numbers
+  rather than live ones. Either macOS hasn't been allowed to read the `claude-swap` Keychain item (refresh
+  once and choose **Always Allow**), or the stashed login needs re-authenticating — run `cswap` and sign
+  that account in again. OpenUsage will not renew it for you, by design.
 - **Spend tiles show "No data"** — OpenUsage found no Claude Code logs in the last 30 days. If your logs live somewhere custom, set `CLAUDE_CONFIG_DIR` so both Claude Code and OpenUsage look in the same place.
 
 ## Under the hood
 
 `GET https://api.anthropic.com/api/oauth/usage` with the selected OAuth token. Claude Code tokens refresh via `platform.claude.com/v1/oauth/token`; Claude Desktop tokens are read-only and must be renewed by Desktop itself. If a token is expired or revoked, OpenUsage retries with the next credential source before reporting an error.
+
+claude-swap cards make the same usage request with the token stashed for that account, and nothing else: they have no token endpoint configured at all, so an expired or rejected stashed token ends in claude-swap's cached percentages rather than in a refresh.
 
 When the five-hour session window hasn't begun (the usage API reports no reset time), the Session row shows **Not started** on the trailing label; hover explains that the session begins after your first message. A reported reset time means the window is running, so the row always shows the countdown then — even when Anthropic's whole-percent numbers still read 0% because less than 1% has been used, which matches what Claude Code itself shows.

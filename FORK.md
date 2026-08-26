@@ -104,11 +104,23 @@ git push origin main
 - `docs/providers/kimi.md`、`docs/research/kimi-code-usage-api.md`
 - Codex 多账号：扫描 `~/.cli-proxy-api/codex-*.json`，额外 ChatGPT 登录各自一张卡（`codex@<hash>`），布局跟默认 Codex 卡绑定
 - **claude-swap 多账号（fork 独有，未来必冲突）**：扫描 `~/.claude-swap-backup/configs/.claude-config-<N>-<email>.json`
-  （cswap 的备份快照，隐藏文件），非当前登录的账号各自一张卡（`claude@<hash>`），数值只读
-  `~/.claude-swap-backup/cache/usage.json`（Session/Weekly/Fable，超过 2h 不新鲜就显示 No data）。
-  **绝不碰 cswap 的 OAuth token**（keychain service `claude-swap`）——刷新会和 cswap 自己的轮换打架，
-  把它的 refresh token 弄废。相关文件：`Providers/Claude/ClaudeSwap{Discovery,UsageClient,UsageMapper,Provider}.swift`、
-  `Tests/OpenUsageTests/ClaudeSwapTests.swift`、`docs/providers/claude.md` 的「claude-swap accounts」一节。
+  （cswap 的备份快照，隐藏文件），非当前登录的账号各自一张卡（`claude@<hash>`）。数值**两层**：
+  - **实时层（首选）**：从 keychain service `claude-swap`、account `account-<slot>-<email>`
+    （旧版别名 `account-None-<email>`）里**只读**取出 accessToken，走 `ClaudeUsageClient.fetchUsage`
+    + `ClaudeUsageMapper`，和正式 Claude 卡同一个接口同一个 mapper，所以有 Session/Weekly/Fable/Sonnet/
+    **Extra Usage**。
+  - **缓存层（兜底）**：token 过期 / 被拒 / keychain 读不到 / 网络挂了，就退回只读
+    `~/.claude-swap-backup/cache/usage.json`（Session/Weekly/Fable，超过 2h 不新鲜就显示 No data）。
+  - **绝不刷新、绝不写 cswap 的 OAuth token**：不解析 refreshToken、不建 `ClaudeAuthStore`、
+    配置里根本没有 token endpoint（`ClaudeSwapOAuth.readOnlyConfig` 的 refreshURL 故意指回 usage URL）。
+    刷新会和 cswap 自己的轮换打架，把它的 refresh token 弄废。结构性回归测试见
+    `ClaudeSwapLiveUsageTests.testClaudeSwapSourcesBuildNoAuthStoreAndNameNoTokenEndpoint`
+    与 `UsageOnlyHTTPClient`（任何非 GET usage 的请求直接 XCTFail）。
+  - `hasLocalCredentials()` 永远只看配置快照文件，**不读 keychain**，免得首次运行检测就弹授权框。
+
+  相关文件：`Providers/Claude/ClaudeSwap{Discovery,CredentialReader,UsageClient,UsageMapper,Provider}.swift`、
+  `Tests/OpenUsageTests/ClaudeSwap{Tests,CardTests,LiveUsageTests}.swift`、
+  `docs/providers/claude.md` 的「claude-swap accounts」一节、`docs/privacy.md`。
   另外为了列出隐藏的 `.json` 快照，`TextFileAccessing.jsonFilePaths` 加了 `includingHidden:` 参数
   （`SystemClients.swift` + `TestSupport.swift` 的 `FakeFiles`），合上游时注意保留
 - **`ProviderAccountAssembly.swift` / `ProviderCatalog.swift` 现在是「共管文件」**：同时装着上游的
@@ -134,6 +146,11 @@ git push origin main
 - **Provider SVG 图标**：解析器只支持 `M/L/H/V/C/S/Q/T/Z`，**不支持圆弧 `A/a`**——新图标用贝塞尔写
 - **本地 API 端口**：`127.0.0.1:6736` 只有一个实例能绑；dev 和正式版同时跑时，curl 打到的可能是旧实例
 - **正式版 app 与 dev 版**：同机共存没问题（bundle id 不同），但装了正式版时注意别 curl 到旧实例
+- **claude-swap 卡的钥匙串授权可能每次升级都要重点一次**：`personal-release.yml` 出的 DMG 是
+  ad-hoc 签名，每次构建的签名标识都不一样，所以 macOS 对 `claude-swap` 这个钥匙串条目的
+  「始终允许」授权**不一定能跨版本延续**——升到新的 `kimi.N` 后可能再弹一次授权框（点一次
+  Always Allow 即可）。dev 构建用的是稳定的 Apple Development 身份，授权可以延续。
+  暂不解决（要解决得上真 Developer ID 签名），记录在此备查
 
 ## 可选：回馈上游
 

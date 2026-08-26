@@ -50,9 +50,12 @@ Claude Desktop access is strictly read-only. OpenUsage may ask macOS for permiss
 Desktop's rotating refresh token and never modifies Desktop's config, cookies, or Keychain data.
 
 Accounts managed by [claude-swap](providers/claude.md#claude-swap-accounts) are read-only in a stricter
-sense: OpenUsage never opens the `claude-swap` Keychain service and never reads, refreshes, or rotates
-the logins claude-swap holds there. Those cards are built entirely from claude-swap's own files on disk
-— the config snapshot that names each account and the usage numbers claude-swap has already fetched.
+sense. OpenUsage reads the access token out of the `claude-swap` Keychain item so it can fetch that
+account's usage, and does nothing else with it: it never writes to that Keychain item, never refreshes or
+rotates the logins claude-swap holds there, and never reads their refresh tokens for any purpose. macOS
+asks for permission the first time, and a denied or unreadable item simply falls the card back to
+claude-swap's own files on disk — the config snapshot that names each account and the usage numbers
+claude-swap has already fetched.
 
 ## Other network requests
 
