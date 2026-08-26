@@ -44,10 +44,14 @@ git push origin main
 一条链：**推 tag → CI 自动构建 → Release 出 DMG**。
 
 ```bash
-git tag v0.7.10-kimi.2        # 版本号：上游版本-kimi.序号，序号递增
-git push origin v0.7.10-kimi.2
+git tag v0.7.10-kimi.4        # 版本号：上游版本-kimi.序号，序号递增（已发到 kimi.3）
+git push origin v0.7.10-kimi.4
 # 几分钟后：https://github.com/liaomingxin/openusage/releases
 ```
+
+**分支名不影响发版**：Orca worktree 建出来的分支带 `liaomingxin/` 前缀（如
+`liaomingxin/sync-upstream`），`personal-release.yml` 只认 `v*-kimi.*` tag，不认分支名，
+所以前缀无所谓——合回 `main` 再打 tag 就行。
 
 - workflow：`.github/workflows/personal-release.yml`（复用 `build_and_run.sh` 的 staging，
   ad-hoc 签名，**不需要任何证书/secrets**）
@@ -69,6 +73,8 @@ secrets（只有上游作者有），fork 上跑不了；发版**只走 personal
 
 ## 同步上游更新
 
+**上次同步**：上游 `v0.7.10-beta.3`（tip `16e497d`），2026-08-26 以 merge commit `a729d68` 合入。
+
 ```bash
 git fetch upstream
 git checkout main
@@ -81,7 +87,9 @@ git push origin main
 | 文件 | 冲突场景 | 解法 |
 |---|---|---|
 | `Sources/OpenUsage/Stores/DefaultLayout.swift` | 上游增删 metric 或其他分支（如 grok 钉菜单栏）同改 | 合并两边的数组项，保持 kimi 的三行（metricIDs/pinned/expanded） |
-| `Sources/OpenUsage/Providers/ProviderCatalog.swift` | 上游新增 provider | 合并两边数组，自己维护字母序（kimi 在 Grok 后） |
+| `Sources/OpenUsage/Providers/ProviderCatalog.swift` | 上游新增 provider；或上游改 `make()` 的签名（2026-08 加了 `claudeCards:`/`claudeIdentityKeys:`） | 合并两边参数与数组，顺序固定为 **Claude 卡 → `CodexProvider()` → fork 的额外 Codex 卡 → Cursor → 字母序尾巴（kimi 在 Grok 后）** |
+| `Sources/OpenUsage/Services/ProviderAccountAssembly.swift` | **最难的一个。** 上游加 Claude 多账号卡（`ClaudeAccountCard`、Desktop 组织发现），fork 加 Codex 额外卡（`CodexExtraCard`、`mergedObservations`），两边改同一批函数 | **两边都留**：一个 `make(observer:accountsStore:families:extraCodex:desktop:listDesktopOrganizationDirectories:)`，先塞额外 Codex observation，再跑 Claude Desktop 组织发现，然后**只 reconcile 一次**（走 `mergedObservations`，同一身份合成一条记录），最后两份卡各建一份。上游原来的两处 early return 要改成「发现流程的判断条件」，否则那些分支会漏掉 Codex 额外卡 |
+| `Sources/OpenUsage/App/AppContainer.swift`、`Sources/OpenUsage/Services/UsageReader.swift` | `ProviderCatalog.make(...)` 调用点，两边各加各的参数 | 三个参数一起传：`extraCodexCards:` + `claudeCards:` + `claudeIdentityKeys:`；`UsageReader` 里保留上游把 `ProviderEnablementStore(defaults:)` 放在 registry 之后的位置 |
 | `Tests/OpenUsageTests/LocalLimitsAPITests.swift` | 上游新增 provider 的 key 清单 | expected 字典里补上两边的条目 |
 | `Sources/OpenUsage/Providers/ErrorCategory.swift` | 同上 | 保留两边的 CategorizedError 扩展 |
 | `Sources/OpenUsage/Providers/Kimi/`（整个目录） | **上游官方也实现了 kimi** | 二选一：保留自己的版本（删上游的），或采用上游的（删 `Providers/Kimi/`、DefaultLayout/Catalog/测试里的 kimi 条目） |
@@ -94,6 +102,13 @@ git push origin main
 - `DefaultLayout.swift`、`ProviderCatalog.swift`、`ErrorCategory.swift`、`LocalLimitsAPITests.swift`、`ProviderMarksTests.swift` 里的 kimi 条目
 - `docs/providers/kimi.md`、`docs/research/kimi-code-usage-api.md`
 - Codex 多账号：扫描 `~/.cli-proxy-api/codex-*.json`，额外 ChatGPT 登录各自一张卡（`codex@<hash>`），布局跟默认 Codex 卡绑定
+- **`ProviderAccountAssembly.swift` / `ProviderCatalog.swift` 现在是「共管文件」**：同时装着上游的
+  Claude 账号卡（`ClaudeAccountCard`、Desktop 组织发现、`allowsUnattributedPiUsage`）和 fork 的
+  Codex 额外卡（`CodexExtraCard`、`extraCodexCards`）。以后每次合上游都必须两边都活下来——
+  只留一边就等于悄悄删功能，回归测试见
+  `ProviderAccountAssemblyTests.testExtraCodexCardsAndClaudeOrganizationCardComeFromOneReconcilePass`
+- 两种额外卡的**钉菜单栏规则不一样**：Claude 账号卡由 `AppContainer` 预展开 `pinnedMetricIDs`，
+  每张自带 Session/Weekly 两个钉；Codex 额外卡不继承钉，钉位留给默认 Codex 卡
 - `.github/workflows/personal-release.yml`
 - tag 序列 `v0.7.10-kimi.N`
 
