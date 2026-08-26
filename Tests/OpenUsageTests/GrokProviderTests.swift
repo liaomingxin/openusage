@@ -158,6 +158,29 @@ final class GrokProviderTests: XCTestCase {
         XCTAssertNil(snapshot.warning)
     }
 
+    func testProductSplitComesFromTheSameBillingResponse() async {
+        let httpClient = RecordingHTTPClient { request in
+            if request.url == GrokUsageClient.creditsConfigURL {
+                return HTTPResponse(statusCode: 200, headers: [:],
+                                    body: GrokCreditsFixtures.capturedResponseBodyWithProductUsage)
+            }
+            return Self.defaultRoutes(request)
+        }
+        let provider = makeProvider(httpClient: httpClient)
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(values(snapshot.lines, "Product Usage"), [
+            MetricValue(number: 4, kind: .percent, label: "Build"),
+            MetricValue(number: 1, kind: .percent, label: "Chat")
+        ])
+        // The split is free: it rides the billing response the Weekly meter already needs, so the
+        // refresh still makes exactly the two calls it made before (billing + settings for the plan).
+        XCTAssertEqual(httpClient.requests.filter { $0.url == GrokUsageClient.creditsConfigURL }.count, 1)
+        XCTAssertEqual(httpClient.requests.map(\.url),
+                       [GrokUsageClient.creditsConfigURL, GrokUsageClient.settingsURL])
+    }
+
     func testCreditsTransportAndSchemaFailuresFailTheProvider() async {
         let cases = [(503, ""), (200, #"{"config":{}}"#)]
 
@@ -334,6 +357,34 @@ final class GrokWidgetDataStoreTests: XCTestCase {
 
         XCTAssertEqual(store.data(for: descriptor).valueText, "2500 cap")
     }
+
+    func testResolvesProductUsageRowIntoTheShippedWidget() async {
+        let runtime = GrokProvider()
+        let provider = runtime.provider
+        let descriptor = runtime.widgetDescriptors.first { $0.id == "grok.productUsage" }!
+        let stub = TestProviderRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [GrokUsageMapper.productUsageLine([
+                    GrokProductUsage(product: "GrokBuild", usedPercent: 4),
+                    GrokProductUsage(product: "GrokChat", usedPercent: 1),
+                    GrokProductUsage(product: "GrokImagine", usedPercent: 0)
+                ])!]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [stub]
+        )
+
+        await store.refreshAll()
+
+        // The descriptor's label has to match the mapper's, or the row never reaches a tile.
+        XCTAssertEqual(store.data(for: descriptor).unboundedDetail, "4% Build · 1% Chat")
+    }
 }
 
 private final class RecordingHTTPClient: HTTPClient, @unchecked Sendable {
@@ -355,6 +406,13 @@ private func progress(_ lines: [MetricLine], _ label: String) -> (used: Double, 
         return nil
     }
     return (used, limit, resetsAt)
+}
+
+private func values(_ lines: [MetricLine], _ label: String) -> [MetricValue]? {
+    guard case .values(_, let values, _, _, _, _) = lines.first(where: { $0.label == label }) else {
+        return nil
+    }
+    return values
 }
 
 private func badge(_ lines: [MetricLine], _ label: String) -> (text: String, colorHex: String?)? {

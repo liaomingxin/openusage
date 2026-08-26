@@ -43,7 +43,13 @@ final class GrokProvider: ProviderRuntime {
                     sourceNote: "From your Grok logs (estimated)"
                 )
             // Local spend tiles from completed turns in the Grok CLI's session transcripts.
-        ] + WidgetDescriptor.spendTiles(provider: provider)
+        ] + WidgetDescriptor.spendTiles(provider: provider) + [
+            // The shared pool split by product, from the same billing response the Weekly meter uses.
+            // One row for the whole breakdown rather than a metric per product: the product set is
+            // undocumented and grows, and this way a new one renders with no code change.
+            .values(id: "grok.productUsage", provider: provider, title: GrokUsageMapper.productUsageLabel,
+                    metricLabel: GrokUsageMapper.productUsageLabel, selection: .kind(.percent))
+        ]
     }
 
     func hasLocalCredentials() async -> Bool {
@@ -85,9 +91,10 @@ final class GrokProvider: ProviderRuntime {
     }
 
     private func probe(state: inout GrokAuthState, accessToken: String) async throws -> ProviderSnapshot {
-        // The weekly shared-pool meter and pay-as-you-go badge come from the billing endpoint with
-        // `?format=credits` — the call the Grok CLI itself makes. This is the provider's primary
-        // remote fetch; a failure here fails the provider like any other usage call.
+        // The weekly shared-pool meter, the pay-as-you-go badge, and the per-product split of the pool
+        // all come from one billing call with `?format=credits` — the call the Grok CLI itself makes.
+        // This is the provider's primary remote fetch; a failure here fails the provider like any
+        // other usage call.
         let creditsResponse = try await fetchCreditsConfigWithRetry(accessToken: accessToken, state: &state)
         var mapped = try GrokUsageMapper.mapCreditsConfig(creditsResponse)
 

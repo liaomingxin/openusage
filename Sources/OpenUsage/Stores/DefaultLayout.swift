@@ -26,7 +26,7 @@ enum DefaultLayout {
         "devin.daily", "devin.weekly", "devin.extra",
 
         "grok.weekly", "grok.trend",
-        "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
+        "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30", "grok.productUsage",
 
         "kimi.session", "kimi.weekly",
 
@@ -102,7 +102,9 @@ enum DefaultLayout {
         // (suppressed), so they read "No data" there.
         "copilot.orgCredits", "copilot.orgSpend", "copilot.chat", "copilot.completions",
         "devin.extra",
-        "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
+        // Grok: the Weekly meter and Usage Trend stay above the fold; the pay-as-you-go badge, the
+        // spend tiles, and the per-product split of the weekly pool sit below the caret.
+        "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30", "grok.productUsage",
         // OpenCode: the three Go caps (Session/Weekly/Monthly) and Usage Trend stay above the fold —
         // matching every other provider — with the spend tiles (Today/Yesterday/Last 30 Days) below.
         "opencode.today", "opencode.yesterday", "opencode.last30",

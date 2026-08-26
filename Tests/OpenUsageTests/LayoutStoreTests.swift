@@ -667,7 +667,7 @@ final class LayoutStoreTests: XCTestCase {
             "codex.renews",
             "devin.daily", "devin.weekly", "devin.extra",
             "grok.weekly", "grok.trend",
-            "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
+            "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30", "grok.productUsage",
             // Cursor spend tiles + usage trend are enabled, joining its live meters in the default layout.
             "cursor.usage", "cursor.auto", "cursor.api", "cursor.grokBot", "cursor.trend",
             "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30", "cursor.renews"
@@ -710,7 +710,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(expandedByProvider["devin"], ["devin.extra"])
         XCTAssertEqual(primaryByProvider["grok"], ["grok.weekly", "grok.trend"])
         XCTAssertEqual(expandedByProvider["grok"], [
-            "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30"
+            "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30", "grok.productUsage"
         ])
         // Cursor spend tiles + usage trend are enabled: the trend joins the primary rows, and the
         // today/yesterday/last30 rows sit below the caret alongside the other secondary metrics.

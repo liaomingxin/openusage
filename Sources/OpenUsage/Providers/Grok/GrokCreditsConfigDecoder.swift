@@ -1,7 +1,19 @@
 import Foundation
 
-/// The slice of Grok's credits config OpenUsage renders: the shared-pool usage percent and the
-/// period it applies to. Decoded from `GET /v1/billing?format=credits` (proto-JSON).
+/// One product's slice of the current billing period's shared pool, from `productUsage[]`.
+///
+/// `product` is whatever name the API sent (`GrokBuild`, `GrokChat`, `GrokImagine`,
+/// `GrokAppBuilder`, …). The set is undocumented and grows, so nothing here — or downstream — knows
+/// the names: they are carried through and rendered as data.
+struct GrokProductUsage: Equatable, Sendable {
+    var product: String
+    /// This product's share of the pool in 0...100 (validated finite; clamping happens at the mapper).
+    var usedPercent: Double
+}
+
+/// The slice of Grok's credits config OpenUsage renders: the shared-pool usage percent, the period it
+/// applies to, and the per-product split of that pool. Decoded from `GET /v1/billing?format=credits`
+/// (proto-JSON).
 struct GrokCreditsConfig: Equatable, Sendable {
     /// `USAGE_PERIOD_TYPE_*` enum name; see `GrokCreditsConfigDecoder.weeklyPeriodType`.
     var periodType: String
@@ -11,6 +23,9 @@ struct GrokCreditsConfig: Equatable, Sendable {
     var periodEnd: Date
     /// Pay-as-you-go cap in credits; 0 when disabled (proto-JSON also omits the field at 0).
     var onDemandCap: Double
+    /// The pool split by product, in the order the API listed it. Empty when the response carries no
+    /// `productUsage` — an older account shape, not an error; the breakdown row simply doesn't render.
+    var productUsage: [GrokProductUsage]
 
     var periodDurationMs: Int {
         Int((periodEnd.timeIntervalSince(periodStart) * 1000).rounded())
@@ -26,6 +41,9 @@ struct GrokCreditsConfig: Equatable, Sendable {
 ///                            "start": "2026-07-03T04:01:09.238389+00:00",
 ///                            "end":   "2026-07-10T04:01:09.238389+00:00" },
 ///         "onDemandCap": { "val": 2500 },      // pay-as-you-go cap; 0/absent when disabled
+///         "productUsage": [ { "product": "GrokBuild", "usagePercent": 4.0 },
+///                           { "product": "GrokChat",  "usagePercent": 1.0 },
+///                           { "product": "GrokImagine" } ],   // no percent → 0%
 ///         "isUnifiedBillingUser": true, ... } }
 ///
 /// The response is a proto3 message serialized as JSON, so zero-valued fields are dropped:
@@ -79,8 +97,53 @@ enum GrokCreditsConfigDecoder {
 
         return GrokCreditsConfig(
             periodType: periodType, usedPercent: percent,
-            periodStart: start, periodEnd: end, onDemandCap: onDemandCap
+            periodStart: start, periodEnd: end, onDemandCap: onDemandCap,
+            productUsage: try productUsage(config["productUsage"])
         )
+    }
+
+    /// The per-product split of the pool. Two different failure policies, on purpose:
+    ///
+    /// - The field itself is optional (absent → no breakdown, like every other zero-valued proto-JSON
+    ///   field), but a *present* `productUsage` that isn't an array is real schema drift and throws —
+    ///   the same strictness `onDemandCap` gets.
+    /// - A single unusable entry is only skipped (loudly, via the log). The product set is
+    ///   undocumented and open-ended by design, and one unnameable slice must not blank the account's
+    ///   Weekly meter, which is what throwing here would do.
+    private static func productUsage(_ raw: Any?) throws -> [GrokProductUsage] {
+        guard let raw else { return [] }
+        guard let entries = raw as? [Any] else {
+            throw GrokUsageError.invalidResponse
+        }
+
+        var products: [GrokProductUsage] = []
+        for entry in entries {
+            guard let object = entry as? [String: Any] else {
+                AppLog.warn(LogTag.plugin("grok"), "billing productUsage entry is not an object; skipping it")
+                continue
+            }
+            // proto-JSON drops a default enum value, so an entry can arrive without a name. There is
+            // nothing to label it with, so it can't be shown — but the pool percent above still can.
+            guard let product = (object["product"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !product.isEmpty
+            else {
+                AppLog.warn(LogTag.plugin("grok"), "billing productUsage entry has no product name; skipping it")
+                continue
+            }
+            // Absent means a genuine 0%, like the pool percent. A present non-number is drift — dropped
+            // with the rest of the entry rather than thrown, per the policy above.
+            var percent: Double = 0
+            if let rawPercent = object["usagePercent"] {
+                guard let number = ProviderParse.number(rawPercent), number.isFinite else {
+                    AppLog.warn(LogTag.plugin("grok"),
+                                "billing productUsage percent for \(product) is not a finite number; skipping it")
+                    continue
+                }
+                percent = number
+            }
+            products.append(GrokProductUsage(product: product, usedPercent: percent))
+        }
+        return products
     }
 
     private static func date(_ value: Any?) -> Date? {

@@ -41,6 +41,66 @@ final class GrokCreditsConfigDecoderTests: XCTestCase {
         }
     }
 
+    func testDecodesProductUsageFromLiveCapturedResponse() throws {
+        let config = try GrokCreditsConfigDecoder.decode(
+            responseBody: GrokCreditsFixtures.capturedResponseBodyWithProductUsage
+        )
+
+        XCTAssertEqual(config.productUsage, [
+            GrokProductUsage(product: "GrokBuild", usedPercent: 4),
+            GrokProductUsage(product: "GrokChat", usedPercent: 1),
+            // proto-JSON omits `usagePercent` at 0, so these two are genuine zeros.
+            GrokProductUsage(product: "GrokAppBuilder", usedPercent: 0),
+            GrokProductUsage(product: "GrokImagine", usedPercent: 0)
+        ], "entries decode in API order, names untouched")
+    }
+
+    func testDecodesUnknownProductNames() throws {
+        // The product set is undocumented and grows; a name nothing has seen before decodes like any
+        // other, so it can reach the row without a code change.
+        let config = try GrokCreditsConfigDecoder.decode(responseBody: GrokCreditsFixtures.responseBody(
+            productUsage: [GrokCreditsFixtures.productEntry("GrokSomethingNew", percent: 12.5)]
+        ))
+        XCTAssertEqual(config.productUsage, [GrokProductUsage(product: "GrokSomethingNew", usedPercent: 12.5)])
+    }
+
+    func testAbsentProductUsageDecodesAsEmpty() throws {
+        // The 2026-07 capture predates the field entirely — an older account shape, not an error.
+        let config = try GrokCreditsConfigDecoder.decode(responseBody: GrokCreditsFixtures.capturedResponseBody)
+        XCTAssertEqual(config.productUsage, [])
+    }
+
+    func testRejectsProductUsageThatIsNotAnArray() {
+        // The field is optional, but a present one of the wrong type is real schema drift.
+        XCTAssertThrowsError(
+            try GrokCreditsConfigDecoder.decode(
+                responseBody: GrokCreditsFixtures.responseBody(productUsage: ["GrokBuild": 4.0])
+            )
+        ) { error in
+            XCTAssertEqual(error as? GrokUsageError, .invalidResponse)
+        }
+    }
+
+    func testSkipsUnusableProductEntriesWithoutFailingTheResponse() throws {
+        // One bad slice must not blank the Weekly meter, so unusable entries drop out (logged) and
+        // everything else still decodes: an entry that isn't an object, one with no product name (how
+        // proto-JSON expresses a default enum value), one with a non-numeric percent, and one that is
+        // non-finite (proto-JSON spells infinity as the string "Infinity").
+        let config = try GrokCreditsConfigDecoder.decode(responseBody: GrokCreditsFixtures.responseBody(
+            percent: 6,
+            productUsage: [
+                "GrokBuild",
+                GrokCreditsFixtures.productEntry(nil, percent: 3.0),
+                GrokCreditsFixtures.productEntry("GrokChat", percent: "lots"),
+                GrokCreditsFixtures.productEntry("GrokImagine", percent: "Infinity"),
+                GrokCreditsFixtures.productEntry("GrokBuild", percent: 6.0)
+            ]
+        ))
+
+        XCTAssertEqual(config.productUsage, [GrokProductUsage(product: "GrokBuild", usedPercent: 6)])
+        XCTAssertEqual(config.usedPercent, 6, "the pool percent survives an unusable product entry")
+    }
+
     func testRejectsPeriodThatDoesNotMoveForward() {
         XCTAssertThrowsError(
             try GrokCreditsConfigDecoder.decode(responseBody: GrokCreditsFixtures.responseBody(
@@ -100,6 +160,79 @@ final class GrokCreditsConfigMapperTests: XCTestCase {
         }
         XCTAssertEqual(text, "2500 cap")
         XCTAssertEqual(colorHex, "#22c55e")
+    }
+
+    func testMapsProductUsageRowFromCapturedResponse() throws {
+        let mapped = try GrokUsageMapper.mapCreditsConfig(HTTPResponse(
+            statusCode: 200, headers: [:], body: GrokCreditsFixtures.capturedResponseBodyWithProductUsage
+        ))
+
+        guard case .values(_, let values, _, _, _, _)? =
+                mapped.lines.first(where: { $0.label == "Product Usage" }) else {
+            return XCTFail("expected a Product Usage row, got \(mapped.lines)")
+        }
+        // Only the products actually consuming the pool, biggest share first, with the repeated
+        // "Grok" prefix dropped: "4% Build · 1% Chat".
+        XCTAssertEqual(values, [
+            MetricValue(number: 4, kind: .percent, label: "Build"),
+            MetricValue(number: 1, kind: .percent, label: "Chat")
+        ])
+    }
+
+    func testProductUsageRowRanksByShareThenName() throws {
+        let mapped = try GrokUsageMapper.mapCreditsConfig(HTTPResponse(
+            statusCode: 200, headers: [:], body: GrokCreditsFixtures.responseBody(productUsage: [
+                GrokCreditsFixtures.productEntry("GrokChat", percent: 2.0),
+                GrokCreditsFixtures.productEntry("GrokImagine", percent: 9.0),
+                GrokCreditsFixtures.productEntry("GrokAppBuilder", percent: 2.0)
+            ])
+        ))
+
+        guard case .values(_, let values, _, _, _, _)? =
+                mapped.lines.first(where: { $0.label == "Product Usage" }) else {
+            return XCTFail("expected a Product Usage row")
+        }
+        XCTAssertEqual(values.map(\.label), ["Imagine", "App Builder", "Chat"],
+                       "ranked by share, ties broken by the API's own name so the order is stable")
+    }
+
+    func testProductUsageRowIsAbsentWithoutUsage() throws {
+        // No field at all (the older account shape) and an all-zero week both mean there is nothing
+        // to attribute — the tile reads "No data" rather than a row of zeros.
+        for body in [
+            GrokCreditsFixtures.capturedResponseBody,
+            GrokCreditsFixtures.responseBody(productUsage: [
+                GrokCreditsFixtures.productEntry("GrokBuild"),
+                GrokCreditsFixtures.productEntry("GrokChat", percent: 0)
+            ])
+        ] {
+            let mapped = try GrokUsageMapper.mapCreditsConfig(HTTPResponse(
+                statusCode: 200, headers: [:], body: body
+            ))
+            XCTAssertNil(mapped.lines.first(where: { $0.label == "Product Usage" }))
+        }
+    }
+
+    func testProductDisplayNameLeavesUnfamiliarNamesReadable() {
+        XCTAssertEqual(GrokUsageMapper.productDisplayName("GrokAppBuilder"), "App Builder")
+        XCTAssertEqual(GrokUsageMapper.productDisplayName("GrokBuild"), "Build")
+        // Nothing to strip or split — rendered exactly as the API sent it.
+        XCTAssertEqual(GrokUsageMapper.productDisplayName("Grok"), "Grok")
+        XCTAssertEqual(GrokUsageMapper.productDisplayName("grok-imagine"), "grok-imagine")
+        XCTAssertEqual(GrokUsageMapper.productDisplayName("  GrokChat  "), "Chat")
+    }
+
+    func testClampsOutOfRangeProductPercent() throws {
+        let mapped = try GrokUsageMapper.mapCreditsConfig(HTTPResponse(
+            statusCode: 200, headers: [:], body: GrokCreditsFixtures.responseBody(productUsage: [
+                GrokCreditsFixtures.productEntry("GrokBuild", percent: 150)
+            ])
+        ))
+        guard case .values(_, let values, _, _, _, _)? =
+                mapped.lines.first(where: { $0.label == "Product Usage" }) else {
+            return XCTFail("expected a Product Usage row")
+        }
+        XCTAssertEqual(values.first?.number, 100)
     }
 
     // The non-weekly (monthly) period shape is covered end-to-end by

@@ -16,16 +16,34 @@ enum GrokCreditsFixtures {
     "billingPeriodEnd":"2026-07-07T21:36:52.140114+00:00"}}
     """.utf8)
 
+    /// The newer live shape (captured 2026-08-23, percents edited): the same response now carries
+    /// `productUsage[]`, splitting the pool by product. Two products sit at 0, which proto-JSON
+    /// expresses by omitting `usagePercent` entirely.
+    static let capturedResponseBodyWithProductUsage = Data("""
+    {"config":{"creditUsagePercent":5.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY",\
+    "start":"2026-06-30T21:36:52.140114+00:00","end":"2026-07-07T21:36:52.140114+00:00"},\
+    "onDemandCap":{"val":0},"onDemandUsed":{"val":0},\
+    "productUsage":[{"product":"GrokBuild","usagePercent":4.0},\
+    {"product":"GrokChat","usagePercent":1.0},{"product":"GrokAppBuilder"},\
+    {"product":"GrokImagine"}],\
+    "isUnifiedBillingUser":true,"prepaidBalance":{"val":0},\
+    "topUpMethod":"TOP_UP_METHOD_SAVED_PAYMENT_METHOD",\
+    "billingPeriodStart":"2026-06-30T21:36:52.140114+00:00",\
+    "billingPeriodEnd":"2026-07-07T21:36:52.140114+00:00"}}
+    """.utf8)
+
     static let capturedPeriodStart = Date(timeIntervalSince1970: 1_782_855_412 + 0.140114)
     static let capturedPeriodEnd = Date(timeIntervalSince1970: 1_783_460_212 + 0.140114)
 
     /// A synthetic response body with the fields the decoder reads, for shaping edge cases.
     /// Pass `percent: nil` to omit the field the way proto-JSON does for 0.
     /// Pass `percent: nil` / `onDemandCap: nil` to omit the fields the way proto-JSON does for 0.
+    /// Pass `productUsage: nil` to omit the array the way an account that predates the split does.
     static func responseBody(
         periodType: String = "USAGE_PERIOD_TYPE_WEEKLY",
         percent: Any? = 99.0,
         onDemandCap: Any? = nil,
+        productUsage: Any? = nil,
         start: String = "2026-06-30T21:36:52.140114+00:00",
         end: String = "2026-07-07T21:36:52.140114+00:00"
     ) -> Data {
@@ -39,6 +57,22 @@ enum GrokCreditsFixtures {
         if let onDemandCap {
             config["onDemandCap"] = ["val": onDemandCap]
         }
+        if let productUsage {
+            config["productUsage"] = productUsage
+        }
         return try! JSONSerialization.data(withJSONObject: ["config": config])
+    }
+
+    /// One `productUsage[]` entry. `percent: nil` omits `usagePercent`, which is how proto-JSON
+    /// expresses a product sitting at 0.
+    static func productEntry(_ product: String?, percent: Any? = nil) -> [String: Any] {
+        var entry: [String: Any] = [:]
+        if let product {
+            entry["product"] = product
+        }
+        if let percent {
+            entry["usagePercent"] = percent
+        }
+        return entry
     }
 }
