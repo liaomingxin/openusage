@@ -106,9 +106,13 @@ git push origin main
 - **claude-swap 多账号（fork 独有，未来必冲突）**：扫描 `~/.claude-swap-backup/configs/.claude-config-<N>-<email>.json`
   （cswap 的备份快照，隐藏文件），非当前登录的账号各自一张卡（`claude@<hash>`）。数值**两层**：
   - **实时层（首选）**：从 keychain service `claude-swap`、account `account-<slot>-<email>`
-    （旧版别名 `account-None-<email>`）里**只读**取出 accessToken，走 `ClaudeUsageClient.fetchUsage`
-    + `ClaudeUsageMapper`，和正式 Claude 卡同一个接口同一个 mapper，所以有 Session/Weekly/Fable/Sonnet/
-    **Extra Usage**。
+    （旧版别名 `account-None-<email>`）里**只读**取出 accessToken + 计划名
+    （`subscriptionType`/`rateLimitTier`，只是标签、不是凭证，用来显示「Max 20x」徽章），
+    走 `ClaudeUsageClient.fetchUsage` + `ClaudeUsageMapper`，和正式 Claude 卡同一个接口同一个 mapper，
+    所以有 Session/Weekly/Fable/Sonnet/**Extra Usage**。
+    429 会按 `Retry-After`（默认 5 分钟）暂停实时层，手动刷新也照样等；钥匙串**被拒**（不是「没这项」）
+    会停 1 小时不再读，免得每 5 分钟弹一次授权框，手动刷新清掉这个冷却。
+    token 被 Anthropic 拒掉时，除了写日志还会在卡片上挂琥珀色警告（提示跑 `cswap` 重新登录）。
   - **缓存层（兜底）**：token 过期 / 被拒 / keychain 读不到 / 网络挂了，就退回只读
     `~/.claude-swap-backup/cache/usage.json`（Session/Weekly/Fable，超过 2h 不新鲜就显示 No data）。
   - **绝不刷新、绝不写 cswap 的 OAuth token**：不解析 refreshToken、不建 `ClaudeAuthStore`、

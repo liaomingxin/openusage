@@ -46,6 +46,21 @@ final class ClaudeSwapProvider: ProviderRuntime {
     private var keychainRefusedUntil: Date?
     private static let keychainRefusalCooldown: TimeInterval = 60 * 60
 
+    /// What the last live attempt found wrong, when it's something the user has to fix — today, only a
+    /// stashed login Anthropic has rejected. It rides onto the cache-tier snapshot so a dead login shows
+    /// an amber warning on the card instead of just quietly missing its Extra Usage row: the log says so
+    /// once per state change, which is invisible by the time anybody notices. Cleared by the next
+    /// successful read; a tick that learns nothing about the login (no request sent, no answer) leaves it
+    /// standing.
+    private var liveFailureWarning: String?
+
+    /// The one failure on these cards the user has to fix themselves, because the obvious remedy —
+    /// refreshing the token — is exactly what a claude-swap card must never do. Written to the log and
+    /// shown on the card, so both say the same thing.
+    private static let rejectedTokenWarning =
+        "claude-swap's stashed login was rejected. OpenUsage never refreshes it — run `cswap` to "
+        + "re-authenticate this account. Showing claude-swap's cached usage."
+
     init(
         card: ClaudeSwapCard,
         usageClient: ClaudeSwapUsageClient = ClaudeSwapUsageClient(),
@@ -93,7 +108,7 @@ final class ClaudeSwapProvider: ProviderRuntime {
 
     func refresh() async -> ProviderSnapshot {
         if let live = await liveSnapshot() { return live }
-        return await cachedSnapshot()
+        return await cachedSnapshot(liveFailure: liveFailureWarning)
     }
 
     // MARK: - Live tier
@@ -133,9 +148,14 @@ final class ClaudeSwapProvider: ProviderRuntime {
 
         do {
             let mapped = try ClaudeUsageMapper.mapUsageResponse(
-                response, credentials: ClaudeOAuth(), now: now()
+                response,
+                credentials: ClaudeOAuth(
+                    subscriptionType: stashed.subscriptionType, rateLimitTier: stashed.rateLimitTier
+                ),
+                now: now()
             )
             liveRateLimitedUntil = nil
+            liveFailureWarning = nil
             guard !mapped.lines.isEmpty else {
                 logLive("Anthropic reported no usage windows; showing claude-swap's cached usage", level: .warn)
                 return nil
@@ -150,11 +170,8 @@ final class ClaudeSwapProvider: ProviderRuntime {
             // would rotate claude-swap's refresh token and strand its own sign-ins. So the card falls
             // back to claude-swap's cached percentages and says loudly why, which is what makes a
             // genuinely dead login visible instead of silently stale.
-            logLive(
-                "claude-swap's stashed token was rejected. OpenUsage never refreshes it — run `cswap` "
-                + "to re-authenticate this account. Showing claude-swap's cached usage.",
-                level: .warn
-            )
+            liveFailureWarning = Self.rejectedTokenWarning
+            logLive(Self.rejectedTokenWarning, level: .warn)
             return nil
         } catch {
             logLive("live usage failed (\(error.localizedDescription)); showing claude-swap's cached usage", level: .warn)
@@ -215,7 +232,7 @@ final class ClaudeSwapProvider: ProviderRuntime {
     /// The fallback: the row claude-swap last wrote for this slot in its own usage cache. Session,
     /// Weekly, and Fable percentages only — claude-swap doesn't record Extra Usage — and subject to
     /// its own freshness and poll-failure rules.
-    private func cachedSnapshot() async -> ProviderSnapshot {
+    private func cachedSnapshot(liveFailure: String?) async -> ProviderSnapshot {
         let slot = card.slot
         let entry: ClaudeSwapUsageEntry?
         do {
@@ -232,14 +249,19 @@ final class ClaudeSwapProvider: ProviderRuntime {
         ) {
         case .usage(let lines, let warning):
             logCache(warning.map { "serving claude-swap's last-good usage — \($0)" }, level: .warn)
+            // A dead stashed login outranks a note about claude-swap's own cache being a little stale:
+            // one is something the user has to act on, the other sorts itself out.
             return ProviderSnapshot.make(
-                provider: provider, plan: nil, lines: lines, refreshedAt: now(), warning: warning
+                provider: provider, plan: nil, lines: lines, refreshedAt: now(),
+                warning: liveFailure ?? warning
             )
         case .noData(let reason):
             logCache("no usage to show — \(reason)", level: .info)
             var lines: [MetricLine] = []
             MetricLine.appendNoDataIfNeeded(&lines)
-            return ProviderSnapshot.make(provider: provider, plan: nil, lines: lines, refreshedAt: now())
+            return ProviderSnapshot.make(
+                provider: provider, plan: nil, lines: lines, refreshedAt: now(), warning: liveFailure
+            )
         case .failure(let error):
             // The error snapshot is the loud signal here; tracking it still keeps a later transition
             // back into no-data from being swallowed as "unchanged".

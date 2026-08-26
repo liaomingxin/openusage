@@ -53,8 +53,10 @@ currently signed in to `~/.claude` is the live Claude card, but the reserve card
 OpenUsage asks Anthropic for each stashed account's usage using the login claude-swap has already saved.
 
 - **What appears** — the same live meters the active Claude card shows: Session, Weekly, Fable, Sonnet, and
-  **Extra Usage**. There is no usage trend or spend tile on these cards: local session logs belong to
-  whichever account is active, not to a stashed one.
+  **Extra Usage**, under the account's own plan badge (**Max 20x**, **Pro**, …). There is no usage trend or
+  spend tile on these cards: local session logs belong to whichever account is active, not to a stashed
+  one. A card that has fallen back to claude-swap's cached numbers shows no plan badge, because the cache
+  doesn't record one.
 - **Where the data comes from** — the account names itself from claude-swap's config snapshot in
   `~/.claude-swap-backup/configs/`, and the numbers come straight from Anthropic, read with the access
   token claude-swap has already stashed for that account. It's the same usage request the live Claude card
@@ -65,14 +67,18 @@ OpenUsage asks Anthropic for each stashed account's usage using the login claude
   asking: background refreshes won't put the dialog back in front of you, and it only asks again the next
   time you refresh manually.
 - **Your tokens are left alone** — OpenUsage only ever *reads* that Keychain item, and only takes the
-  access token out of it. It never writes to the Keychain, never refreshes or rotates the logins
-  claude-swap manages, and never reads their refresh tokens at all. Rotating one would break claude-swap's
-  own sign-ins, so OpenUsage stays out.
+  access token and the account's plan name out of it. It never writes to the Keychain, never refreshes or
+  rotates the logins claude-swap manages, and never reads their refresh tokens at all. Rotating one would
+  break claude-swap's own sign-ins, so OpenUsage stays out.
 - **If the stashed token is briefly expired** — claude-swap renews its own logins, so between two of its
   renewals a stashed token can be a few minutes past its expiry. OpenUsage waits rather than renewing it,
   and falls back to claude-swap's usage cache at `~/.claude-swap-backup/cache/usage.json` (Session, Weekly,
   and Fable percentages — no Extra Usage). The same fallback covers a Keychain that wasn't readable, a
-  rejected login, and a rate-limited or unreachable API.
+  rejected login, and a rate-limited or unreachable API. A login Anthropic has actually rejected is the one
+  case you have to act on, so that card also shows an amber warning telling you to run `cswap`.
+- **If Anthropic is rate limiting the account** — the card stops asking for a while (as long as Anthropic
+  says to, or five minutes) and serves claude-swap's cached percentages in the meantime. Manual refreshes
+  wait out that pause too: with a limit already in force, asking again only extends it.
 - **Freshness of that fallback** — claude-swap refreshes its cache every few minutes whenever one of its
   own surfaces runs (its menu bar, `cswap auto`, `cswap list`). If nothing has run for more than two hours,
   the card shows **No usage data** instead of an out-of-date percentage. If claude-swap's own last update
@@ -106,6 +112,9 @@ Local spend does not require a Claude OAuth login. If Claude Code uses an API-ke
   manually and choose **Always Allow** — after a Deny, a manual refresh is what asks again), or the stashed
   login needs re-authenticating — run `cswap` and sign that account in again. OpenUsage will not renew it
   for you, by design.
+- **"claude-swap's stashed login was rejected"** (an amber warning on a claude-swap card) — Anthropic has
+  turned that stashed login down, so the card is showing claude-swap's cached percentages. Run `cswap` and
+  sign the account in again; the live meters and Extra Usage come back on the next refresh.
 - **Spend tiles show "No data"** — OpenUsage found no Claude Code logs in the last 30 days. If your logs live somewhere custom, set `CLAUDE_CONFIG_DIR` so both Claude Code and OpenUsage look in the same place.
 
 ## Under the hood

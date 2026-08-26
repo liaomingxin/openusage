@@ -28,7 +28,8 @@ enum ClaudeSwapLiveFixtures {
         {"claudeAiOauth":{"accessToken":"\(accessToken)",\
         "refreshToken":"sk-ant-ort01-must-never-be-touched",\
         "expiresAt":\(Int(expiresAt.timeIntervalSince1970 * 1000)),\
-        "scopes":["user:inference","user:profile"],"subscriptionType":"max"}}
+        "scopes":["user:inference","user:profile"],"subscriptionType":"max",\
+        "rateLimitTier":"default_claude_max_20x"}}
         """
     }
 
@@ -142,6 +143,50 @@ final class ClaudeSwapCredentialReaderTests: XCTestCase {
         XCTAssertEqual(keychain.reads.map(\.account), [
             ClaudeSwapLiveFixtures.accountLabel, ClaudeSwapLiveFixtures.legacyAccountLabel
         ])
+    }
+
+    /// A stash can hold a stale, unreadable blob under the numbered label and the account's real token
+    /// under the legacy one. Giving up at the first unparseable blob would silently cost that card its
+    /// live tier.
+    func testAnUnparseableBlobStillFallsThroughToTheLegacyLabel() throws {
+        let keychain = SlotKeychain([
+            ClaudeSwapLiveFixtures.accountLabel: "{\"claudeAiOauth\":{}}",
+            ClaudeSwapLiveFixtures.legacyAccountLabel: ClaudeSwapLiveFixtures.stashedBlob(expiresAt: expiry)
+        ])
+
+        let token = try XCTUnwrap(ClaudeSwapCredentialReader(keychain: keychain)
+            .stashedToken(slot: ClaudeSwapLiveFixtures.slot, email: ClaudeSwapLiveFixtures.email))
+
+        XCTAssertEqual(token.accessToken, "sk-ant-oat01-stashed")
+        XCTAssertEqual(keychain.reads.map(\.account), [
+            ClaudeSwapLiveFixtures.accountLabel, ClaudeSwapLiveFixtures.legacyAccountLabel
+        ])
+    }
+
+    /// The plan labels are read; nothing else beside them is.
+    func testReadsThePlanLabelsThatCarryTheCardsBadge() throws {
+        let token = try XCTUnwrap(
+            ClaudeSwapCredentialReader.parse(ClaudeSwapLiveFixtures.stashedBlob(expiresAt: expiry))
+        )
+
+        XCTAssertEqual(token.subscriptionType, "max")
+        XCTAssertEqual(token.rateLimitTier, "default_claude_max_20x")
+        XCTAssertEqual(
+            ClaudeUsageMapper.formatPlan(
+                subscriptionType: token.subscriptionType, rateLimitTier: token.rateLimitTier
+            ),
+            "Max 20x"
+        )
+    }
+
+    /// A blob that names no plan is not a failure — the card just goes without a badge.
+    func testAMissingPlanIsNotAFailure() throws {
+        let token = try XCTUnwrap(
+            ClaudeSwapCredentialReader.parse(#"{"accessToken":"sk-ant-oat01","expiresAt":1800000000000}"#)
+        )
+
+        XCTAssertNil(token.subscriptionType)
+        XCTAssertNil(token.rateLimitTier)
     }
 
     func testAbsentItemIsNotAFailure() throws {
@@ -261,6 +306,49 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         XCTAssertEqual(request.url, ClaudeSwapOAuth.usageURL)
         XCTAssertEqual(request.headers["Authorization"], "Bearer sk-ant-oat01-stashed")
         XCTAssertNil(request.body)
+    }
+
+    /// The plan labels sit in the same blob as the token and are labels, not credentials — reading them
+    /// is what lets a stashed card wear the same "Max 20x" badge the active Claude card wears.
+    func testTheLiveCardShowsTheStashedAccountsPlanBadge() async {
+        let http = UsageOnlyHTTPClient { _ in ClaudeSwapLiveFixtures.usageResponse }
+        let snapshot = await provider(
+            keychain: SlotKeychain([ClaudeSwapLiveFixtures.accountLabel: freshBlob()]), http: http
+        ).refresh()
+
+        XCTAssertEqual(snapshot.plan, "Max 20x")
+    }
+
+    /// The cache tier carries no plan, so a card that fell back says nothing rather than guessing.
+    func testTheCacheTierShowsNoPlanBadge() async {
+        let snapshot = await provider(keychain: SlotKeychain(), http: .refusingEverything()).refresh()
+
+        XCTAssertNil(snapshot.plan)
+    }
+
+    /// A permanently dead stashed login used to be visible only as a log line — and only once, at the
+    /// state change. It belongs on the card, where the missing Extra Usage row is actually noticed.
+    func testARejectedLoginWarnsOnTheCardAndOutranksTheCacheWarning() async {
+        let http = UsageOnlyHTTPClient { _ in
+            HTTPResponse(statusCode: 401, headers: [:], body: Data("{}".utf8))
+        }
+        let snapshot = await provider(
+            keychain: SlotKeychain([ClaudeSwapLiveFixtures.accountLabel: freshBlob()]), http: http
+        ).refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
+        let warning = snapshot.warning ?? ""
+        XCTAssertTrue(warning.contains("cswap"), "got \(warning)")
+        XCTAssertTrue(warning.contains("never refreshes"), "got \(warning)")
+    }
+
+    /// The warning is about the login, not the tick: a fallback with a healthy stash carries claude-swap's
+    /// own cache warning (here, none) rather than a stale re-authenticate notice.
+    func testAFallbackWithNoRejectedLoginCarriesNoLiveWarning() async {
+        let snapshot = await provider(keychain: SlotKeychain(), http: .refusingEverything()).refresh()
+
+        XCTAssertNil(snapshot.warning)
     }
 
     /// An expired stash means claude-swap is between two of its own refreshes. Waiting costs a few
@@ -472,11 +560,7 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
     /// builds a `ClaudeAuthStore` or names a token endpoint, so no refresh path can exist for these
     /// cards regardless of what a future edit wires together.
     func testClaudeSwapSourcesBuildNoAuthStoreAndNameNoTokenEndpoint() throws {
-        let directory = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Sources/OpenUsage/Providers/Claude")
+        let directory = Self.providerSources.appendingPathComponent("Claude")
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
             .filter { $0.hasPrefix("ClaudeSwap") && $0.hasSuffix(".swift") }
         XCTAssertFalse(names.isEmpty, "expected to find the claude-swap sources to scan")
@@ -495,6 +579,37 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
             }
         }
     }
+
+    /// The one thing the scan above can't see: where a card is actually built. `ClaudeSwapProvider`'s
+    /// defaults are what make it read-only, so `ProviderCatalog` must pass nothing but the card — an
+    /// injected usage client or credential reader there would be a refresh path no per-file scan of the
+    /// `ClaudeSwap*` sources would ever notice.
+    func testClaudeSwapCardsAreBuiltFromTheirReadOnlyDefaults() throws {
+        let catalog = try String(
+            contentsOf: Self.providerSources.appendingPathComponent("ProviderCatalog.swift"),
+            encoding: .utf8
+        )
+        let argumentLists = catalog.components(separatedBy: "ClaudeSwapProvider(").dropFirst()
+            .map { String($0.prefix(while: { $0 != ")" })) }
+        XCTAssertEqual(argumentLists.count, 1, "expected exactly one claude-swap card construction site")
+
+        for arguments in argumentLists {
+            let labels = arguments.split(separator: ",").compactMap {
+                $0.split(separator: ":").first?.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            XCTAssertEqual(
+                labels, ["card"],
+                "a claude-swap card must be built from its read-only defaults, got "
+                + "ClaudeSwapProvider(\(arguments))"
+            )
+        }
+    }
+
+    private static let providerSources = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Sources/OpenUsage/Providers")
 }
 
 /// A mutable clock so a test can advance `now` between refreshes to exercise the cooldowns.

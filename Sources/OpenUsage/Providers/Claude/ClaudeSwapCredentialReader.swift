@@ -2,15 +2,21 @@ import Foundation
 
 /// The OAuth access token claude-swap has stashed for one slot.
 ///
-/// Only the two fields a read-only usage call needs are carried. claude-swap keeps the whole Claude
-/// Code credential blob — access token, **refresh** token, expiry, plan — in the same Keychain item,
-/// and the refresh token is deliberately never decoded: spending it would rotate it out from under
-/// claude-swap and strand the sign-ins it manages. That is the single reason these cards read the
-/// stash at all rather than authenticating themselves.
+/// Only what a read-only usage call needs is carried: the access token, its expiry, and the two plan
+/// labels that put the right badge on the card. claude-swap keeps the whole Claude Code credential
+/// blob — access token, **refresh** token, expiry, plan — in the same Keychain item, and the refresh
+/// token is deliberately never decoded: spending it would rotate it out from under claude-swap and
+/// strand the sign-ins it manages. That is the single reason these cards read the stash at all rather
+/// than authenticating themselves.
 struct ClaudeSwapStashedToken: Equatable, Sendable {
     var accessToken: String
     /// When Anthropic stops honouring the token. Claude Code writes this as unix milliseconds.
     var expiresAt: Date
+    /// The account's plan and rate-limit tier, the only other fields read out of the blob. They are
+    /// labels rather than credentials — nothing can be signed or spent with them — and without them a
+    /// stashed card can't show the "Max 20x" badge the active Claude card shows for the same account.
+    var subscriptionType: String?
+    var rateLimitTier: String?
 
     /// Whether the token is still worth spending on a usage call. The skew keeps a token that would
     /// expire mid-flight from being sent at all: a rejected call has no remedy here, because the one
@@ -60,10 +66,10 @@ struct ClaudeSwapCredentialReader: Sendable {
     /// Current claude-swap names the item `account-<slot>-<email>`. Older versions wrote the slot as
     /// the literal `None`, and claude-swap still sweeps that alias whenever it deletes a slot, so a
     /// stash first written by one of those can still be holding its token under the legacy label.
+    /// A slot is always a number here — `ClaudeSwapDiscovery` refuses any that isn't — so the two
+    /// labels can never collide.
     static func accountLabels(slot: String, email: String) -> [String] {
-        let numbered = "account-\(slot)-\(email)"
-        guard slot != "None" else { return [numbered] }
-        return [numbered, "account-None-\(email)"]
+        ["account-\(slot)-\(email)", "account-None-\(email)"]
     }
 
     /// The slot's stashed token, or `nil` when claude-swap has no usable item for it — no item at all,
@@ -80,11 +86,13 @@ struct ClaudeSwapCredentialReader: Sendable {
                 continue
             }
             guard let token = Self.parse(blob) else {
+                // Keep looking rather than giving up: a stash can hold a stale unreadable blob under
+                // one label and the account's real token under the other.
                 AppLog.warn(
                     .keychain,
                     "claude-swap: the credential stashed for slot \(slot) carries no usable access token and expiry"
                 )
-                return nil
+                continue
             }
             return token
         }
@@ -93,8 +101,8 @@ struct ClaudeSwapCredentialReader: Sendable {
 
     /// claude-swap stores Claude Code's credential file verbatim, so the blob is normally the
     /// `{"claudeAiOauth": {...}}` wrapper `~/.claude/.credentials.json` uses; a bare OAuth object is
-    /// tolerated as well. Only `accessToken` and `expiresAt` are declared — a field that is never
-    /// decoded cannot be misused.
+    /// tolerated as well. Only the access token, its expiry, and the two plan labels are declared — a
+    /// field that is never decoded cannot be misused.
     static func parse(_ blob: String) -> ClaudeSwapStashedToken? {
         let oauth = ProviderParse.decodeJSONWithHexFallback(blob, as: StashedBlob.self)?.claudeAiOauth
             ?? ProviderParse.decodeJSONWithHexFallback(blob, as: StashedOAuth.self)
@@ -112,7 +120,9 @@ struct ClaudeSwapCredentialReader: Sendable {
         }
         return ClaudeSwapStashedToken(
             accessToken: accessToken,
-            expiresAt: Date(timeIntervalSince1970: milliseconds / 1000)
+            expiresAt: Date(timeIntervalSince1970: milliseconds / 1000),
+            subscriptionType: oauth?.subscriptionType,
+            rateLimitTier: oauth?.rateLimitTier
         )
     }
 
@@ -120,6 +130,11 @@ struct ClaudeSwapCredentialReader: Sendable {
         var accessToken: String?
         /// Unix milliseconds, as Claude Code writes it.
         var expiresAt: Double?
+        /// Plan labels for the card's badge — `"max"` and `"default_claude_max_20x"` become "Max 20x".
+        /// Nothing else in the blob is declared; the token sitting beside these that would let a card
+        /// rotate claude-swap's login stays undeclared on purpose.
+        var subscriptionType: String?
+        var rateLimitTier: String?
     }
 
     private struct StashedBlob: Decodable {

@@ -51,11 +51,12 @@ Desktop's rotating refresh token and never modifies Desktop's config, cookies, o
 
 Accounts managed by [claude-swap](providers/claude.md#claude-swap-accounts) are read-only in a stricter
 sense. OpenUsage reads the access token out of the `claude-swap` Keychain item so it can fetch that
-account's usage, and does nothing else with it: it never writes to that Keychain item, never refreshes or
-rotates the logins claude-swap holds there, and never reads their refresh tokens for any purpose. macOS
-asks for permission the first time, and a denied or unreadable item simply falls the card back to
-claude-swap's own files on disk — the config snapshot that names each account and the usage numbers
-claude-swap has already fetched.
+account's usage, plus the plan name that labels the card, and does nothing else with it: it never writes to
+that Keychain item, never refreshes or rotates the logins claude-swap holds there, and never reads their
+refresh tokens for any purpose. macOS asks for permission the first time, and a denied or unreadable item
+simply falls the card back to claude-swap's own files on disk — the config snapshot that names each account
+and the usage numbers claude-swap has already fetched. After a denial OpenUsage stops asking on its own;
+only a manual refresh puts the question again.
 
 ## Other network requests
 
