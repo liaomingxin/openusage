@@ -139,12 +139,64 @@ final class ZAIActivityTests: XCTestCase {
           "granularity":"daily"}}
         """#
         let tools = try XCTUnwrap(ZAIActivityMapper.parseToolUsage(Data(body.utf8)))
-        XCTAssertEqual(tools, ZAIToolActivity(webSearches: 15, webReads: 12, zreadCalls: 0))
+        XCTAssertEqual(tools.webSearches, 15)
+        XCTAssertEqual(tools.webReads, 12)
+        XCTAssertEqual(tools.zreadCalls, 0)
+        XCTAssertEqual(tools.tools, [ZAIToolUsageEntry(name: "Web Search MCP", calls: 15)])
     }
 
     func testToolUsageRejectsBodiesWithoutTotals() {
         XCTAssertNil(ZAIActivityMapper.parseToolUsage(Data(#"{"success":true,"data":{"x_time":[]}}"#.utf8)))
         XCTAssertNil(ZAIActivityMapper.parseToolUsage(Data(#"{"success":false}"#.utf8)))
+    }
+
+    /// The summary list is what names the tools, and it is ranked by calls — largest share first,
+    /// like the model breakdown — with Z.ai's own `sortOrder` breaking a tie.
+    func testToolSummaryListIsRankedByCalls() throws {
+        let body = #"""
+        {"success":true,"data":{"totalUsage":{"totalNetworkSearchCount":4,
+          "toolSummaryList":[
+            {"toolCode":"zread","toolNameI18n":"ZRead MCP","totalUsageCount":4,"sortOrder":3},
+            {"toolCode":"search-prime","toolNameI18n":"Web Search MCP","totalUsageCount":15,"sortOrder":1},
+            {"toolCode":"web-reader","toolNameI18n":"Web Read MCP","totalUsageCount":4,"sortOrder":2}]}}}
+        """#
+        let tools = try XCTUnwrap(ZAIActivityMapper.parseToolUsage(Data(body.utf8)))
+        XCTAssertEqual(tools.tools.map(\.name), ["Web Search MCP", "Web Read MCP", "ZRead MCP"])
+        XCTAssertEqual(tools.tools.map(\.calls), [15, 4, 4])
+    }
+
+    /// Z.ai has shipped `toolSummaryList` directly on `data` as well as nested inside `totalUsage`,
+    /// so both are read — and a payload carrying only the list still parses.
+    func testToolSummaryListIsReadFromTheDataObjectToo() throws {
+        let body = #"""
+        {"success":true,"data":{"x_time":["2026-08-26"],
+          "toolSummaryList":[{"toolCode":"search-prime","toolNameI18n":"Web Search MCP","totalUsageCount":7,"sortOrder":1}]}}
+        """#
+        let tools = try XCTUnwrap(ZAIActivityMapper.parseToolUsage(Data(body.utf8)))
+        XCTAssertEqual(tools.tools, [ZAIToolUsageEntry(name: "Web Search MCP", calls: 7)])
+        XCTAssertEqual(tools.webSearches, 0)
+    }
+
+    /// Naming falls back through the localized name, Z.ai's native name and the bare tool code, so a
+    /// tool OpenUsage has never seen still gets a named row. Entries with neither a usable name nor a
+    /// usable count are skipped instead of rendering as a nameless or unmeasured row.
+    func testToolSummaryListTakesWhateverNameIsThereAndSkipsUnusableEntries() throws {
+        let body = #"""
+        {"success":true,"data":{"totalUsage":{"totalNetworkSearchCount":0,
+          "toolSummaryList":[
+            {"toolCode":"search-prime","toolName":"联网搜索 MCP","totalUsageCount":9,"sortOrder":1},
+            {"toolCode":"brand-new-tool","totalUsageCount":5,"sortOrder":2},
+            {"toolCode":"  ","toolNameI18n":"   ","totalUsageCount":4,"sortOrder":3},
+            {"toolCode":"no-count","toolNameI18n":"No Count MCP","totalUsageCount":"lots","sortOrder":4},
+            {"toolCode":"zero","toolNameI18n":"Idle MCP","totalUsageCount":0,"sortOrder":5}]}}}
+        """#
+        let tools = try XCTUnwrap(ZAIActivityMapper.parseToolUsage(Data(body.utf8)))
+        // A zero is a real measurement for this endpoint, so an idle tool stays on the list.
+        XCTAssertEqual(tools.tools, [
+            ZAIToolUsageEntry(name: "联网搜索 MCP", calls: 9),
+            ZAIToolUsageEntry(name: "brand-new-tool", calls: 5),
+            ZAIToolUsageEntry(name: "Idle MCP", calls: 0)
+        ])
     }
 
     // MARK: - Lines
@@ -206,12 +258,62 @@ final class ZAIActivityTests: XCTestCase {
         }
         XCTAssertEqual(total.map(\.number), [6_000_000, 60])
 
-        // A zero count is a real measurement for the tool endpoint, so "0 ZRead" is shown.
+        // No summary list in this payload, so the row keeps the older three-counter reading. A zero
+        // count is a real measurement for the tool endpoint, so "0 ZRead" is shown.
         guard case .values(_, let mcp, _, _, _, _) = lines[4] else {
             return XCTFail("MCP Tools is not a values line")
         }
         XCTAssertEqual(mcp.map(\.number), [1, 3, 0])
         XCTAssertEqual(mcp.map(\.label), ["searches", "reads", "ZRead"])
+    }
+
+    /// With a summary list the row reads one total and carries the named per-tool breakdown behind it,
+    /// counted in calls rather than tokens.
+    func testMCPToolsRowNamesEachToolWhenTheSummaryListIsPresent() throws {
+        let now = Date(timeIntervalSince1970: 1_787_772_600)
+        let body = #"""
+        {"success":true,"data":{"totalUsage":{
+          "totalNetworkSearchCount":15,"totalWebReadMcpCount":12,"totalZreadMcpCount":0,
+          "toolSummaryList":[
+            {"toolCode":"search-prime","toolNameI18n":"Web Search MCP","totalUsageCount":15,"sortOrder":1},
+            {"toolCode":"web-reader","toolNameI18n":"Web Read MCP","totalUsageCount":12,"sortOrder":2}]}}}
+        """#
+        let tools = ZAIActivityMapper.parseToolUsage(Data(body.utf8))
+        let lines = ZAIActivityMapper.lines(window: nil, recent: nil, tools: tools, platform: .global, now: now)
+
+        guard case .values(let label, let values, _, _, _, let breakdown) = lines.first else {
+            return XCTFail("MCP Tools is not a values line")
+        }
+        XCTAssertEqual(label, "MCP Tools")
+        XCTAssertEqual(values.map(\.number), [27])
+        XCTAssertEqual(values.map(\.label), ["calls"])
+
+        let panel = try XCTUnwrap(breakdown)
+        XCTAssertEqual(panel.models.map(\.model), ["Web Search MCP", "Web Read MCP"])
+        XCTAssertEqual(panel.models.map(\.totalTokens), [15, 12])
+        XCTAssertTrue(panel.models.allSatisfy { $0.costUSD == nil })
+        XCTAssertEqual(panel.totalTokens, 27)
+        XCTAssertNil(panel.totalCostUSD)
+        XCTAssertEqual(panel.unit, "calls")
+        XCTAssertEqual(panel.sourceNote, "From your api.z.ai usage history")
+    }
+
+    /// A tool set OpenUsage has never seen renders exactly as reported — no name is baked in.
+    func testMCPToolsRowRendersUnknownToolsAsReported() throws {
+        let now = Date(timeIntervalSince1970: 1_787_772_600)
+        let body = #"""
+        {"success":true,"data":{"totalUsage":{"toolSummaryList":[
+            {"toolCode":"slides-mcp","toolNameI18n":"Slides MCP","totalUsageCount":3,"sortOrder":1},
+            {"toolCode":"vision-mcp","toolNameI18n":"Vision MCP","totalUsageCount":8,"sortOrder":2}]}}}
+        """#
+        let tools = ZAIActivityMapper.parseToolUsage(Data(body.utf8))
+        let lines = ZAIActivityMapper.lines(window: nil, recent: nil, tools: tools, platform: .cn, now: now)
+
+        guard case .values(_, let values, _, _, _, let breakdown) = lines.first else {
+            return XCTFail("MCP Tools is not a values line")
+        }
+        XCTAssertEqual(values.map(\.number), [11])
+        XCTAssertEqual(try XCTUnwrap(breakdown).models.map(\.model), ["Vision MCP", "Slides MCP"])
     }
 
     func testTrendChartCarriesOneCalendarDayPerPoint() throws {

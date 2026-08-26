@@ -73,11 +73,24 @@ struct ZAIModelActivity: Equatable, Sendable {
     }
 }
 
+/// One MCP tool Z.ai names in its `tool-usage` summary: the tool's display name and the calls it
+/// served over the requested window.
+struct ZAIToolUsageEntry: Equatable, Sendable {
+    var name: String
+    var calls: Int
+}
+
 /// One parsed `tool-usage` response: the MCP call counts Z.ai meters separately from tokens.
+///
+/// `tools` is the named per-tool breakdown Z.ai reports in `toolSummaryList` — whichever tools the
+/// account's plan actually enables, so nothing about the set is assumed here. The three scalars are
+/// the older totals the same payload still carries; they back the row only when no summary list came
+/// with it.
 struct ZAIToolActivity: Equatable, Sendable {
     var webSearches: Int
     var webReads: Int
     var zreadCalls: Int
+    var tools: [ZAIToolUsageEntry] = []
 }
 
 /// Builds the Z.ai usage-history rows — Usage Trend, Today / Yesterday / Last 30 Days, and MCP Tools —
@@ -157,16 +170,54 @@ enum ZAIActivityMapper {
         return activity
     }
 
-    /// Web-search / web-read / ZRead totals from a `tool-usage` payload.
+    /// The named per-tool breakdown plus the web-search / web-read / ZRead totals from a `tool-usage`
+    /// payload. `nil` when the body carries neither — the caller then leaves the MCP row absent.
     static func parseToolUsage(_ body: Data) -> ZAIToolActivity? {
-        guard let data = payload(body),
-              let totals = data["totalUsage"] as? [String: Any]
-        else { return nil }
-        let searches = int(totals["totalNetworkSearchCount"])
-        let reads = int(totals["totalWebReadMcpCount"])
-        let zread = int(totals["totalZreadMcpCount"])
-        guard searches != nil || reads != nil || zread != nil else { return nil }
-        return ZAIToolActivity(webSearches: searches ?? 0, webReads: reads ?? 0, zreadCalls: zread ?? 0)
+        guard let data = payload(body) else { return nil }
+        let totals = data["totalUsage"] as? [String: Any]
+        let searches = int(totals?["totalNetworkSearchCount"])
+        let reads = int(totals?["totalWebReadMcpCount"])
+        let zread = int(totals?["totalZreadMcpCount"])
+        let tools = toolSummary(data: data, totals: totals)
+        guard searches != nil || reads != nil || zread != nil || !tools.isEmpty else { return nil }
+        return ZAIToolActivity(
+            webSearches: searches ?? 0, webReads: reads ?? 0, zreadCalls: zread ?? 0, tools: tools
+        )
+    }
+
+    /// The tools named in `toolSummaryList`, ranked by calls.
+    ///
+    /// Z.ai repeats the list in two places — directly on `data` and nested inside `totalUsage` — and a
+    /// live capture carries both, so both are read, `data` first. Ranking is by calls (largest share
+    /// first, like the model breakdown), with Z.ai's own `sortOrder` and then the name breaking ties
+    /// so the list can't reshuffle between refreshes. An entry with no usable name or count is skipped
+    /// rather than rendered as a nameless row; an absent list is not an error, it just leaves the row
+    /// on its older three-counter reading.
+    private static func toolSummary(data: [String: Any], totals: [String: Any]?) -> [ZAIToolUsageEntry] {
+        let raw = (data["toolSummaryList"] as? [[String: Any]])
+            ?? (totals?["toolSummaryList"] as? [[String: Any]])
+            ?? []
+        let ranked = raw.compactMap { entry -> (tool: ZAIToolUsageEntry, sortOrder: Int)? in
+            guard let name = toolName(entry), let calls = int(entry["totalUsageCount"]) else { return nil }
+            return (ZAIToolUsageEntry(name: name, calls: calls), int(entry["sortOrder"]) ?? Int.max)
+        }
+        return ranked.sorted {
+            if $0.tool.calls != $1.tool.calls { return $0.tool.calls > $1.tool.calls }
+            if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+            return $0.tool.name < $1.tool.name
+        }.map(\.tool)
+    }
+
+    /// A summary entry's display name: the English-localized name Z.ai ships, falling back to its
+    /// native name and then to the bare tool code, so a tool OpenUsage has never seen still gets a row.
+    private static func toolName(_ entry: [String: Any]) -> String? {
+        for key in ["toolNameI18n", "toolName", "toolCode"] {
+            if let name = (entry[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !name.isEmpty {
+                return name
+            }
+        }
+        return nil
     }
 
     // MARK: - Lines
@@ -217,18 +268,46 @@ enum ZAIActivityMapper {
             ))
         }
         if let tools {
-            // Unlike the token rows, a zero here is a measurement: the endpoint reports the window's
-            // MCP totals authoritatively, so "0 ZRead" is real and the row shows it.
-            lines.append(.values(label: "MCP Tools", values: [
-                MetricValue(number: Double(tools.webSearches), kind: .count, label: "searches"),
-                MetricValue(number: Double(tools.webReads), kind: .count, label: "reads"),
-                MetricValue(number: Double(tools.zreadCalls), kind: .count, label: "ZRead")
-            ]))
+            lines.append(mcpToolsLine(tools, note: note))
         }
         return lines
     }
 
     // MARK: - Private
+
+    /// The MCP Tools row.
+    ///
+    /// When Z.ai names the tools, the row reads one total ("27 calls") and its value reveals the same
+    /// ranked hover breakdown the period rows use — one line per named tool, sized by its share of the
+    /// window's calls. The named list is whatever the plan enables, so a tool added or dropped by Z.ai
+    /// shows up (or stops showing up) without a code change. A payload with no summary list keeps the
+    /// older three-counter reading, which is all such a response can say.
+    ///
+    /// Unlike the token rows, a zero here is a measurement: the endpoint reports the window's MCP
+    /// totals authoritatively, so a listed tool at "0 calls" is real and the row shows it.
+    private static func mcpToolsLine(_ activity: ZAIToolActivity, note: String) -> MetricLine {
+        guard !activity.tools.isEmpty else {
+            return .values(label: "MCP Tools", values: [
+                MetricValue(number: Double(activity.webSearches), kind: .count, label: "searches"),
+                MetricValue(number: Double(activity.webReads), kind: .count, label: "reads"),
+                MetricValue(number: Double(activity.zreadCalls), kind: .count, label: "ZRead")
+            ])
+        }
+        let total = activity.tools.reduce(0) { $0 + $1.calls }
+        return .values(
+            label: "MCP Tools",
+            values: [MetricValue(number: Double(total), kind: .count, label: "calls")],
+            modelBreakdown: ModelUsageBreakdown(
+                totalTokens: total,
+                totalCostUSD: nil,
+                models: activity.tools.map {
+                    ModelUsageEntry(model: $0.name, totalTokens: $0.calls, costUSD: nil)
+                },
+                sourceNote: note,
+                unitLabel: "calls"
+            )
+        )
+    }
 
     private static func dayLine(
         label: String,

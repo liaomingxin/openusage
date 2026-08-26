@@ -12,7 +12,7 @@ call, and MCP-tool history.
 | Web Searches | Monthly web-search / web-reader / Zread allowance (used / limit). Below the caret |
 | Usage Trend | Daily tokens over the last 30 days, as a small bar chart |
 | Today / Yesterday / Last 30 Days | Tokens and API calls for the period, e.g. `66.1M tokens · 426 calls`. Below the caret |
-| MCP Tools | Web searches, web reads and ZRead calls over the last 30 days. Below the caret |
+| MCP Tools | MCP tool calls over the last 30 days, with a per-tool breakdown on hover. Below the caret |
 | Renews | When your GLM Coding Plan's current period ends. Reads **Ends** when auto-renew is off. Below the caret |
 
 When Z.ai reports your plan name, OpenUsage shows it beside the provider name.
@@ -25,9 +25,14 @@ Hovering **Today**, **Yesterday**, or **Last 30 Days** opens the per-model break
 A GLM Coding Plan is a flat subscription, so nothing is priced: the panel ranks models by their share
 of tokens rather than by cost.
 
-**MCP Tools** shows all three counts even when some are zero (`1 search · 3 reads · 0 ZRead`) — Z.ai
-reports the window's totals directly, so a zero there is a real measurement. The token rows work the
-other way: a period with no usage shows **No data** rather than a confident `0 tokens`.
+**MCP Tools** reads the window's total (`27 calls`), and hovering it opens the same kind of
+breakdown the period rows use — one line per tool Z.ai names, ranked by its share of the calls, e.g.
+`Web Search MCP · 15 calls` above `Web Read MCP · 12 calls`. The list is whatever your plan enables,
+so a tool Z.ai adds shows up on its own. A zero is a real measurement here — Z.ai reports the
+window's tool totals directly — so a listed tool sitting at `0 calls` is shown as such. The token
+rows work the other way: a period with no usage shows **No data** rather than a confident
+`0 tokens`. On the rare response that names no tools, the row falls back to the three counts Z.ai
+also reports (`1 search · 3 reads · 0 ZRead`).
 
 The **Renews** row comes from the same subscription response as the plan name, so it costs no
 extra request. It follows the global **Reset Times** setting: `Renews in 88d 6h` on Countdown,
@@ -107,6 +112,12 @@ older responses) is a percentage quota window; its window length decides which m
 under the bar. A `TIME_LIMIT` entry is the monthly web-search count; plans that don't include one
 simply show **No data** on that row. Reset times come back as epoch milliseconds. Missing required
 usage values are reported as an invalid response instead of being shown as zero.
+
+The tool response reports the window's per-tool summary (`toolSummaryList`) alongside its older
+search / read / ZRead totals. The summary is what names each tool and backs the hover breakdown; the
+totals are the fallback when a response carries no summary. Tools are named with Z.ai's own English
+label, falling back to its Chinese name and then to the bare tool code, so nothing about the set is
+hardcoded.
 
 The subscription response is a list, so the renewal row picks the entry Z.ai marks as the running
 period (`status: VALID`, `inCurrentPeriod`) and reads its `nextRenewTime`. That date is a bare

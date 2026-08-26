@@ -90,11 +90,20 @@ struct ProviderUsageHistory: Hashable, Sendable, Codable {
 
 /// A period-scoped, UI-ready breakdown attached to the same `.values` line as the spend row it explains.
 /// The header total mirrors that row's values; individual model costs are rounded at this display boundary.
+///
+/// The carrier is unit-agnostic: a spend row lists models by tokens, and Z.ai's MCP Tools row lists
+/// named tools by calls. `unitLabel` names that unit for the panel; it is optional rather than a
+/// defaulted `String` because a synthesized decoder ignores property defaults, and a snapshot cached
+/// before the field existed still has to decode.
 struct ModelUsageBreakdown: Hashable, Sendable, Codable {
     var totalTokens: Int
     var totalCostUSD: Double?
     var models: [ModelUsageEntry]
     var sourceNote: String
+    var unitLabel: String? = nil
+
+    /// The unit noun each entry prints, defaulting to the spend rows' "tokens".
+    var unit: String { unitLabel ?? "tokens" }
 }
 
 /// Daily token/cost series plus the per-day models the pricing sources couldn't price — the inputs

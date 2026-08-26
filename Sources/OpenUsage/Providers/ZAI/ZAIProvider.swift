@@ -59,8 +59,11 @@ final class ZAIProvider: ProviderRuntime {
             .combined(id: "zai.today", provider: provider, title: "Today", isUsagePeriod: true),
             .combined(id: "zai.yesterday", provider: provider, title: "Yesterday", isUsagePeriod: true),
             .combined(id: "zai.last30", provider: provider, title: "Last 30 Days", isUsagePeriod: true),
+            // MCP Tools is a window accumulation like the period rows above (`isUsagePeriod`), so its
+            // value reveals the per-tool hover breakdown and an all-zero window reads as "no usage"
+            // rather than a depleted balance.
             .values(id: "zai.mcpTools", provider: provider, title: "MCP Tools", metricLabel: "MCP Tools",
-                    selection: .kind(.count)),
+                    selection: .kind(.count), isUsagePeriod: true),
             // Account metadata rather than usage, so it sits last (and On Demand by default).
             .subscriptionRenewal(provider: provider)
         ]

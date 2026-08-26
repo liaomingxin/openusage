@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Hover detail for a spend period: a flat ranked list of models, each two text lines (name/cost,
-/// share percent/tokens) over a proportional share bar. Rows carry no tooltips — everything shown is
-/// already on the row. The header carries only the period name — the hovered row right below already
-/// shows the period total, so repeating it here would duplicate (and wrap on) long figures. Mirrors
-/// `UsageTrendDetail`'s calm — header + flat list + source note.
+/// Hover detail for a ranked breakdown: a flat list of entries, each two text lines (name/cost,
+/// share percent/amount) over a proportional share bar. The amount's unit comes from the breakdown
+/// itself ("tokens" for a spend period, "calls" for Z.ai's named MCP tool list), so one panel serves
+/// both. Rows carry no tooltips — everything shown is already on the row. The header carries only the
+/// row name — the hovered row right below already shows the total, so repeating it here would
+/// duplicate (and wrap on) long figures. Mirrors `UsageTrendDetail`'s calm — header + flat list +
+/// source note.
 struct ModelUsageDetail: View {
     let title: String
     let breakdown: ModelUsageBreakdown
@@ -44,7 +46,7 @@ struct ModelUsageDetail: View {
             .foregroundStyle(.primary)
     }
 
-    /// Two text lines and the bar: model name / cost on top, share percent / tokens beneath. The name
+    /// Two text lines and the bar: entry name / cost on top, share percent / amount beneath. The name
     /// only competes with the short cost figure, so it almost never truncates; the percent line answers
     /// what the bar can't say precisely.
     private func modelRow(_ model: ModelUsageEntry, share: Double, percent: Int) -> some View {
@@ -71,7 +73,7 @@ struct ModelUsageDetail: View {
                     .monospacedDigit()
                 Spacer(minLength: 8)
                 Text(MetricFormatter.string(
-                    for: MetricValue(number: Double(model.totalTokens), kind: .count, label: "tokens"),
+                    for: MetricValue(number: Double(model.totalTokens), kind: .count, label: breakdown.unit),
                     style: .row
                 ))
                 .monospacedDigit()
