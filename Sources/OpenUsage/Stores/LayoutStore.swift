@@ -124,16 +124,16 @@ final class LayoutStore {
         let persistence = LayoutPersistence(defaults: defaults, storageKey: storageKey)
         self.persistence = persistence
         // Extra account cards (`codex@hash`, `claude@hash`) share the family's metric layout at
-        // display time. Their default ids still translate so Reset / seed-tracking know the instance
-        // metrics. Pins are NOT translated here, and the two families differ on purpose: Claude
-        // account cards already arrive pinned because `AppContainer` pre-expands
-        // `DefaultLayout.pinnedMetricIDs` onto every extra Claude card (each gets its own Session +
-        // Weekly slots), while extra Codex cards inherit no pins — the default Codex card keeps the
-        // family's menu-bar slots.
+        // display time. Their default ids — rows, pins, and On Demand membership — translate onto
+        // each card so Reset / seed-tracking know the instance metrics and every account card starts
+        // with its own Session + Weekly menu-bar slots (`maxPinsPerProvider` counts per card).
+        // `AppContainer` already pre-expands Claude's defaults the same way; `includingInstances`
+        // dedupes, so both routes land on one list.
         let instanceMetricIDs = DefaultLayout.includingInstances(defaultMetricIDs, registry: registry)
+        let instancePinnedMetricIDs = DefaultLayout.includingInstances(defaultPinnedMetricIDs, registry: registry)
         let instanceExpandedMetricIDs = DefaultLayout.includingInstances(defaultExpandedMetricIDs, registry: registry)
         self.defaultMetricIDs = instanceMetricIDs
-        self.defaultPinnedMetricIDs = defaultPinnedMetricIDs
+        self.defaultPinnedMetricIDs = instancePinnedMetricIDs
         self.defaultExpandedMetricIDs = instanceExpandedMetricIDs
         self.isProviderEnabled = isProviderEnabled
 
@@ -143,7 +143,7 @@ final class LayoutStore {
             defaults: LayoutDefaultSet(
                 metricIDs: instanceMetricIDs,
                 migrationBaselineMetricIDs: migrationBaselineMetricIDs,
-                pinnedMetricIDs: defaultPinnedMetricIDs,
+                pinnedMetricIDs: instancePinnedMetricIDs,
                 expandedMetricIDs: instanceExpandedMetricIDs
             )
         )
@@ -414,9 +414,11 @@ final class LayoutStore {
     /// order, untouched. The per-provider counterpart to `resetToDefault` ("Reset all providers"): same
     /// per-provider effect, scoped to one `providerID` instead of the whole layout. No-op for an
     /// unknown provider.
-    func resetProvider(_ providerID: String) {
-        let providerID = layoutOwnerID(for: providerID)
-        guard registry.provider(id: providerID) != nil else { return }
+    func resetProvider(_ requestedID: String) {
+        // Extra account cards share the family's rows and order, so those reset through the owner —
+        // but pins are per card, so they reset for the card that was actually asked.
+        let providerID = layoutOwnerID(for: requestedID)
+        guard registry.provider(id: providerID) != nil, registry.provider(id: requestedID) != nil else { return }
         cancelDrag()
         // A reset is its own action, not an undoable edit. Snapshots are whole-layout, so there's no
         // per-provider trim to do — clear the stack so undo can't restore into the pre-reset layout.
@@ -439,9 +441,11 @@ final class LayoutStore {
         persistMetricOrder()
 
         // Pins, expanded membership, and the default-expanded-on-enable carry: swap this provider's
-        // entries for its defaults, leaving the rest of each set intact.
-        pinnedMetricIDs.subtract(owned)
-        pinnedMetricIDs.formUnion(defaults(defaultPinnedMetricIDs))
+        // entries for its defaults, leaving the rest of each set intact. Pins scope to the requested
+        // card's own descriptors (see above), not the shared owner's.
+        let pinOwned = Set(registry.descriptors(for: requestedID).map(\.id))
+        pinnedMetricIDs.subtract(pinOwned)
+        pinnedMetricIDs.formUnion(defaultPinnedMetricIDs.filter { pinOwned.contains($0) && registry.descriptor(id: $0) != nil })
         persistPins()
 
         expandedMetricIDs.subtract(owned)

@@ -107,8 +107,9 @@ git push origin main
   Codex 额外卡（`CodexExtraCard`、`extraCodexCards`）。以后每次合上游都必须两边都活下来——
   只留一边就等于悄悄删功能，回归测试见
   `ProviderAccountAssemblyTests.testExtraCodexCardsAndClaudeOrganizationCardComeFromOneReconcilePass`
-- 两种额外卡的**钉菜单栏规则不一样**：Claude 账号卡由 `AppContainer` 预展开 `pinnedMetricIDs`，
-  每张自带 Session/Weekly 两个钉；Codex 额外卡不继承钉，钉位留给默认 Codex 卡
+- 两种额外卡的**钉菜单栏规则已和上游统一**：每张账号卡都自带 Session/Weekly 两个钉（上限按卡计）。
+  Claude 卡由 `AppContainer` 预展开 `pinnedMetricIDs`，Codex 额外卡由 `LayoutStore.init` 里的
+  `DefaultLayout.includingInstances` 翻译，两条路径去重后落到同一份默认钉列表
 - `.github/workflows/personal-release.yml`
 - tag 序列 `v0.7.10-kimi.N`
 

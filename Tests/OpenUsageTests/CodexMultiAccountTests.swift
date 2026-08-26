@@ -236,6 +236,31 @@ final class CodexExtraLayoutTests: XCTestCase {
         XCTAssertEqual(ids, ["codex@abcd1234.weekly", "codex@abcd1234.credits"])
     }
 
+    /// Same rule as upstream's Claude account cards: a fresh install pins each extra Codex card's
+    /// Session + Weekly (the per-provider cap counts per card), and that card's Reset restores
+    /// exactly those two without touching the family card.
+    func testExtraCardStartsWithItsOwnSessionAndWeeklyPins() {
+        let extraID = "codex@abcd1234"
+        let registry = WidgetRegistry.from([
+            CodexProvider(),
+            CodexProvider(id: extraID, displayName: "Codex — extra", scansLocalLogs: false)
+        ])
+        let store = LayoutStore(registry: registry, defaults: makeLayoutDefaults("ExtraPins"), storageKey: "layout")
+
+        XCTAssertEqual(
+            store.pinnedGroups.flatMap { $0.metrics.map(\.id) },
+            ["codex.session", "codex.weekly", "\(extraID).session", "\(extraID).weekly"]
+        )
+        XCTAssertEqual(store.pinnedCount(forProvider: extraID), LayoutStore.maxPinsPerProvider)
+
+        store.setPinned(false, for: "\(extraID).weekly")
+        store.setPinned(false, for: "codex.weekly")
+        store.resetProvider(extraID)
+
+        XCTAssertTrue(store.isPinned("\(extraID).weekly"))
+        XCTAssertFalse(store.isPinned("codex.weekly"), "resetting the extra card leaves the family card alone")
+    }
+
     func testExtraCardDisplayFollowsFamilyEnabledMetrics() {
         let extraID = "codex@abcd1234"
         let store = makeLinkedStore("FollowFamily", extraID: extraID, placed: [
