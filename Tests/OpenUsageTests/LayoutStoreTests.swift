@@ -662,7 +662,8 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(Set(store.placed.map(\.descriptorID)), Set([
             "claude.session", "claude.weekly", "claude.fable", "claude.trend",
             "claude.extra", "claude.today", "claude.yesterday", "claude.last30",
-            "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly", "codex.trend",
+            "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly",
+            "codex.gptReserve", "codex.gptReserveWeekly", "codex.trend",
             "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
             "codex.renews",
             "devin.daily", "devin.weekly", "devin.extra",
@@ -699,9 +700,10 @@ final class LayoutStoreTests: XCTestCase {
             "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30"
         ])
         XCTAssertEqual(primaryByProvider["codex"], ["codex.session", "codex.weekly", "codex.trend"])
-        // Spark (the optional model-specific limits) leads the On Demand section, before credits.
+        // Spark (the optional model-specific limits) leads the On Demand section, followed by the
+        // hidden GPT Reserve window, then credits.
         XCTAssertEqual(expandedByProvider["codex"], [
-            "codex.spark", "codex.sparkWeekly",
+            "codex.spark", "codex.sparkWeekly", "codex.gptReserve", "codex.gptReserveWeekly",
             "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
             // The subscription row is account metadata, so it closes the On Demand section.
             "codex.renews"

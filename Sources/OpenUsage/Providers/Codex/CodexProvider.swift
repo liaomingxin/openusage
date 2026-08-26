@@ -57,6 +57,13 @@ final class CodexProvider: ProviderRuntime {
                 .exportingLimit("spark", unit: "percent"),
             .percent(id: metricID("sparkWeekly"), provider: provider, title: "Spark Weekly")
                 .exportingLimit("sparkWeekly", unit: "percent"),
+            // The `gpt-reserve` base-model window from the same `additional_rate_limits` array — a
+            // second meter Codex reports but never shows in its own UI. Seeded On Demand and unpinned,
+            // like Spark; accounts without the limit read "No data".
+            .percent(id: metricID("gptReserve"), provider: provider, title: "GPT Reserve")
+                .exportingLimit("gptReserve", unit: "percent"),
+            .percent(id: metricID("gptReserveWeekly"), provider: provider, title: "GPT Reserve Weekly")
+                .exportingLimit("gptReserveWeekly", unit: "percent"),
             .combined(id: metricID("credits"), provider: provider, title: "Extra Usage", metricLabel: "Credits")
                 .exportingLimit("credits", kind: .balance, unit: "credits", source: .value(kind: .count, label: "credits"))
                 .exportingLimit("creditValue", kind: .balance, unit: "usd", source: .value(kind: .dollars)),

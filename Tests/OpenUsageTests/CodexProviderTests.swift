@@ -324,6 +324,125 @@ final class CodexUsageMapperTests: XCTestCase {
         XCTAssertEqual(progress(mapped.lines, "Spark")?.used, 12)
     }
 
+    func testSurfacesGPTReserveWeeklyWindowFromAdditionalRateLimits() throws {
+        // `additional_rate_limits` carries a second, hidden entry beside Spark: `gpt-reserve`
+        // (`metered_feature: base_model_inference`), a weekly window Codex never shows in its own UI.
+        // It arrives in the *primary* slot with no secondary, so only the weekly meter renders.
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let nowSec = Int(now.timeIntervalSince1970)
+        let body = Data("""
+        {
+          "additional_rate_limits": [
+            {
+              "limit_name": "GPT-5.3-Codex-Spark",
+              "metered_feature": "codex_bengalfox",
+              "rate_limit": { "primary_window": { "used_percent": 25, "limit_window_seconds": 18000 } }
+            },
+            {
+              "limit_name": "gpt-reserve",
+              "metered_feature": "base_model_inference",
+              "rate_limit": {
+                "primary_window": {
+                  "used_percent": 3,
+                  "limit_window_seconds": 604800,
+                  "reset_at": \(nowSec + 86400)
+                },
+                "secondary_window": null
+              }
+            }
+          ]
+        }
+        """.utf8)
+
+        let mapped = try CodexUsageMapper.mapUsageResponse(
+            HTTPResponse(statusCode: 200, headers: [:], body: body),
+            now: now
+        )
+
+        XCTAssertEqual(progress(mapped.lines, "GPT Reserve Weekly")?.used, 3)
+        XCTAssertEqual(progress(mapped.lines, "GPT Reserve Weekly")?.periodDurationMs, 604_800_000)
+        XCTAssertEqual(progress(mapped.lines, "GPT Reserve Weekly")?.resetsAt,
+                       Date(timeIntervalSince1970: TimeInterval(nowSec + 86400)))
+        // The entry has no 5-hour window, so the paired row stays absent (reads "No data")...
+        XCTAssertNil(progress(mapped.lines, "GPT Reserve"))
+        // ...and Spark, parsed from the same array, is unaffected.
+        XCTAssertEqual(progress(mapped.lines, "Spark")?.used, 25)
+    }
+
+    func testSurfacesBothGPTReserveWindowsWhenCodexReportsThem() throws {
+        // Nothing in the payload shape stops `gpt-reserve` from carrying a 5-hour window too, so the
+        // entry maps as a full meter pair exactly like Spark.
+        let body = Data("""
+        {
+          "additional_rate_limits": [{
+            "limit_name": "gpt-reserve",
+            "metered_feature": "base_model_inference",
+            "rate_limit": {
+              "primary_window": { "used_percent": 11, "limit_window_seconds": 18000 },
+              "secondary_window": { "used_percent": 44, "limit_window_seconds": 604800 }
+            }
+          }]
+        }
+        """.utf8)
+
+        let mapped = try CodexUsageMapper.mapUsageResponse(
+            HTTPResponse(statusCode: 200, headers: [:], body: body),
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+
+        XCTAssertEqual(progress(mapped.lines, "GPT Reserve")?.used, 11)
+        XCTAssertEqual(progress(mapped.lines, "GPT Reserve")?.periodDurationMs, 18_000_000)
+        XCTAssertEqual(progress(mapped.lines, "GPT Reserve Weekly")?.used, 44)
+    }
+
+    func testOmitsGPTReserveRowsWhenTheAccountHasNoSuchLimit() throws {
+        // The common case: an account with Spark but no reserve entry. Both reserve rows stay absent
+        // rather than rendering a fabricated 0%.
+        let body = Data("""
+        {
+          "rate_limit": { "primary_window": { "used_percent": 5, "reset_after_seconds": 60 } },
+          "additional_rate_limits": [{
+            "limit_name": "GPT-5.3-Codex-Spark",
+            "rate_limit": { "primary_window": { "used_percent": 25, "limit_window_seconds": 18000 } }
+          }]
+        }
+        """.utf8)
+
+        let mapped = try CodexUsageMapper.mapUsageResponse(
+            HTTPResponse(statusCode: 200, headers: [:], body: body),
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+
+        XCTAssertNil(progress(mapped.lines, "GPT Reserve"))
+        XCTAssertNil(progress(mapped.lines, "GPT Reserve Weekly"))
+        XCTAssertEqual(progress(mapped.lines, "Session")?.used, 5)
+    }
+
+    func testIgnoresMalformedGPTReserveEntryWithoutDroppingSiblings() throws {
+        // A reserve entry missing `rate_limit`, and a null element, must not throw or discard Spark.
+        let body = Data("""
+        {
+          "additional_rate_limits": [
+            null,
+            { "limit_name": "gpt-reserve", "metered_feature": "base_model_inference" },
+            {
+              "limit_name": "GPT-5.3-Codex-Spark",
+              "rate_limit": { "primary_window": { "used_percent": 9, "limit_window_seconds": 18000 } }
+            }
+          ]
+        }
+        """.utf8)
+
+        let mapped = try CodexUsageMapper.mapUsageResponse(
+            HTTPResponse(statusCode: 200, headers: [:], body: body),
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+
+        XCTAssertNil(progress(mapped.lines, "GPT Reserve"))
+        XCTAssertNil(progress(mapped.lines, "GPT Reserve Weekly"))
+        XCTAssertEqual(progress(mapped.lines, "Spark")?.used, 9)
+    }
+
     func testIgnoresNonSparkAndMalformedAdditionalRateLimits() throws {
         // Non-Spark model limits have no descriptors, so they aren't surfaced; a null/non-dictionary
         // element is skipped without discarding its siblings; a Spark entry missing `rate_limit` yields

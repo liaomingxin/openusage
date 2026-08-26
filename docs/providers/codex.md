@@ -9,6 +9,7 @@ Tracks your ChatGPT/Codex subscription limits using the login from the Codex CLI
 | Session | 5-hour rolling window usage |
 | Weekly | 7-day window usage |
 | Spark / Spark Weekly | GPT-5.3-Codex-Spark model limits — a 5-hour and a weekly window. Shown only when your account has the limit (otherwise "No data"), and tucked below the "show more" caret by default |
+| GPT Reserve / GPT Reserve Weekly | A second usage window Codex reports for base-model requests (`gpt-reserve`) but never shows in its own UI. Usually just the weekly one. Shown only when your account has the limit (otherwise "No data"), and tucked below the caret by default |
 | Rate Limit Resets | On-demand rate-limit reset credits, shown as a count (e.g. `2 available`) with a colored dot for the soonest expiry; hover the value for a timeline of each credit's expiry |
 | Extra Usage | Flex credits, shown verbatim as dollars + credits (e.g. `$31.84 · 796 credits`) |
 | Today / Yesterday / Last 30 Days | Local spend, as cost, tokens, or both (see below) |
@@ -44,7 +45,7 @@ For supported GPT-5.4, GPT-5.5, and GPT-5.6 models, requests above 272k input to
 
 `GET https://chatgpt.com/backend-api/wham/usage` with the Codex OAuth token; refresh via `auth.openai.com`. A 401/403 triggers one token refresh and retry. Session and Weekly are classified by each usage window's duration rather than by its primary/secondary slot. This matters when Codex temporarily removes one limit and moves the remaining weekly window into the primary slot. Payloads without a recognized duration retain the primary-as-Session and secondary-as-Weekly compatibility fallback; response headers fill percentages missing from the corresponding window.
 
-Spark and Spark Weekly come from the same response's `additional_rate_limits` array — model-specific limits that reuse the duration-based Session/Weekly classification. OpenUsage surfaces the entry whose name identifies GPT-5.3-Codex-Spark as those two meters; accounts without the limit simply omit the entry, so the rows read "No data". Other model limits in that array aren't shown.
+Spark and GPT Reserve come from the same response's `additional_rate_limits` array — extra named limits that reuse the duration-based Session/Weekly classification, so each entry becomes a 5-hour meter and a weekly one. OpenUsage surfaces the entry naming GPT-5.3-Codex-Spark as Spark / Spark Weekly, and the `gpt-reserve` entry (Codex meters it as `base_model_inference`) as GPT Reserve / GPT Reserve Weekly. Accounts without a limit simply omit the entry, so those rows read "No data"; the reserve entry normally carries only a weekly window, so GPT Reserve itself usually reads "No data" too. Other limits in that array aren't shown.
 
 OpenUsage preserves Codex's reported `used_percent` verbatim. If the API reports 1% used for an untouched window, the app shows 99% left; if it reports 0%, the app shows 100% left. Codex rows use the normal reset label rather than inferring a special "Not started" state. Burn-rate pacing still waits until enough of the window has elapsed to make a useful projection.
 

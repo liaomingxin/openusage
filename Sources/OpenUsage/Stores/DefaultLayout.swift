@@ -13,7 +13,8 @@ enum DefaultLayout {
         "claude.session", "claude.weekly", "claude.fable", "claude.trend",
         "claude.extra", "claude.today", "claude.yesterday", "claude.last30",
 
-        "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly", "codex.trend",
+        "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly",
+        "codex.gptReserve", "codex.gptReserveWeekly", "codex.trend",
         "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
         "codex.renews",
 
@@ -88,8 +89,9 @@ enum DefaultLayout {
         // optional Sonnet and spend-history rows sit below the caret.
         "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30",
         // Codex's core Session/Weekly meters and Usage Trend stay above the fold; Spark (the optional
-        // model-specific limits), credits, reset details, and spend rows sit below the caret.
-        "codex.spark", "codex.sparkWeekly",
+        // model-specific limits), the hidden GPT Reserve window, credits, reset details, and spend rows
+        // sit below the caret.
+        "codex.spark", "codex.sparkWeekly", "codex.gptReserve", "codex.gptReserveWeekly",
         "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
         // The subscription row is account metadata, not a live meter — On Demand for all three
         // providers that have one, and never pinned (its descriptor is `pinnable: false`).
