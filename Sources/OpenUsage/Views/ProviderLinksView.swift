@@ -1,10 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// The row of per-provider quick-link buttons (e.g. "Status", "Console") shown in a provider card's
-/// expanded area. Lays out up to three across; extra links wrap to the next row. Each button opens its
-/// URL in the default browser. Mirrors the legacy Tauri `provider-card` quick-links row, adapted to the
-/// native card's expanded area (issue #596 — "bring back provider buttons").
+/// The strip of per-provider quick-link buttons (e.g. "Status", "Console") pinned at the bottom of a
+/// provider card's expanded area: a hairline partitions this action strip from the metric rows above,
+/// then a row of quaternary capsules — up to three across, wrapping to the next row when a provider
+/// ships more. Each button opens its URL in the default browser. Mirrors the legacy Tauri
+/// `provider-card` quick-links row, adapted to the native card's expanded area (issue #596 — "bring
+/// back provider buttons").
 struct ProviderLinksView: View {
     let links: [ProviderLink]
     /// Matches the metric-row inset so the button row lines up with the rows above/below it.
@@ -23,17 +25,32 @@ struct ProviderLinksView: View {
     }
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: density.expandedGridSpacing) {
-            ForEach(links, id: \.self) { link in
-                linkButton(link)
+        VStack(spacing: 0) {
+            // The strip is an action surface, not another metric, so the hairline fences it off from
+            // whatever sits above — the expanded metrics, or the caret in a links-only section.
+            CardHairline()
+            LazyVGrid(columns: columns, alignment: .leading, spacing: density.expandedGridSpacing) {
+                ForEach(links, id: \.self) { link in
+                    ProviderLinkButton(link: link)
+                }
             }
+            .padding(.horizontal, Self.horizontalInset)
+            .padding(.top, density.textRowPadding)
+            .padding(.bottom, density.textRowPadding)
         }
-        .padding(.horizontal, Self.horizontalInset)
-        .padding(.top, density.textRowPadding)
-        .padding(.bottom, density.textRowPadding)
     }
+}
 
-    private func linkButton(_ link: ProviderLink) -> some View {
+/// One quick link: a plain button over a quaternary capsule (the app's subtle-fill token) that
+/// brightens a step on hover — the strip's only affordance, matching the value/sparkline highlight
+/// chips elsewhere on the card.
+private struct ProviderLinkButton: View {
+    let link: ProviderLink
+
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @State private var isHovering = false
+
+    var body: some View {
         Button {
             if let url = URL(string: link.url) {
                 NSWorkspace.shared.open(url)
@@ -48,9 +65,15 @@ struct ProviderLinksView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
+            .padding(.vertical, 3)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(isHovering ? .tertiary : .quaternary)
+            }
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovering)
         .accessibilityLabel("\(link.label), opens in browser")
     }
 }

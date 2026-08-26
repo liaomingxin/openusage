@@ -1,7 +1,8 @@
+import AppKit
 import SwiftUI
 
-/// The dashboard display: a two-column grid of provider cards (System Settings style). A provider's
-/// icon + name sits above a rounded container holding its metric rows. Rows are the shared
+/// The dashboard display: a two-column masonry grid of provider cards (System Settings style). A
+/// provider's icon + name sits above a rounded container holding its metric rows. Rows are the shared
 /// `WidgetRowView`, fed by the same `WidgetDataStore` the menu bar uses.
 ///
 /// Reordering works here directly (no Customize needed): drag any metric row to reorder it within its
@@ -19,25 +20,95 @@ struct WidgetGroupedListView: View {
     @State private var frameStore = ReorderFrameStore()
     @State private var activeProviderID: String?
     @State private var activeMetricID: String?
+    /// Latest measured height of each card section, lifted from the reorder frames (which already
+    /// measure every section each layout pass).
+    @State private var cardHeights: [String: CGFloat] = [:]
+    /// The heights the column split is actually balanced with — see `recordHeights`.
+    @State private var balanceHeights: [String: CGFloat] = [:]
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
 
+    /// Rough stand-in height (header + a couple of rows) for a card that hasn't been measured yet.
+    /// Only needs to be even across cards so an unmeasured grid alternates left/right.
+    private static let estimatedCardHeight: CGFloat = 140
+
     var body: some View {
-        // Two-up grid: consecutive providers fill left-to-right, wrapping to the next row. The
-        // leftover last card (odd count) is a one-item row and takes the full width. Gap matches
-        // section spacing so the grid reads as even on both axes.
-        VStack(alignment: .leading, spacing: density.sectionSpacing) {
-            ForEach(DashboardCardRow.rows(from: layout.displayGroups)) { row in
-                HStack(alignment: .top, spacing: density.sectionSpacing) {
-                    ForEach(row.groups) { group in
+        // Masonry grid: two independent columns, each card joining the currently shorter one instead
+        // of pairing into fixed rows. Row pairing left ragged whitespace under the shorter card of a
+        // row and stretched a leftover odd card to full width; independent columns stack tight and
+        // every card keeps the standard half width. Gap matches section spacing so the grid reads as
+        // even on both axes.
+        let columns = Self.assignColumns(layout.displayGroups, heights: balanceHeights)
+        HStack(alignment: .top, spacing: density.sectionSpacing) {
+            ForEach(columns) { column in
+                VStack(alignment: .leading, spacing: density.sectionSpacing) {
+                    ForEach(column.groups) { group in
                         section(group)
-                            .frame(maxWidth: .infinity, alignment: .top)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onPreferenceChange(ReorderFramePreferenceKey.self) { frameStore.frames = $0 }
+        .onPreferenceChange(ReorderFramePreferenceKey.self) { frames in
+            frameStore.frames = frames
+            recordHeights(frames)
+        }
+        .onChange(of: layout.displayGroups.map(\.provider.id)) { _, _ in rebalanceColumns() }
         .animation(Motion.spring, value: layout.displayGroups.map(\.provider.id))
+    }
+
+    /// One side of the masonry grid. Identified by position, so a card moving between columns moves
+    /// between two stable parents — same as it did between rows.
+    private struct CardColumn: Identifiable {
+        let index: Int
+        var groups: [ProviderGroup] = []
+        var id: Int { index }
+    }
+
+    /// Splits the cards between the two columns by walking them in display order and always adding
+    /// the next card to the currently shorter column. A card with no measurement yet (first render,
+    /// or a provider just turned on) counts as `estimatedCardHeight`, so a fresh grid starts in an
+    /// even left/right alternation and settles once real heights arrive. A card's height doesn't
+    /// depend on which equal-width column it lands in, so the split converges after one measurement
+    /// pass instead of looping.
+    private static func assignColumns(_ groups: [ProviderGroup], heights: [String: CGFloat]) -> [CardColumn] {
+        var columns = [CardColumn(index: 0), CardColumn(index: 1)]
+        var totals: [CGFloat] = [0, 0]
+        for group in groups {
+            let target = totals[0] <= totals[1] ? 0 : 1
+            columns[target].groups.append(group)
+            totals[target] += heights[group.provider.id] ?? estimatedCardHeight
+        }
+        return columns
+    }
+
+    /// Feeds the balancing heights from the reorder frames. `cardHeights` tracks the latest
+    /// measurements; `balanceHeights` — the snapshot the column split uses — only absorbs a card's
+    /// first height. Re-splitting on a live height change (a caret opening, a density switch) would
+    /// shuffle neighboring cards out from under the pointer, so the snapshot otherwise refreshes
+    /// only in `rebalanceColumns()`.
+    private func recordHeights(_ frames: [String: CGRect]) {
+        let providerIDs = Set(layout.displayGroups.map(\.provider.id))
+        let measured = frames.reduce(into: [String: CGFloat]()) { result, entry in
+            if providerIDs.contains(entry.key) { result[entry.key] = entry.value.height }
+        }
+        guard measured != cardHeights else { return }
+        cardHeights = measured
+        var snapshot = balanceHeights
+        var grew = false
+        for (id, height) in measured where snapshot[id] == nil {
+            snapshot[id] = height
+            grew = true
+        }
+        if grew { balanceHeights = snapshot }
+    }
+
+    /// Re-splits the columns against the latest measured heights when the provider set or order
+    /// changes (a drag reorder, a provider hidden or shown), so the new arrangement lands balanced.
+    /// Prunes heights of providers no longer on the dashboard.
+    private func rebalanceColumns() {
+        let providerIDs = Set(layout.displayGroups.map(\.provider.id))
+        balanceHeights = cardHeights.filter { providerIDs.contains($0.key) }
     }
 
     private func section(_ group: ProviderGroup) -> some View {
@@ -106,6 +177,9 @@ struct WidgetGroupedListView: View {
 
     private enum DashboardMetricCardRow: Identifiable {
         case metric(ResolvedRow)
+        /// Faint separator between adjacent metric modules, keyed by the row it precedes. Skipped
+        /// inside a condensed one-liner cluster, which reads as a single module.
+        case hairline(before: String)
         case divider
         /// #596: the provider's quick-link buttons (Status / Console / Dashboard ...), pinned at the
         /// bottom of the collapsible expanded section. They collapse with the caret — part of the
@@ -116,6 +190,8 @@ struct WidgetGroupedListView: View {
             switch self {
             case .metric(let row):
                 "metric:\(row.descriptor.id)"
+            case .hairline(let beforeID):
+                "hairline-before:\(beforeID)"
             case .divider:
                 "expanded-divider"
             case .links:
@@ -140,7 +216,8 @@ struct WidgetGroupedListView: View {
             expandedRows: expandedRows,
             hasExpandedMetrics: group.hasExpandedMetrics,
             isExpanded: isExpanded,
-            links: group.provider.visibleLinks
+            links: group.provider.visibleLinks,
+            condensedIDs: condensedIDs
         )
         // Same card builder the lifted preview uses, so the floating chip can't drift from the live card.
         return DashboardMetricCard {
@@ -152,6 +229,8 @@ struct WidgetGroupedListView: View {
                 case .metric(let entry):
                     row(entry.descriptor, data: entry.data, in: providerID,
                         condensedTop: condensedIDs.contains(entry.descriptor.id))
+                case .hairline:
+                    CardHairline()
                 case .links(let links):
                     ProviderLinksView(links: links)
                 case .divider:
@@ -173,7 +252,8 @@ struct WidgetGroupedListView: View {
         expandedRows: [ResolvedRow],
         hasExpandedMetrics: Bool,
         isExpanded: Bool,
-        links: [ProviderLink]
+        links: [ProviderLink],
+        condensedIDs: Set<String>
     ) -> [DashboardMetricCardRow] {
         // #596: provider quick-link buttons live INSIDE the collapsible expanded section, pinned at its
         // bottom, so collapsing the caret hides them along with the expanded metrics — they're part of
@@ -181,18 +261,42 @@ struct WidgetGroupedListView: View {
         // content (metrics OR links), so a links-only provider still gets a caret to reveal its buttons.
         let hasLinks = !links.isEmpty
         let hasExpandedContent = hasExpandedMetrics || hasLinks
-        return alwaysRows.map(DashboardMetricCardRow.metric)
+        return metricModuleRows(alwaysRows, condensedIDs: condensedIDs)
             + (hasExpandedContent ? [.divider] : [])
-            + (isExpanded && !expandedRows.isEmpty ? expandedRows.map(DashboardMetricCardRow.metric) : [])
+            + (isExpanded ? metricModuleRows(expandedRows, condensedIDs: condensedIDs) : [])
             + (isExpanded && hasLinks ? [.links(links)] : [])
     }
 
+    /// One segment's metric rows with a faint hairline between adjacent modules. A condensed one-liner
+    /// (a text row pulled up against the text row above it) gets no hairline — the cluster reads as a
+    /// single module, and a line inside it would fight the grouping the hairlines create.
+    private func metricModuleRows(_ rows: [ResolvedRow], condensedIDs: Set<String>) -> [DashboardMetricCardRow] {
+        var result: [DashboardMetricCardRow] = []
+        for row in rows {
+            if !result.isEmpty && !condensedIDs.contains(row.descriptor.id) {
+                result.append(.hairline(before: row.descriptor.id))
+            }
+            result.append(.metric(row))
+        }
+        return result
+    }
+
     /// The centered caret at the bottom of a provider card that reveals or hides its On Demand metrics
-    /// and quick links. Rendered whenever the provider has either kind of expanded content.
+    /// and quick links. Rendered whenever the provider has either kind of expanded content. A plain
+    /// click toggles just this card; ⌥-click expands/collapses every card with expandable content at
+    /// once (the clicked card's direction wins), both on the same spring.
     private func expandToggle(providerID: String, isExpanded: Bool) -> some View {
         Button {
+            let expand = !isExpanded
             withAnimation(Motion.spring) {
-                _ = layout.setProviderExpanded(!isExpanded, for: providerID)
+                if NSEvent.modifierFlags.contains(.option) {
+                    for group in layout.displayGroups
+                    where group.hasExpandedMetrics || !group.provider.visibleLinks.isEmpty {
+                        _ = layout.setProviderExpanded(expand, for: group.provider.id)
+                    }
+                } else {
+                    _ = layout.setProviderExpanded(expand, for: providerID)
+                }
             }
         } label: {
             Image(systemName: isExpanded ? "chevron.up" : "chevron.down")

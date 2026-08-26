@@ -175,7 +175,7 @@ struct WidgetRowView: View {
     /// Flame icon + optional label text, carrying the state's projection tooltip — shared by the
     /// spent and running-out cases. Only the flame is severity-tinted; the copy stays secondary
     /// (tint on glass is reserved for the symbol). An optional `action` wraps the warning in a
-    /// plain button (the run-out time's countdown/exact toggle).
+    /// plain button (the run-out time's countdown/exact toggle) with the shared capsule hover cue.
     @ViewBuilder
     private func flameWarning(text: String?, state: WidgetData.MeterState,
                               accessibility: String, action: (() -> Void)? = nil) -> some View {
@@ -199,6 +199,7 @@ struct WidgetRowView: View {
         if let action {
             Button(action: action) { label }
                 .buttonStyle(.plain)
+                .hoverToggleAffordance()
         } else {
             label
         }
@@ -234,6 +235,7 @@ struct WidgetRowView: View {
                     .contentTransition(.numericText())
             }
             .buttonStyle(.plain)
+            .hoverToggleAffordance()
             .hoverTooltip(data.meterStyleTooltip)
         } else {
             Text(data.headline)
@@ -253,6 +255,7 @@ struct WidgetRowView: View {
                     Text(text).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .hoverToggleAffordance()
                 .hoverTooltip(data.resetTooltip())
             } else {
                 Text(text).foregroundStyle(.secondary)

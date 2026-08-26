@@ -18,7 +18,10 @@ struct TotalSpendShareCardView: View {
         ShareCardChrome(appearance: appearance) {
             headerRow
             DashboardMetricCard {
-                TotalSpendRingContent(projection: projection)
+                TotalSpendRingContent(
+                    projection: projection,
+                    tokenCounts: Dictionary(uniqueKeysWithValues: total.slices.map { ($0.provider.id, $0.tokenCount) })
+                )
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
             }
