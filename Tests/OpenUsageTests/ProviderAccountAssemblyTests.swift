@@ -61,6 +61,60 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertNil(store.defaultBadgeHolder(family: "claude"), "an out-of-pass family must not be reconciled")
     }
 
+    /// The fork's extra Codex cards and upstream's Claude organization cards are minted by the same
+    /// pass: one reconcile covers both families, and `identityKeysByCard` carries the family keys,
+    /// every extra Codex card id, and the Claude card id together. A single Claude account still
+    /// renders as one card titled "Claude" while the extra Codex runtimes sit behind the default one.
+    func testExtraCodexCardsAndClaudeOrganizationCardComeFromOneReconcilePass() throws {
+        let store = ProviderAccountsStore(defaults: makeScratchDefaults())
+        let home = URL(fileURLWithPath: "/Users/dev")
+        let extraPath = "/Users/dev/.cli-proxy-api/codex-extra.json"
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles([
+                "/Users/dev/.claude.json": #"{"oauthAccount":{"accountUuid":"ACCT-1","organizationUuid":"ORG-9","emailAddress":"dev@example.com","organizationName":"SUNSTORY"}}"#,
+                "/Users/dev/.codex/auth.json": #"{"tokens":{"access_token":"at-1","account_id":"acct-default"}}"#,
+            ]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { home }
+        )
+
+        let assembly = ProviderAccountAssembly.make(
+            observer: observer,
+            accountsStore: store,
+            extraCodex: [
+                CodexAccountDiscovery.ExtraCredential(
+                    path: extraPath, identityKey: "acct-extra-1", label: "extra@example.com"
+                )
+            ],
+            // No Claude Desktop material: the organization card comes from the CLI's own
+            // organization-scoped identity, so this pass exercises both card models without a
+            // Desktop fixture.
+            desktop: ClaudeDesktopAuthStore(files: FakeFiles(), homeDirectory: { home })
+        )
+        let extraID = ProviderAccountID.make(family: "codex", identityKey: "acct-extra-1")
+
+        XCTAssertEqual(assembly.claudeCards.map(\.id), ["claude"])
+        XCTAssertEqual(assembly.claudeCards.map(\.displayName), ["Claude — SUNSTORY"])
+        XCTAssertEqual(assembly.claudeCards.first?.organizationID, "org-9")
+        XCTAssertEqual(assembly.claudeCards.first?.usesDesktopCredentials, false)
+        XCTAssertEqual(assembly.extraCodexCards.map(\.id), [extraID])
+        XCTAssertEqual(assembly.extraCodexCards.first?.displayName, "Codex — extra@example.com")
+        XCTAssertEqual(assembly.identityKeysByCard, [
+            "claude": "acct-1|org-9", "codex": "acct-default", extraID: "acct-extra-1"
+        ])
+        // One pass, one reconcile: three records, no duplicate cards for either family.
+        XCTAssertEqual(Set(store.records.map(\.id)), ["claude", "codex", extraID])
+
+        let ids = ProviderCatalog.make(
+            extraCodexCards: assembly.extraCodexCards,
+            claudeCards: assembly.claudeCards,
+            claudeIdentityKeys: assembly.identityKeysByCard
+        ).map(\.provider)
+        XCTAssertEqual(ids.prefix(4).map(\.id), ["claude", "codex", extraID, "cursor"])
+        XCTAssertEqual(ids.first?.displayName, "Claude")
+    }
+
     func testNothingObservedLeavesRegistryAndKeysEmpty() {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
