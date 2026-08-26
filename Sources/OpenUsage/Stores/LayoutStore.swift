@@ -123,9 +123,13 @@ final class LayoutStore {
         self.registry = registry
         let persistence = LayoutPersistence(defaults: defaults, storageKey: storageKey)
         self.persistence = persistence
-        // Extra account cards (`codex@hash`) share the family's metric layout at display time. Their
-        // default ids still translate so Reset / seed-tracking know the instance metrics. Pins stay
-        // family-only.
+        // Extra account cards (`codex@hash`, `claude@hash`) share the family's metric layout at
+        // display time. Their default ids still translate so Reset / seed-tracking know the instance
+        // metrics. Pins are NOT translated here, and the two families differ on purpose: Claude
+        // account cards already arrive pinned because `AppContainer` pre-expands
+        // `DefaultLayout.pinnedMetricIDs` onto every extra Claude card (each gets its own Session +
+        // Weekly slots), while extra Codex cards inherit no pins — the default Codex card keeps the
+        // family's menu-bar slots.
         let instanceMetricIDs = DefaultLayout.includingInstances(defaultMetricIDs, registry: registry)
         let instanceExpandedMetricIDs = DefaultLayout.includingInstances(defaultExpandedMetricIDs, registry: registry)
         self.defaultMetricIDs = instanceMetricIDs

@@ -113,8 +113,12 @@ enum DefaultLayout {
 
     /// Copy a family's default metric ids onto extra account cards already in `registry`
     /// (`codex.weekly` → `codex@ab12cd34.weekly`). Used for Reset / seed-tracking; the dashboard
-    /// itself shares the family's live layout rather than these copies. Extra cards never inherit
-    /// pins — the default card keeps the family's menu-bar slots.
+    /// itself shares the family's live layout rather than these copies.
+    ///
+    /// Never called with a pin list, so nothing an extra card is pinned to comes from here. Whether
+    /// a card inherits pins at all depends on its family: `AppContainer` pre-expands
+    /// `pinnedMetricIDs` onto extra Claude cards (so each gets its own menu-bar slots), while extra
+    /// Codex cards get none — the default Codex card keeps the family's slots.
     static func includingInstances(_ ids: [String], registry: WidgetRegistry) -> [String] {
         var result = ids
         // A caller may hand us a list that already names some instance metrics — `AppContainer`
