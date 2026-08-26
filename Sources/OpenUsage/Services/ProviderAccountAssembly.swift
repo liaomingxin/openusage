@@ -284,13 +284,21 @@ struct ProviderAccountAssembly {
         // claude-swap slots that are not already a card: a slot holding the same account as the
         // default home (or a Desktop organization) attached as an extra source on that record above
         // and must not mint a second card.
+        //
+        // The bare `claude` id is only off limits while something else answers to it: `ProviderCatalog`
+        // emits a bare `ClaudeProvider()` exactly when no family card exists, so once the family cards
+        // have taken hashed ids of their own the id is free. That matters after a `cswap switch` — the
+        // account that owned `claude` when the registry was first written keeps that record id forever,
+        // so refusing it outright would leave that account with no card at all while it is stashed.
+        let bareClaudeIsClaimed = cards.isEmpty || cards.contains { $0.id == "claude" }
         var swapCards: [ClaudeSwapCard] = []
         for slot in claudeSwap {
             guard slot.identityKey != defaultClaudeIdentity else { continue }
             guard let record = records.first(where: {
                 $0.family == "claude" && $0.identityKey == slot.identityKey && !$0.removedTombstone
             }) else { continue }
-            guard record.id != "claude", !record.sources.contains(where: \.holdsDefaultSource) else { continue }
+            guard !(record.id == "claude" && bareClaudeIsClaimed) else { continue }
+            guard !record.sources.contains(where: \.holdsDefaultSource) else { continue }
             guard !cards.contains(where: { $0.id == record.id }),
                   !swapCards.contains(where: { $0.id == record.id })
             else { continue }

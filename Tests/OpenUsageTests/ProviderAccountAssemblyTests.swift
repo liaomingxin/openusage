@@ -242,6 +242,72 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertNil(store.defaultBadgeHolder(family: "claude"), "a stashed account never takes the default badge")
     }
 
+    /// `cswap switch` moves an account between `~/.claude` and the stash. The account that occupied
+    /// the default home when the registry was first written keeps the bare `claude` record id forever,
+    /// so a second launch that finds it stashed must still give it a card — under that same bare id,
+    /// which is free precisely because the new default-home account took a hashed one.
+    func testAccountThatOwnsTheBareIDKeepsACardOnceItIsStashed() throws {
+        let defaults = makeScratchDefaults()
+        let home = URL(fileURLWithPath: "/Users/dev")
+        let pathA = "/Users/dev/.claude-swap-backup/configs/.claude-config-1-a@example.com.json"
+        let pathB = "/Users/dev/.claude-swap-backup/configs/.claude-config-2-b@example.com.json"
+        let identityA = "acct-a|org-a"
+        let identityB = "acct-b|org-b"
+        let slotA = ClaudeSwapDiscovery.ExtraCredential(
+            path: pathA, slot: "1", identityKey: identityA, label: "a@example.com"
+        )
+        let slotB = ClaudeSwapDiscovery.ExtraCredential(
+            path: pathB, slot: "2", identityKey: identityB, label: "b@example.com"
+        )
+        func launch(active: String) -> ProviderAccountAssembly {
+            let observer = DefaultAccountObserver(
+                environment: FakeEnvironment([:]),
+                files: FakeFiles([
+                    "/Users/dev/.claude.json": #"{"oauthAccount":{"accountUuid":"ACCT-\#(active)","organizationUuid":"ORG-\#(active)","emailAddress":"\#(active.lowercased())@example.com","organizationName":"Org \#(active)"}}"#,
+                ]),
+                keychain: FakeKeychain(nil),
+                homeDirectory: { home }
+            )
+            // Both accounts stay in the stash; only which one `~/.claude` holds changes.
+            return ProviderAccountAssembly.make(
+                observer: observer,
+                accountsStore: ProviderAccountsStore(defaults: defaults),
+                claudeSwap: [slotA, slotB],
+                desktop: ClaudeDesktopAuthStore(files: FakeFiles(), homeDirectory: { home })
+            )
+        }
+
+        // Launch 1: A is signed in, so A takes the bare id and B is the stashed card.
+        let first = launch(active: "A")
+        let hashedB = ProviderAccountID.make(family: "claude", identityKey: identityB)
+        XCTAssertEqual(first.claudeCards.map(\.id), ["claude"])
+        XCTAssertEqual(first.claudeSwapCards.map(\.id), [hashedB])
+        XCTAssertEqual(first.identityKeysByCard["claude"], identityA)
+        XCTAssertEqual(first.identityKeysByCard[hashedB], identityB)
+
+        // Launch 2: after `cswap switch`, B holds the default home and A is stashed. A keeps the bare
+        // record id it was minted with, and must still get a card.
+        let second = launch(active: "B")
+        XCTAssertEqual(second.claudeCards.map(\.id), [hashedB], "B's record id never moves")
+        XCTAssertEqual(second.claudeSwapCards.map(\.id), ["claude"])
+        XCTAssertEqual(second.claudeSwapCards.map(\.configPath), [pathA])
+        XCTAssertEqual(second.identityKeysByCard["claude"], identityA, "the bare card now points at A")
+        XCTAssertEqual(second.identityKeysByCard[hashedB], identityB)
+
+        // Two Claude cards on both launches, and the catalog emits exactly those two runtimes.
+        for assembly in [first, second] {
+            XCTAssertEqual(assembly.claudeCards.count + assembly.claudeSwapCards.count, 2)
+            let ids = ProviderCatalog.make(
+                defaults: defaults,
+                claudeCards: assembly.claudeCards,
+                claudeSwapCards: assembly.claudeSwapCards,
+                claudeIdentityKeys: assembly.identityKeysByCard
+            ).map(\.provider.id)
+            XCTAssertEqual(ids.count { ProviderAccountID.family(of: $0) == "claude" }, 2)
+            XCTAssertEqual(Set(ids).count, ids.count, "no duplicate card ids")
+        }
+    }
+
     func testNothingObservedLeavesRegistryAndKeysEmpty() {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
