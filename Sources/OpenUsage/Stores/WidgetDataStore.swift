@@ -493,6 +493,17 @@ final class WidgetDataStore {
         snapshots = rendered
     }
 
+    /// The provider's quick links as its runtime reports them right now.
+    ///
+    /// The registry's copy is stamped once at launch, which is right for every provider whose links
+    /// are constants — but Z.ai's point at whichever console the key belongs to, and that can change
+    /// mid-session in Settings. Falls back to the registry when the runtime is unknown.
+    func links(for providerID: String) -> [ProviderLink] {
+        providersByID[providerID]?.provider.visibleLinks
+            ?? registry.provider(id: providerID)?.visibleLinks
+            ?? []
+    }
+
     /// The provider's latest refresh error, or `nil` when its last refresh succeeded.
     func errorMessage(for providerID: String) -> String? {
         providerErrors[providerID]
@@ -576,7 +587,7 @@ final class WidgetDataStore {
 
     private func resolve(_ line: MetricLine, descriptor: WidgetDescriptor) -> WidgetData? {
         switch line {
-        case .progress(_, let used, let limit, let format, let resetsAt, let periodDurationMs, _):
+        case .progress(_, let used, let limit, let format, let resetsAt, let periodDurationMs, _, let detail):
             // A percent meter is a bounded 0...100 domain; sanitize an out-of-range sample (a provider
             // reporting a negative or >100 utilization) here, at the single construction choke point
             // every provider funnels through, so no surface — headline, flip tooltip, menu bar — can
@@ -601,6 +612,8 @@ final class WidgetDataStore {
             // Descriptor opt-in (session-window meters read "Not started" when unused); the fresh
             // `.progress` result doesn't start from the sample, so carry the signal explicitly.
             result.sessionStartSignal = descriptor.sample.sessionStartSignal
+            // Optional absolute figures under the bar (Z.ai credits); nil leaves the row unchanged.
+            result.meterDetail = detail
             return result
         case .text:
             // Text lines carry provider notices for the local API; no dashboard descriptor consumes

@@ -279,7 +279,12 @@ enum SpendTileMapper {
         return lhs.model.localizedStandardCompare(rhs.model) == .orderedAscending
     }
 
-    private static func modelBreakdown(
+    /// The period-scoped model breakdown attached to a spend/usage row: the day-filtered per-model
+    /// totals, case-folded into one row per model, ranked, and folded into `Other` below the visible
+    /// share. Shared with providers that build their period rows themselves (Z.ai carries tokens and
+    /// call counts instead of dollars) so every hover panel folds and ranks identically. `nil` when
+    /// there is no per-model data, no source note, or no day in the period.
+    static func modelBreakdown(
         _ usage: ModelUsageSeries?,
         days: Set<String>,
         totalTokens: Int,

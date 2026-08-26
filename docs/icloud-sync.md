@@ -9,7 +9,8 @@ pairing code, or separate account.
 The file contains normalized daily tokens and spend, model totals, and unknown-model names for sources
 that are local to one Mac: Claude, Codex, Grok, and OpenCode. It also includes Claude account and
 organization identities when available, but never credentials, account limits, raw logs, or provider
-responses. Cursor's history is already account-wide, so it stays local and is never added across Macs.
+responses. Cursor's and Z.ai's histories are already account-wide (their providers report them per account, not
+per Mac), so they stay local and are never added across Macs.
 Disabling a provider immediately removes its peer contributions from the combined view and omits it from
 this Mac's next iCloud write, while its local cached snapshot remains.
 

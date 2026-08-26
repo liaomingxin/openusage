@@ -60,6 +60,10 @@ struct WidgetData: Hashable {
     /// Optional source/disclaimer note for locally-estimated tiles. Rendered on the value-side hover,
     /// not beside the left label, so labels stay inert.
     var infoNote: String?
+    /// Secondary line under a bounded row's meter: the absolute figures behind a percentage
+    /// (Z.ai's "1,030 / 28,000 credits"). Additive — the headline and the reset countdown are
+    /// untouched — and `nil` on every row that doesn't supply one, so those render exactly as before.
+    var meterDetail: String?
     /// Optional source note for value rows such as Cursor spend history.
     var valueTooltipNote: String?
     /// False when no real provider metric backs this tile. The view then shows a "No data" state

@@ -1,22 +1,55 @@
 # Z.ai
 
-Tracks [Z.ai](https://z.ai) (Zhipu AI) GLM Coding Plan usage quotas for coding subscriptions.
+Tracks [Z.ai](https://z.ai) (Zhipu AI) GLM Coding Plan usage — quota meters plus your recent token,
+call, and MCP-tool history.
 
 ## What it tracks
 
 | Metric | Meaning |
 |---|---|
-| Session | 5-hour rolling window token usage (percentage) |
-| Weekly | 7-day rolling window token usage (percentage) |
-| Web Searches | Monthly web-search / web-reader / Zread calls (used / limit) |
-| Renews | When your GLM Coding Plan's current period ends. Reads **Ends** when auto-renew is off. Enabled by default, tucked below the caret |
+| Session | 5-hour rolling window usage (percentage), with the credits behind it under the bar |
+| Weekly | 7-day rolling window usage (percentage), with the credits behind it under the bar |
+| Web Searches | Monthly web-search / web-reader / Zread allowance (used / limit). Below the caret |
+| Usage Trend | Daily tokens over the last 30 days, as a small bar chart |
+| Today / Yesterday / Last 30 Days | Tokens and API calls for the period, e.g. `66.1M tokens · 426 calls`. Below the caret |
+| MCP Tools | Web searches, web reads and ZRead calls over the last 30 days. Below the caret |
+| Renews | When your GLM Coding Plan's current period ends. Reads **Ends** when auto-renew is off. Below the caret |
 
 When Z.ai reports your plan name, OpenUsage shows it beside the provider name.
+
+**Session** and **Weekly** stay percentage meters — that is what Z.ai meters, and what a menu-bar pin
+and the [local API](../local-http-api.md) export — but each row now also shows the raw figures behind
+the percentage, e.g. `1,030 / 28,000 credits`, under the bar.
+
+Hovering **Today**, **Yesterday**, or **Last 30 Days** opens the per-model breakdown for that period.
+A GLM Coding Plan is a flat subscription, so nothing is priced: the panel ranks models by their share
+of tokens rather than by cost.
+
+**MCP Tools** shows all three counts even when some are zero (`1 search · 3 reads · 0 ZRead`) — Z.ai
+reports the window's totals directly, so a zero there is a real measurement. The token rows work the
+other way: a period with no usage shows **No data** rather than a confident `0 tokens`.
 
 The **Renews** row comes from the same subscription response as the plan name, so it costs no
 extra request. It follows the global **Reset Times** setting: `Renews in 88d 6h` on Countdown,
 `Renews Nov 23` on Exact Time. With auto-renew turned off the row reads **Ends** on that date, and
 an account with no active subscription entry shows no row at all.
+
+## Global or China platform
+
+Z.ai publishes the same API on two consoles, and an account lives on exactly one of them:
+
+| Platform | Console | API host |
+|---|---|---|
+| Global | [z.ai](https://z.ai) | `api.z.ai` |
+| China | [open.bigmodel.cn](https://open.bigmodel.cn) | `open.bigmodel.cn` |
+
+Pick yours in **Settings → API Keys → Z.ai → Platform**. The choice is stored next to your key (see
+below) and decides which host every request goes to, which console the card's **Dashboard** and
+**API Keys** buttons open, and which console the error messages name. There is no fallback between
+hosts: a key that belongs to the other platform fails with a clear error rather than being retried
+somewhere else.
+
+New keys default to Global, which is what every setup before this option used.
 
 ## Where credentials come from
 
@@ -28,34 +61,52 @@ OpenUsage reads it from the first place it finds one, in this order:
 3. The `ZAI_API_KEY` environment variable
 4. The `GLM_API_KEY` environment variable (the legacy Zhipu name, still accepted)
 
-You can also add and rotate the key from **Settings → API Keys** without touching a file. Either
-way, nothing leaves your Mac except the same API calls Z.ai's own subscription UI makes.
+The platform choice lives in the same JSON file, as `"platform": "global"` or `"platform": "cn"`.
+A file with no `platform` field means Global. Both `apiKey` and `api_key` spellings are accepted, and
+saving or clearing a key from Settings keeps your platform choice.
+
+```json
+{ "api_key": "…", "platform": "cn" }
+```
+
+You can add and rotate the key from **Settings → API Keys** without touching a file. Either way,
+nothing leaves your Mac except the same API calls Z.ai's own subscription UI makes.
 
 ## Setup
 
-1. [Subscribe to a GLM Coding plan](https://z.ai/subscribe) and get your API key from the
-   [Z.ai console](https://z.ai/manage-apikey/apikey-list).
-2. Add the key to OpenUsage via **Settings → API Keys**, **or** export it:
+1. Subscribe to a GLM Coding plan and get your API key — from the
+   [Z.ai console](https://z.ai/manage-apikey/apikey-list) on Global, or the
+   [BigModel console](https://open.bigmodel.cn/apikey) on China.
+2. Add the key in **Settings → API Keys**, **or** export it:
 
 ```bash
 export ZAI_API_KEY="YOUR_API_KEY"
 ```
 
-3. Z.ai appears on the dashboard and (after you star a metric) the menu bar on the next refresh.
+3. If your account is on the China platform, switch **Platform** to China in the same card.
+4. Z.ai appears on the dashboard and (after you star a metric) the menu bar on the next refresh.
 
 ## Under the hood
 
-Two undocumented internal endpoints Z.ai's own subscription UI uses (stable in practice):
+Four undocumented internal endpoints Z.ai's own usage dashboard uses (stable in practice), all on
+your chosen host — `https://api.z.ai` or `https://open.bigmodel.cn`:
 
-- `GET https://api.z.ai/api/biz/subscription/list` — plan name and the renewal date (best-effort; a
-  failure here doesn't blank the meters).
-- `GET https://api.z.ai/api/monitor/usage/quota/limit` — the quota meters.
+| Endpoint | Feeds | Required? |
+|---|---|---|
+| `GET /api/monitor/usage/quota/limit` | Session, Weekly, Web Searches | Yes |
+| `GET /api/biz/subscription/list` | Plan name and Renews | Best-effort |
+| `GET /api/monitor/usage/model-usage` | Usage Trend, Today, Yesterday, Last 30 Days | Best-effort |
+| `GET /api/monitor/usage/tool-usage` | MCP Tools | Best-effort |
+
+Best-effort means a failure there is logged and leaves only its own rows empty — the quota meters are
+never blanked by it.
 
 The quota response carries a `limits` array. Each `CREDIT_LIMIT` entry (called `TOKENS_LIMIT` in
 older responses) is a percentage quota window; its window length decides which meter it feeds
-(sub-daily → Session, multi-day → Weekly), while a `TIME_LIMIT` entry is the monthly web-search
-count. Reset times come back as epoch milliseconds. Missing required usage values are reported as
-an invalid response instead of being shown as zero.
+(sub-daily → Session, multi-day → Weekly), and its `currentValue` / `usage` pair is the credits shown
+under the bar. A `TIME_LIMIT` entry is the monthly web-search count; plans that don't include one
+simply show **No data** on that row. Reset times come back as epoch milliseconds. Missing required
+usage values are reported as an invalid response instead of being shown as zero.
 
 The subscription response is a list, so the renewal row picks the entry Z.ai marks as the running
 period (`status: VALID`, `inCurrentPeriod`) and reads its `nextRenewTime`. That date is a bare
@@ -63,13 +114,33 @@ calendar day with no time zone, so OpenUsage shows the same day Z.ai's own dashb
 countdown can therefore be a few hours out, which doesn't matter for a date that moves once a
 billing period.
 
+### Days and time zones
+
+The two history endpoints take a start and end time on Z.ai's own clock (Beijing time), so OpenUsage
+formats its requests in that zone and reads the bucket labels back in it.
+
+Z.ai chooses the bucket size: a range up to seven days comes back hour by hour, anything longer comes
+back as whole Beijing days. That is why the history is fetched twice per refresh —
+
+- a **30-day** call, in whole days, behind Usage Trend and Last 30 Days, and
+- a **short** call, hour by hour, behind Today and Yesterday.
+
+Hourly buckets are added up into *your* Mac's calendar days, so Today and Yesterday mean your today
+and yesterday wherever you are. Whole-day buckets are already complete days on Z.ai's calendar and are
+shown as such, matching what Z.ai's own dashboard reports.
+
+This history is the same on every Mac signed into the account, so — like Cursor's — it is never
+merged across your Macs and never written to the [iCloud Sync](../icloud-sync.md) file.
+
 ## Troubleshooting
 
 - **"No Z.ai API key"** — add a key in Settings → API Keys, or export `ZAI_API_KEY`.
-- **"Z.ai API key invalid"** — the key was rejected (401/403). Regenerate it in the
-  [Z.ai console](https://z.ai/manage-apikey/apikey-list).
+- **"Z.ai API key invalid"** — the key was rejected (401/403). Check that **Platform** matches the
+  console that issued the key, then regenerate it there if needed.
 - **"No active GLM Coding Plan"** (amber notice by the name) — the key is valid, but the account has no
-  GLM Coding Plan, so there's nothing to meter. Subscribe at [z.ai/subscribe](https://z.ai/subscribe);
-  usage appears once your plan is active.
+  GLM Coding Plan, so there's nothing to meter. Subscribe on the console the error names; usage
+  appears once your plan is active.
 - **Meters show "No usage data"** — you have a plan, but the quota endpoint returned no usable limits
-  yet. Check your [plan](https://z.ai/manage-apikey/coding-plan/personal/my-plan).
+  yet. Check your plan on the card's **Dashboard** link.
+- **The history rows are empty but the meters work** — one of the two history endpoints failed this
+  refresh. It retries on the next pass; the reason is in the [log](../logging.md).

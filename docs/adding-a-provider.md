@@ -91,3 +91,10 @@ in-app **Settings → API Keys** card manages its key with no per-provider UI wo
 
 Persist the key to a file the auth store already checks (don't introduce a parallel store), so the
 file remains the source of truth and a user can still edit it by hand.
+
+A provider that publishes the same API on more than one console — where a key only works on the one
+that issued it — also conforms to `ProviderPlatformSelecting` (Z.ai: global `api.z.ai` vs China
+`open.bigmodel.cn`). It reports its options, the current choice, and a setter; the same API Key card
+renders a **Platform** picker above the key field and forces a refresh when it changes. Store the
+choice in the same config file as the key so the two never drift, keep it there when the key is saved
+or cleared, and never fall back from one host to the other — a mismatched key must fail loudly.

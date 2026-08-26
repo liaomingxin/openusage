@@ -53,6 +53,14 @@ Desktop's rotating refresh token and never modifies Desktop's config, cookies, o
 
 Besides the provider API calls the vendor's own tools would make, OpenUsage fetches public [model price lists](pricing.md) about once an hour (from `raw.githubusercontent.com`, `models.dev`, and this project's GitHub Pages). These are plain downloads of public data — they carry no usage, log, or account information, and they run regardless of the analytics toggle. The spend tiles are computed from local CLI logs entirely on your Mac; no log data ever leaves it.
 
+Z.ai is the one provider whose host you choose: its requests go to `api.z.ai` on the Global platform
+or to `open.bigmodel.cn` (Zhipu's BigModel console) on the China platform, following the setting
+stored beside your key. OpenUsage never falls back from one host to the other. Alongside the quota and
+subscription calls, a Z.ai refresh reads `/api/monitor/usage/model-usage` and
+`/api/monitor/usage/tool-usage` on that same host — the same endpoints Z.ai's own usage dashboard
+calls — to fill the usage-history and MCP-tool rows. They send your API key and a time range, and
+nothing else. See [Z.ai](providers/zai.md).
+
 To avoid re-reading unchanged Claude, Codex, and pi logs after every relaunch, OpenUsage keeps their
 parsed usage events in `~/Library/Application Support/OpenUsage/log-scan-cache/`. These records contain
 the usage metadata needed for local totals, including any per-event cost already recorded by a provider,

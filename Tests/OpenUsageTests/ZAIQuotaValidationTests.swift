@@ -60,7 +60,7 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
                 environment: FakeEnvironment(["ZAI_API_KEY": "zai-test"])
             ),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
-                if request.url == ZAIUsageClient.quotaURL {
+                if request.url == ZAIUsageClient.quotaURL(.global) {
                     return HTTPResponse(
                         statusCode: 200,
                         headers: [:],

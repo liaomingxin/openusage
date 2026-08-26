@@ -216,7 +216,7 @@ struct WidgetGroupedListView: View {
             expandedRows: expandedRows,
             hasExpandedMetrics: group.hasExpandedMetrics,
             isExpanded: isExpanded,
-            links: group.provider.visibleLinks,
+            links: dataStore.links(for: providerID),
             condensedIDs: condensedIDs
         )
         // Same card builder the lifted preview uses, so the floating chip can't drift from the live card.
@@ -291,7 +291,7 @@ struct WidgetGroupedListView: View {
             withAnimation(Motion.spring) {
                 if NSEvent.modifierFlags.contains(.option) {
                     for group in layout.displayGroups
-                    where group.hasExpandedMetrics || !group.provider.visibleLinks.isEmpty {
+                    where group.hasExpandedMetrics || !dataStore.links(for: group.provider.id).isEmpty {
                         _ = layout.setProviderExpanded(expand, for: group.provider.id)
                     }
                 } else {
@@ -436,7 +436,7 @@ struct WidgetGroupedListView: View {
         // The caret is a drop target whenever the expanded section is open — including a links-only
         // section (buttons but no expanded metrics), so a metric can be dragged past the caret to tuck
         // it below the fold even when only buttons are showing there.
-        let hasExpandedContent = group.hasExpandedMetrics || !group.provider.visibleLinks.isEmpty
+        let hasExpandedContent = group.hasExpandedMetrics || !dataStore.links(for: group.provider.id).isEmpty
         guard hasExpandedContent, layout.isProviderExpanded(providerID) else { return alwaysShown }
         let expanded = group.expandedWidgets.compactMap { layout.descriptor(for: $0)?.id }
         return alwaysShown + [expandedDividerID(for: providerID)] + expanded

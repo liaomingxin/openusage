@@ -133,7 +133,7 @@ final class KimiUsageMapperTests: XCTestCase {
     }
 
     private func progress(_ mapped: KimiMappedUsage, _ label: String) -> (used: Double, limit: Double, resetsAt: Date?, periodDurationMs: Int?)? {
-        guard case .progress(_, let used, let limit, _, let resetsAt, let periodDurationMs, _) =
+        guard case .progress(_, let used, let limit, _, let resetsAt, let periodDurationMs, _, _) =
             mapped.lines.first(where: { $0.label == label })
         else { return nil }
         return (used, limit, resetsAt, periodDurationMs)
@@ -265,7 +265,7 @@ private func ok(_ body: Data) -> HTTPResponse {
 
 private extension MetricLine {
     var progressUsed: Double? {
-        guard case .progress(_, let used, _, _, _, _, _) = self else { return nil }
+        guard case .progress(_, let used, _, _, _, _, _, _) = self else { return nil }
         return used
     }
 }

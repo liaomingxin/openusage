@@ -225,7 +225,7 @@ final class ZAIUsageMapperTests: XCTestCase {
     }
 
     private func progress(_ lines: [MetricLine], _ label: String) -> (used: Double, limit: Double, format: ProgressFormat, resetsAt: Date?, periodDurationMs: Int?)? {
-        guard case .progress(_, let used, let limit, let format, let resetsAt, let periodDurationMs, _) = lines.first(where: { $0.label == label }) else {
+        guard case .progress(_, let used, let limit, let format, let resetsAt, let periodDurationMs, _, _) = lines.first(where: { $0.label == label }) else {
             return nil
         }
         return (used, limit, format, resetsAt, periodDurationMs)
@@ -241,7 +241,7 @@ final class ZAIProviderTests: XCTestCase {
             authStore: makeAuthStore(key: "zai-test"),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
                 XCTAssertEqual(request.headers["Authorization"], "Bearer zai-test")
-                if request.url == ZAIUsageClient.quotaURL {
+                if request.url == ZAIUsageClient.quotaURL(.global) {
                     return jsonResponse(quotaBothLimitsJSON)
                 }
                 return jsonResponse(subscriptionJSON)
@@ -263,7 +263,7 @@ final class ZAIProviderTests: XCTestCase {
         let provider = ZAIProvider(
             authStore: makeAuthStore(key: "zai-test"),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
-                if request.url == ZAIUsageClient.quotaURL {
+                if request.url == ZAIUsageClient.quotaURL(.global) {
                     return jsonResponse(quotaBothLimitsJSON)
                 }
                 return HTTPResponse(statusCode: 500, headers: [:], body: Data("{}".utf8))
@@ -300,7 +300,7 @@ final class ZAIProviderTests: XCTestCase {
             let provider = ZAIProvider(
                 authStore: makeAuthStore(key: "zai-test"),
                 usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
-                    request.url == ZAIUsageClient.quotaURL
+                    request.url == ZAIUsageClient.quotaURL(.global)
                         ? HTTPResponse(statusCode: entry.status, headers: [:], body: Data("{}".utf8))
                         : jsonResponse(subscriptionJSON)
                 })
@@ -331,7 +331,7 @@ final class ZAIProviderTests: XCTestCase {
         let provider = ZAIProvider(
             authStore: makeAuthStore(key: "zai-test"),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
-                if request.url == ZAIUsageClient.quotaURL {
+                if request.url == ZAIUsageClient.quotaURL(.global) {
                     return jsonResponse(#"{"code":500,"msg":"当前用户不存在coding plan","success":false}"#)
                 }
                 return jsonResponse(subscriptionJSON)

@@ -27,6 +27,9 @@ struct APIKeysSection: View {
     @State private var input = ""
     @State private var revealedKey: String?
     @State private var actionError: String?
+    /// Live platform selection for providers whose key belongs to one console (Z.ai). Seeded when the
+    /// editor opens; `nil` for every other provider, whose card renders exactly as before.
+    @State private var platformID: String?
 
     private static let inputPlaceholder = "sk-or-v1-…"
 
@@ -82,6 +85,7 @@ struct APIKeysSection: View {
     @ViewBuilder
     private var editorBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
+            platformPicker
             if status == .notSet {
                 // No key anywhere: the field is editable from the start.
                 keyField(editable: true)
@@ -117,6 +121,26 @@ struct APIKeysSection: View {
         .onChange(of: overrideChecked) { _, isOn in
             // Flipping into override mode starts a fresh entry; flipping back drops the draft.
             if isOn { input = ""; revealInput = false }
+        }
+    }
+
+    /// The console the key belongs to, for providers that publish the same API on more than one
+    /// (Z.ai's global z.ai and China bigmodel.cn platforms). The choice is stored beside the key, so a
+    /// change takes effect on the next refresh — which is forced right after it commits.
+    @ViewBuilder
+    private var platformPicker: some View {
+        if let selecting = provider as? any ProviderPlatformSelecting, let platformID {
+            Picker("Platform", selection: Binding(
+                get: { platformID },
+                set: { selectPlatform($0, on: selecting) }
+            )) {
+                ForEach(selecting.platformOptions) { option in
+                    Text("\(option.title) — \(option.host)").tag(option.id)
+                }
+            }
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .font(.caption)
         }
     }
 
@@ -206,6 +230,19 @@ struct APIKeysSection: View {
         input = ""
         revealedKey = nil
         actionError = nil
+        platformID = (provider as? any ProviderPlatformSelecting)?.selectedPlatformID
+    }
+
+    private func selectPlatform(_ id: String, on selecting: any ProviderPlatformSelecting) {
+        do {
+            try selecting.selectPlatform(id)
+            platformID = id
+            actionError = nil
+            triggerRefresh()
+        } catch {
+            actionError = error.localizedDescription
+            AppLog.error(.auth, "platform change failed for \(provider.provider.id): \(error.localizedDescription)")
+        }
     }
 
     private func toggleRevealDisplay() {

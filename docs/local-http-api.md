@@ -137,7 +137,8 @@ combined Credits UI row becomes two scalar resources: `credits` and `creditValue
       "format": { "kind": "percent" },          // or "dollars", or "count" (+ "suffix")
       "resetsAt": "2026-03-26T13:00:00.161Z",   // optional
       "periodDurationMs": 18000000,             // optional
-      "color": null
+      "color": null,
+      "detail": "1,030 / 28,000 credits"        // optional; only where a provider supplies it
     },
     {
       "type": "text",
@@ -175,7 +176,7 @@ combined Credits UI row becomes two scalar resources: `credits` and `creditValue
 }
 ```
 
-Line types are `progress`, `text`, `badge`, `date`, and `barChart`. A `date` line is a calendar instant rather than a number — today only the subscription renewal row — carried as ISO 8601 in `at`, never as a display string; its `label` is the row's live wording (`Renews` or `Ends`). A `barChart` line carries a `points` array — one `{ label, value, valueLabel? }` per day, oldest first — plus an optional `note`; `value` is the day's token count, `valueLabel` its pre-formatted readout, and `label` a localized month/day (e.g. "Mar 25"). `fetchedAt` is when the snapshot was last fetched successfully (ISO 8601).
+Line types are `progress`, `text`, `badge`, `date`, and `barChart`. A `progress` line may carry an optional `detail` string — the absolute figures behind a percentage meter, currently only Z.ai's Session and Weekly credits. The key is absent on every meter without one, so existing consumers see the shape they always did. A `date` line is a calendar instant rather than a number — today only the subscription renewal row — carried as ISO 8601 in `at`, never as a display string; its `label` is the row's live wording (`Renews` or `Ends`). A `barChart` line carries a `points` array — one `{ label, value, valueLabel? }` per day, oldest first — plus an optional `note`; `value` is the day's token count, `valueLabel` its pre-formatted readout, and `label` a localized month/day (e.g. "Mar 25"). `fetchedAt` is when the snapshot was last fetched successfully (ISO 8601).
 
 The in-app model breakdown shown when hovering spend rows is not included in this API yet. Spend rows continue to serialize as the same `text` lines so existing local integrations keep their current shape.
 

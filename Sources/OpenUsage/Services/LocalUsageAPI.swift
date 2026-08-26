@@ -123,7 +123,7 @@ enum LocalUsageAPI {
         init(_ line: MetricLine) { self.line = line }
 
         enum CodingKeys: String, CodingKey {
-            case type, label, value, used, limit, format, resetsAt, periodDurationMs, color, subtitle, text, at, points, note
+            case type, label, value, used, limit, format, resetsAt, periodDurationMs, color, subtitle, detail, text, at, points, note
         }
 
         func encode(to encoder: Encoder) throws {
@@ -149,7 +149,7 @@ enum LocalUsageAPI {
                 // Expose the soonest expiry (Codex reset credits) as ISO-8601 so consumers get the next
                 // one without us baking a display string — same `resetsAt` field a progress row uses.
                 try container.encodeIfPresent(expiriesAt.min().map(OpenUsageISO8601.string(from:)), forKey: .resetsAt)
-            case .progress(let label, let used, let limit, let format, let resetsAt, let periodDurationMs, let color):
+            case .progress(let label, let used, let limit, let format, let resetsAt, let periodDurationMs, let color, let detail):
                 try container.encode("progress", forKey: .type)
                 try container.encode(label, forKey: .label)
                 try container.encode(used, forKey: .used)
@@ -158,6 +158,10 @@ enum LocalUsageAPI {
                 try container.encodeIfPresent(resetsAt.map(OpenUsageISO8601.string(from:)), forKey: .resetsAt)
                 try container.encodeIfPresent(periodDurationMs, forKey: .periodDurationMs)
                 try container.encode(color, forKey: .color)
+                // Only present when the provider supplied the absolute figures behind a percentage
+                // (Z.ai credits) — the key is omitted entirely for every other meter, so existing
+                // consumers see the exact shape they always did.
+                try container.encodeIfPresent(detail, forKey: .detail)
             case .badge(let label, let text, let color, let subtitle):
                 try container.encode("badge", forKey: .type)
                 try container.encode(label, forKey: .label)

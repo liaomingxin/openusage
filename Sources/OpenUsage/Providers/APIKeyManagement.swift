@@ -38,3 +38,22 @@ protocol APIKeyManaging: ProviderRuntime {
     /// otherwise `notSet`.
     func deleteAPIKey() throws
 }
+
+/// One selectable API platform for a provider that publishes the same API on more than one console.
+/// `host` is shown under the option so the choice reads as "which server am I talking to".
+struct ProviderPlatformOption: Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    let host: String
+}
+
+/// An `APIKeyManaging` provider whose key only works on one of several consoles, so the console is
+/// part of the credential rather than a global setting (today only Z.ai: the global `api.z.ai` and
+/// the China `open.bigmodel.cn`). The provider's API Key card renders the picker and writes the
+/// choice next to the key, so both travel together and no request can go to the wrong host.
+@MainActor
+protocol ProviderPlatformSelecting: APIKeyManaging {
+    var platformOptions: [ProviderPlatformOption] { get }
+    var selectedPlatformID: String { get }
+    func selectPlatform(_ id: String) throws
+}

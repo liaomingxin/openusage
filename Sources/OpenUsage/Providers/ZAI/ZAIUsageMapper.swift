@@ -23,13 +23,25 @@ enum ZAIUsageMapper {
     /// request is best-effort) and the quota's `limits` array may carry one to three entries — only
     /// what's present is mapped, so a plan without web searches still shows the session meter. The
     /// subscription payload adds the renewal row when it names a `VALID` period.
-    static func map(quotaBody: Data, subscriptionBody: Data?) throws -> (plan: String?, lines: [MetricLine]) {
+    ///
+    /// `activityLines` are the usage-history rows built by `ZAIActivityMapper` (Usage Trend, the day
+    /// rows, MCP Tools). They slot in after the quota meters and before the renewal row, which stays
+    /// last because it is account metadata rather than usage.
+    static func map(
+        quotaBody: Data,
+        subscriptionBody: Data?,
+        activityLines: [MetricLine] = []
+    ) throws -> (plan: String?, lines: [MetricLine]) {
         let plan = subscriptionBody.flatMap { planName(from: $0) }
         var lines = try mapQuota(quotaBody)
-        if let renewal = subscriptionBody.flatMap({ renewalLine(from: $0) }) {
-            // The no-data badge means "the quota endpoint produced nothing"; a real renewal row
-            // replaces it rather than sitting underneath it.
-            if lines == [.noUsageData] { lines.removeAll() }
+        // The no-data badge means "the quota endpoint produced nothing"; a real row replaces it
+        // rather than sitting underneath it.
+        let renewal = subscriptionBody.flatMap { renewalLine(from: $0) }
+        if lines == [.noUsageData], !activityLines.isEmpty || renewal != nil {
+            lines.removeAll()
+        }
+        lines.append(contentsOf: activityLines)
+        if let renewal {
             lines.append(renewal)
         }
         return (plan, lines)
@@ -195,6 +207,10 @@ enum ZAIUsageMapper {
     }
 
     /// A percentage meter (Session or Weekly) from a credit/token quota entry.
+    ///
+    /// The percentage is what Z.ai meters (and what the menu-bar pin and `/v1/limits` export), but the
+    /// payload also carries the raw credits behind it, so those ride along as the row's `detail` —
+    /// "1,030 / 28,000 credits" under the bar. An entry without both numbers simply has no detail.
     private static func percentLine(_ entry: [String: Any], label: String, periodMs: Int) throws -> MetricLine {
         guard let rawPercentage = ProviderParse.number(entry["percentage"]) else {
             throw ZAIUsageError.invalidResponse
@@ -207,8 +223,21 @@ enum ZAIUsageMapper {
             limit: 100,
             format: .percent,
             resetsAt: resetsAt,
-            periodDurationMs: periodMs
+            periodDurationMs: periodMs,
+            detail: creditsDetail(entry)
         )
+    }
+
+    /// "1,030 / 28,000 credits" from a quota entry's `currentValue` / `usage` pair. `nil` when either
+    /// number is missing or the limit is zero — there is no ratio to state then.
+    static func creditsDetail(_ entry: [String: Any]) -> String? {
+        guard let used = ProviderParse.number(entry["currentValue"]),
+              let limit = ProviderParse.number(entry["usage"]),
+              used >= 0, limit > 0
+        else { return nil }
+        let usedText = MetricFormatter.number(used, kind: .count, style: .full)
+        let limitText = MetricFormatter.number(limit, kind: .count, style: .full)
+        return "\(usedText) / \(limitText) credits"
     }
 
     /// TIME_LIMIT → a count meter (used / limit) for monthly web-search/reader calls.

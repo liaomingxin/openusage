@@ -107,6 +107,20 @@ struct WidgetRowView: View {
             boundedLabelRow(state)
             meter(state)
             primaryTextRow
+            meterDetailRow
+        }
+    }
+
+    /// Optional absolute figures under the reading — Z.ai's "1,030 / 28,000 credits" beneath a
+    /// percentage meter. Same caption/secondary treatment as an unbounded row's subtitle, and
+    /// rendered only when the provider supplied one, so every other meter row keeps its exact height.
+    @ViewBuilder
+    private var meterDetailRow: some View {
+        if data.hasData, let detail = data.meterDetail {
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 

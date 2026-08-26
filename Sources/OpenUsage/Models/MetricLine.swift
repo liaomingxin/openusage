@@ -103,6 +103,10 @@ enum MetricLine: Hashable, Sendable, Codable {
         unknownModels: [String] = [],
         modelBreakdown: ModelUsageBreakdown? = nil
     )
+    /// A bounded meter. `detail` is optional secondary text rendered under the bar — the absolute
+    /// figures behind a percentage meter (Z.ai's "1,030 / 28,000 credits"), where the percentage is
+    /// what the provider meters but the raw counts are what the user recognizes. It sits *beside* the
+    /// reset countdown rather than replacing it, and rows without it render exactly as before.
     case progress(
         label: String,
         used: Double,
@@ -110,7 +114,8 @@ enum MetricLine: Hashable, Sendable, Codable {
         format: ProgressFormat,
         resetsAt: Date? = nil,
         periodDurationMs: Int? = nil,
-        colorHex: String? = nil
+        colorHex: String? = nil,
+        detail: String? = nil
     )
     case badge(label: String, text: String, colorHex: String? = nil, subtitle: String? = nil)
     /// A row whose value is a calendar instant rather than a number — today only the subscription
@@ -122,7 +127,7 @@ enum MetricLine: Hashable, Sendable, Codable {
     var label: String {
         switch self {
         case .text(let label, _, _, _),
-             .progress(let label, _, _, _, _, _, _),
+             .progress(let label, _, _, _, _, _, _, _),
              .values(let label, _, _, _, _, _),
              .badge(let label, _, _, _),
              .date(let label, _, _, _),
@@ -183,6 +188,7 @@ enum MetricLine: Hashable, Sendable, Codable {
         case periodDurationMs
         case colorHex
         case subtitle
+        case detail
         case text
         case at
         case points
@@ -226,7 +232,8 @@ enum MetricLine: Hashable, Sendable, Codable {
                 format: try container.decode(ProgressFormat.self, forKey: .format),
                 resetsAt: try container.decodeIfPresent(Date.self, forKey: .resetsAt),
                 periodDurationMs: try container.decodeIfPresent(Int.self, forKey: .periodDurationMs),
-                colorHex: try container.decodeIfPresent(String.self, forKey: .colorHex)
+                colorHex: try container.decodeIfPresent(String.self, forKey: .colorHex),
+                detail: try container.decodeIfPresent(String.self, forKey: .detail)
             )
         case .badge:
             self = .badge(
@@ -268,7 +275,7 @@ enum MetricLine: Hashable, Sendable, Codable {
             if !expiriesAt.isEmpty { try container.encode(expiriesAt, forKey: .expiriesAt) }
             if !unknownModels.isEmpty { try container.encode(unknownModels, forKey: .unknownModels) }
             try container.encodeIfPresent(modelBreakdown, forKey: .modelBreakdown)
-        case .progress(let label, let used, let limit, let format, let resetsAt, let periodDurationMs, let colorHex):
+        case .progress(let label, let used, let limit, let format, let resetsAt, let periodDurationMs, let colorHex, let detail):
             try container.encode(LineType.progress, forKey: .type)
             try container.encode(label, forKey: .label)
             try container.encode(used, forKey: .used)
@@ -277,6 +284,7 @@ enum MetricLine: Hashable, Sendable, Codable {
             try container.encodeIfPresent(resetsAt, forKey: .resetsAt)
             try container.encodeIfPresent(periodDurationMs, forKey: .periodDurationMs)
             try container.encodeIfPresent(colorHex, forKey: .colorHex)
+            try container.encodeIfPresent(detail, forKey: .detail)
         case .badge(let label, let text, let colorHex, let subtitle):
             try container.encode(LineType.badge, forKey: .type)
             try container.encode(label, forKey: .label)

@@ -2,6 +2,12 @@
 
 Settings lives inside the popover — there is no separate window. Open it from the footer's **Options** menu, with ⌘, while the popover is showing, or by right-clicking the menu bar icon and choosing Settings. The dashboard slides over to the Settings screen, which carries a back button in its top-left corner. Go back with that button, the ⌘, shortcut, or Esc (Esc always backs out to the dashboard first — pressing it again closes the popover).
 
+Per-provider API keys are not on this screen — they live in **Customize → the provider → API Key**
+(OpenRouter and Z.ai). Z.ai's card also holds its **Platform** picker, Global (`api.z.ai`) or China
+(`open.bigmodel.cn`): a Z.ai key only works on the console that issued it, so the choice is stored
+next to the key and decides which host every Z.ai request goes to and which console its links and
+error messages point at. See [Z.ai](providers/zai.md).
+
 ## General
 
 | Setting | Options | What it does |

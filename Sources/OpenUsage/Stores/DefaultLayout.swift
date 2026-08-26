@@ -36,7 +36,8 @@ enum DefaultLayout {
         "openrouter.credits", "openrouter.balance",
         "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
 
-        "zai.session", "zai.weekly", "zai.webSearches", "zai.renews"
+        "zai.session", "zai.weekly", "zai.webSearches", "zai.trend",
+        "zai.today", "zai.yesterday", "zai.last30", "zai.mcpTools", "zai.renews"
     ]
 
     /// Frozen snapshot of the default-on metrics from the release that introduced default seeding.
@@ -108,8 +109,10 @@ enum DefaultLayout {
         // OpenRouter: Credits meter + Balance stay above the fold; period spend and the per-key cap
         // sit below the caret.
         "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
-        // Z.ai: Session meter stays above the fold; Web Searches (monthly count) sits below the caret.
-        "zai.webSearches", "zai.renews",
+        // Z.ai: the Session/Weekly meters and Usage Trend stay above the fold; Web Searches (monthly
+        // count), the usage-history rows, and the MCP tool counts sit below the caret — matching every
+        // other provider's spend history.
+        "zai.webSearches", "zai.today", "zai.yesterday", "zai.last30", "zai.mcpTools", "zai.renews",
         // Kimi Code: Session + Weekly stay above the fold; the booster wallet (pay-as-you-go only,
         // absent on subscription accounts) sits below the caret.
         "kimi.booster"

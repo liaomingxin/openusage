@@ -61,10 +61,72 @@ final class ZAILiveResponseMappingTests: XCTestCase {
         XCTAssertEqual(weekly.periodDurationMs, 7 * 24 * 60 * 60 * 1000)
     }
 
+    func testCreditQuotaSurfacesTheAbsoluteCreditsUnderEachMeter() throws {
+        // The current CREDIT_LIMIT shape carries the raw credits behind the percentage.
+        let mapped = try ZAIUsageMapper.map(quotaBody: Data(liveCreditQuota.utf8), subscriptionBody: nil)
+        XCTAssertEqual(detail(mapped.lines, "Session"), "0 / 2,000 credits")
+        XCTAssertEqual(detail(mapped.lines, "Weekly"), "9,855 / 10,000 credits")
+
+        // The older TOKENS_LIMIT shape reported percentages only, so those rows carry no detail.
+        let legacy = try ZAIUsageMapper.map(quotaBody: Data(liveQuota.utf8), subscriptionBody: nil)
+        XCTAssertNil(detail(legacy.lines, "Session"))
+        XCTAssertNil(detail(legacy.lines, "Weekly"))
+    }
+
+    // Captured from a GLM Coding Max plan on 2026-08-27, trimmed to the fields the mapper reads. A
+    // 30-day range comes back in whole (Beijing) days; a range up to seven days comes back hourly.
+    private let liveModelUsage = #"""
+    {"code":200,"msg":"Operation successful","success":true,"data":{
+      "x_time":["2026-08-25","2026-08-26","2026-08-27"],
+      "modelCallCount":[251,426,163],
+      "tokensUsage":[43297075,66148252,11986486],
+      "totalUsage":{"totalModelCallCount":840,"totalTokensUsage":121431813,
+        "modelSummaryList":[{"modelName":"GLM-5.3","totalTokens":100000000,"sortOrder":1},
+                            {"modelName":"GLM-5.2","totalTokens":21431813,"sortOrder":2}]},
+      "modelDataList":[
+        {"modelName":"GLM-5.3","sortOrder":1,"tokensUsage":[40000000,50000000,10000000],"totalTokens":100000000},
+        {"modelName":"GLM-5.2","sortOrder":2,"tokensUsage":[3297075,16148252,1986486],"totalTokens":21431813}],
+      "modelSummaryList":[{"modelName":"GLM-5.3","totalTokens":100000000,"sortOrder":1}],
+      "granularity":"daily"}}
+    """#
+
+    private let liveToolUsage = #"""
+    {"code":200,"msg":"Operation successful","success":true,"data":{
+      "x_time":["2026-08-25","2026-08-26","2026-08-27"],
+      "networkSearchCount":[0,4,1],"webReadMcpCount":[2,5,0],"zreadMcpCount":[0,0,0],
+      "totalUsage":{"totalNetworkSearchCount":15,"totalWebReadMcpCount":12,"totalZreadMcpCount":0,
+        "totalSearchMcpCount":27,
+        "toolDetails":[{"modelName":"search-prime","totalUsageCount":15}],
+        "toolSummaryList":[{"toolCode":"search-prime","toolName":"联网搜索 MCP","toolNameI18n":"Web Search MCP","totalUsageCount":15,"sortOrder":1},
+                           {"toolCode":"web-reader","toolName":"网页读取 MCP","toolNameI18n":"Web Read MCP","totalUsageCount":12,"sortOrder":2}]},
+      "toolDataList":[{"toolCode":"search-prime","toolName":"联网搜索 MCP","toolNameI18n":"Web Search MCP","sortOrder":1,"usageCount":[0,4,1],"totalUsageCount":15}],
+      "granularity":"daily"}}
+    """#
+
+    func testMapsLiveUsageHistoryResponses() throws {
+        let activity = try XCTUnwrap(ZAIActivityMapper.parseModelUsage(Data(liveModelUsage.utf8)))
+        XCTAssertEqual(activity.totalTokens, 121_431_813)
+        XCTAssertEqual(activity.totalCalls, 840)
+        XCTAssertEqual(activity.tokensByDay["2026-08-26"], 66_148_252)
+        XCTAssertEqual(activity.callsByDay["2026-08-26"], 426)
+        XCTAssertEqual(activity.modelUsage.daily.first { $0.date == "2026-08-26" }?.models.map(\.model),
+                       ["GLM-5.3", "GLM-5.2"])
+
+        let tools = try XCTUnwrap(ZAIActivityMapper.parseToolUsage(Data(liveToolUsage.utf8)))
+        XCTAssertEqual(tools, ZAIToolActivity(webSearches: 15, webReads: 12, zreadCalls: 0))
+    }
+
     private func progress(_ lines: [MetricLine], _ label: String) -> (used: Double, limit: Double, periodDurationMs: Int?)? {
-        guard case .progress(_, let used, let limit, _, _, let period, _) = lines.first(where: { $0.label == label }) else {
+        guard case .progress(_, let used, let limit, _, _, let period, _, _) = lines.first(where: { $0.label == label }) else {
             return nil
         }
         return (used, limit, period)
+    }
+
+    private func detail(_ lines: [MetricLine], _ label: String) -> String? {
+        guard case .progress(_, _, _, _, _, _, _, let detail) = lines.first(where: { $0.label == label }) else {
+            return nil
+        }
+        return detail
     }
 }
