@@ -6,30 +6,60 @@ import Foundation
 enum ProviderCatalog {
     static func make(
         defaults: UserDefaults = .standard,
-        extraCodexCards: [CodexExtraCard] = []
+        extraCodexCards: [CodexExtraCard] = [],
+        claudeCards: [ClaudeAccountCard] = [],
+        claudeIdentityKeys: [String: String] = [:]
     ) -> [ProviderRuntime] {
         // Default provider order (see AGENTS.md "## Providers"): the three established providers first,
         // then every other provider alphabetically by display name. Extra Codex cards sit immediately
         // after the default Codex card so a family stays grouped.
-        [ClaudeProvider(), CodexProvider()]
-            + extraCodexCards.map { card in
-                CodexProvider(
-                    id: card.id,
-                    displayName: card.displayName,
-                    authStore: CodexAuthStore(scopedAuthPath: card.credentialPath),
-                    scansLocalLogs: false
+        var providers: [ProviderRuntime]
+        if claudeCards.isEmpty {
+            providers = [ClaudeProvider()]
+        } else {
+            providers = claudeCards.map { card in
+                let identity = claudeIdentityKeys[card.id] ?? card.identityKey
+                let user = identity.split(separator: "|").first.map(String.init)
+                let scanner = ClaudeLogUsageScanner(
+                    accountUUID: user, organizationUUID: card.organizationID,
+                    allowsUnattributedSessions: card.allowsUnattributedPiUsage
+                )
+                return ClaudeProvider(
+                    provider: ClaudeProvider.makeProvider(
+                        id: card.id,
+                        displayName: claudeCards.count == 1 ? "Claude" : card.displayName
+                    ),
+                    authStore: ClaudeAuthStore(
+                        desktopOrganization: card.organizationID,
+                        expectedIdentityKey: identity,
+                        desktopOnly: card.usesDesktopCredentials,
+                        preferOrganizationScopedDesktop: claudeCards.count > 1 && !card.usesDesktopCredentials
+                    ),
+                    logUsageScanner: scanner,
+                    allowsUnattributedPiUsage: card.allowsUnattributedPiUsage
                 )
             }
-            + [
-                CursorProvider(),
-                AntigravityProvider(),
-                CopilotProvider(defaults: defaults),
-                DevinProvider(),
-                GrokProvider(),
-                KimiProvider(),
-                OpenCodeProvider(),
-                OpenRouterProvider(),
-                ZAIProvider()
-            ]
+        }
+        providers.append(CodexProvider())
+        providers += extraCodexCards.map { card in
+            CodexProvider(
+                id: card.id,
+                displayName: card.displayName,
+                authStore: CodexAuthStore(scopedAuthPath: card.credentialPath),
+                scansLocalLogs: false
+            )
+        }
+        providers += [
+            CursorProvider(),
+            AntigravityProvider(),
+            CopilotProvider(defaults: defaults),
+            DevinProvider(),
+            GrokProvider(),
+            KimiProvider(),
+            OpenCodeProvider(),
+            OpenRouterProvider(),
+            ZAIProvider()
+        ]
+        return providers
     }
 }

@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.7.10-beta.3
+
+### New Features
+
+- Add support for multiple Claude accounts ([#1164](https://github.com/robinebers/openusage/pull/1164)) by @robinebers
+- Add Antigravity local spend and usage history ([#1139](https://github.com/robinebers/openusage/pull/1139)) by @robinebers
+
+### Bug Fixes
+
+- Show reset countdown for Claude sessions below 1% instead of "Not started" ([#1167](https://github.com/robinebers/openusage/pull/1167)) by @robinebers
+- Restore Codex Session by default ([#1165](https://github.com/robinebers/openusage/pull/1165)) by @robinebers
+- Show Claude Fable directly below Weekly ([#1141](https://github.com/robinebers/openusage/pull/1141)) by @robinebers
+- Load Claude local spend without OAuth credentials ([#1138](https://github.com/robinebers/openusage/pull/1138)) by @robinebers
+
+### Chores
+
+- Remove obsolete documentation screenshot assets ([#1159](https://github.com/robinebers/openusage/pull/1159)) by @robinebers
+- Deduplicate test fixtures and prune subsumed tests ([#1163](https://github.com/robinebers/openusage/pull/1163)) by @robinebers
+- Simplify test suites while preserving regression coverage ([#1143](https://github.com/robinebers/openusage/pull/1143)) by @robinebers
+
+---
+
+### Changelog
+
+**Full Changelog**: [v0.7.10-beta.2...v0.7.10-beta.3](https://github.com/robinebers/openusage/compare/v0.7.10-beta.2...v0.7.10-beta.3)
+
+- [83202dd](https://github.com/robinebers/openusage/commit/83202ddbb59be963c2aeea81a8701c059477703f) fix(claude): show reset countdown for sub-1% sessions instead of "Not started" (#1167) by @robinebers
+- [dd8b6ac](https://github.com/robinebers/openusage/commit/dd8b6ac2c0d077eac23de8d9fd6071fbbff7c6c1) Support multiple Claude accounts (#1164) by @robinebers
+- [8eeb1c](https://github.com/robinebers/openusage/commit/8eeb1cea7e718274235605b1869d246b5171966e) Remove obsolete documentation screenshot assets (#1159) by @robinebers
+- [1c1e57f](https://github.com/robinebers/openusage/commit/1c1e57fc2fcc8c9239302d738e50fbe0060a450a) fix(codex): restore Session by default (#1165) by @robinebers
+- [a7f603e](https://github.com/robinebers/openusage/commit/a7f603e658c07f31c187d9ee30e1359db408a676) Deduplicate test fixtures and prune subsumed tests (#1163) by @robinebers
+- [b053901](https://github.com/robinebers/openusage/commit/b053901e742deff06f1ee36d78a8bf377b071827) Simplify test suites while preserving regression coverage (#1143) by @robinebers
+- [7adda61](https://github.com/robinebers/openusage/commit/7adda6128a19b10fe73d8d0eaf898cb4d622541e) Add Antigravity local spend and usage history (#1139) by @robinebers
+- [1e753ac](https://github.com/robinebers/openusage/commit/1e753acd2400a72a66d1fff03240c7f5970e4c25) fix(claude): show Fable directly below Weekly (#1141) by @robinebers
+- [7f2b4ab](https://github.com/robinebers/openusage/commit/7f2b4ab27c76b39309a80716a73181151895bf98) fix(claude): load local spend without OAuth credentials (#1138) by @robinebers
+
 ## v0.7.10-beta.2
 
 ### New Features

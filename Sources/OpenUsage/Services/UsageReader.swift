@@ -37,7 +37,6 @@ public struct UsageReader {
     }
 
     public func read(providerID requestedProviderID: String? = nil, force: Bool = false) async throws -> UsageReadResult {
-        let enablement = ProviderEnablementStore(defaults: defaults)
         // The launch account pass (see `ProviderAccountAssembly`): resolves each family's default
         // account so cached snapshots are guarded — and refreshed ones stamped — with the correct
         // account. Extra Codex cards are minted here too, before the catalog, so the CLI and the
@@ -59,10 +58,13 @@ public struct UsageReader {
             : ProviderAccountAssembly(identityKeysByCard: [:])
         let providers = providersOverride ?? ProviderCatalog.make(
             defaults: defaults,
-            extraCodexCards: accountAssembly.extraCodexCards
+            extraCodexCards: accountAssembly.extraCodexCards,
+            claudeCards: accountAssembly.claudeCards,
+            claudeIdentityKeys: accountAssembly.identityKeysByCard
         )
         let registry = WidgetRegistry.from(providers)
         let knownIDs = Set(registry.providers.map(\.id))
+        let enablement = ProviderEnablementStore(defaults: defaults)
         // A requested id names cards by plain string matching — an exact card id, or a family id
         // naming all of that family's cards — mirroring the local HTTP API exactly (see
         // `LocalUsageAPI.State.matchingCardIDs`). Never resolved from runtime state: the same

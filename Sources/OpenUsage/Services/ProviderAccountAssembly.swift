@@ -8,6 +8,15 @@ struct CodexExtraCard: Equatable, Sendable {
     var credentialPath: String
 }
 
+struct ClaudeAccountCard: Equatable, Sendable {
+    let id: String
+    let identityKey: String
+    let organizationID: String
+    let displayName: String
+    let usesDesktopCredentials: Bool
+    let allowsUnattributedPiUsage: Bool
+}
+
 /// The launch-time account pass: read which account is signed in at each family's default home,
 /// reconcile the account registry, and expose the per-card identity map that the snapshot cache's
 /// account stamp consumes. Runs once per launch (app) or per invocation (one-shot CLI); a mid-run
@@ -15,14 +24,21 @@ struct CodexExtraCard: Equatable, Sendable {
 @MainActor
 struct ProviderAccountAssembly {
     /// Card id → the account identity signed in there this launch. Keys are record ids (`codex`,
-    /// `codex@<hash8>`); a family whose identity didn't resolve is absent.
+    /// `codex@<hash8>`, `claude`, `claude@<hash8>`); a family whose identity didn't resolve is absent.
     let identityKeysByCard: [String: String]
     /// Extra Codex cards discovered this launch (not the default-home card).
     let extraCodexCards: [CodexExtraCard]
+    /// Claude cards discovered this launch (default-home organization plus Desktop organizations).
+    let claudeCards: [ClaudeAccountCard]
 
-    init(identityKeysByCard: [String: String], extraCodexCards: [CodexExtraCard] = []) {
+    init(
+        identityKeysByCard: [String: String],
+        extraCodexCards: [CodexExtraCard] = [],
+        claudeCards: [ClaudeAccountCard] = []
+    ) {
         self.identityKeysByCard = identityKeysByCard
         self.extraCodexCards = extraCodexCards
+        self.claudeCards = claudeCards
     }
 
     /// `waitsForLoginShell`: true for the menu-bar app (a Finder/Dock launch inherits no shell
@@ -76,13 +92,28 @@ struct ProviderAccountAssembly {
     /// The environment-independent core, separated so tests inject a fixed observer and scratch
     /// store. `families` limits the pass to the families whose home facts are readable this launch
     /// (see `make(defaults:waitsForLoginShell:)`); a family left out is simply not observed —
-    /// no identity key, no reconciliation, exactly as if the pass never ran for it.
+    /// no identity key, no reconciliation, exactly as if the pass never ran for it. Extra Codex
+    /// credential dumps are independent of that skip and always mint their cards.
     static func make(
         observer: DefaultAccountObserver,
         accountsStore: ProviderAccountsStore,
         families: Set<String> = ProviderAccountID.families,
-        extraCodex: [CodexAccountDiscovery.ExtraCredential] = []
+        extraCodex: [CodexAccountDiscovery.ExtraCredential] = [],
+        desktop: ClaudeDesktopAuthStore? = nil,
+        listDesktopOrganizationDirectories: @escaping @Sendable (URL) -> [String] = { root in
+            let urls = (try? FileManager.default.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            return urls.compactMap { url in
+                guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]),
+                      values.isDirectory == true, values.isSymbolicLink != true
+                else { return nil }
+                return url.lastPathComponent
+            }
+        }
     ) -> ProviderAccountAssembly {
+        var identityKeys: [String: String] = [:]
         var observations: [ProviderAccountsStore.Observation] = []
 
         let outcomes: [(family: String, outcome: DefaultAccountObserver.Outcome)] = [
@@ -94,6 +125,7 @@ struct ProviderAccountAssembly {
         for (family, outcome) in outcomes {
             switch outcome {
             case .resolved(let identityKey, let label, let anchor):
+                identityKeys[family] = identityKey
                 observations.append(ProviderAccountsStore.Observation(
                     family: family,
                     identityKey: identityKey,
@@ -119,20 +151,53 @@ struct ProviderAccountAssembly {
             AppLog.info(.config, "accounts: extra Codex credential \(extra.path) identity \(extra.identityKey)")
         }
 
-        accountsStore.reconcile(with: mergedObservations(observations))
+        // Claude Desktop organizations join the same pass: only when the Claude family took part in
+        // it, and only when the default-home identity is organization-scoped (a legacy identity with
+        // no organization keeps the single bare `claude` card).
+        let defaultClaudeIdentity = identityKeys["claude"]
+        var desktopOrganizations: [DesktopOrganization] = []
+        if families.contains("claude"), defaultClaudeIdentity.map({ $0.contains("|") }) ?? true {
+            let desktop = desktop ?? ClaudeDesktopAuthStore(
+                files: observer.files, homeDirectory: observer.homeDirectory
+            )
+            desktopOrganizations = discoverDesktopOrganizations(
+                desktop: desktop,
+                cliIdentity: defaultClaudeIdentity,
+                listDirectories: listDesktopOrganizationDirectories
+            )
+            let desktopAnchor = desktop.homeDirectory()
+                .appendingPathComponent("Library/Application Support/Claude").path
+            for organization in desktopOrganizations {
+                let source = ProviderAccountSource(
+                    kind: .defaultHome, anchor: desktopAnchor, holdsDefaultSource: false
+                )
+                if let index = observations.firstIndex(where: {
+                    $0.family == "claude" && $0.identityKey == organization.identityKey
+                }) {
+                    observations[index].sources.append(source)
+                } else {
+                    observations.append(ProviderAccountsStore.Observation(
+                        family: "claude", identityKey: organization.identityKey,
+                        label: organization.label, sources: [source]
+                    ))
+                }
+            }
+        }
 
-        var identityKeys: [String: String] = [:]
+        // One reconcile per pass, over deduplicated observations so two sightings of the same
+        // account (a default-home login and an extra credential dump) collapse onto one record.
+        let records = accountsStore.reconcile(with: mergedObservations(observations))
+
         var extraCards: [CodexExtraCard] = []
         let observedExtraPaths = Set(extraCodex.map(\.path))
-        for record in accountsStore.records where !record.removedTombstone {
-            identityKeys[record.id] = record.identityKey
-            guard record.family == "codex" else { continue }
+        for record in records where !record.removedTombstone && record.family == "codex" {
             // The default-home card is always the bare `CodexProvider()`; extra dumps of that same
             // account attach as sources and must not mint a second runtime.
             guard !record.sources.contains(where: \.holdsDefaultSource) else { continue }
             guard let path = record.sources.first(where: { $0.kind == .credentialFile })?.anchor,
                   observedExtraPaths.contains(path)
             else { continue }
+            identityKeys[record.id] = record.identityKey
             extraCards.append(CodexExtraCard(
                 id: record.id,
                 identityKey: record.identityKey,
@@ -141,7 +206,45 @@ struct ProviderAccountAssembly {
             ))
         }
         extraCards.sort { $0.id < $1.id }
-        return ProviderAccountAssembly(identityKeysByCard: identityKeys, extraCodexCards: extraCards)
+
+        let allowsUnattributedPiUsage = records.count { $0.family == "claude" } == 1
+        var cards: [ClaudeAccountCard] = []
+        if let defaultIdentity = defaultClaudeIdentity,
+           let organization = defaultIdentity.split(separator: "|").last,
+           defaultIdentity.contains("|"),
+           let record = records.first(where: {
+               $0.family == "claude" && $0.identityKey == defaultIdentity && !$0.removedTombstone
+           })
+        {
+            let label = outcomes.first(where: { $0.family == "claude" }).flatMap { outcome -> String? in
+                guard case .resolved(_, let value, _) = outcome.outcome else { return nil }
+                return organizationLabel(value)
+            } ?? "Organization"
+            cards.append(ClaudeAccountCard(
+                id: record.id, identityKey: defaultIdentity, organizationID: String(organization),
+                displayName: "Claude — \(label)", usesDesktopCredentials: false,
+                allowsUnattributedPiUsage: allowsUnattributedPiUsage
+            ))
+            identityKeys.removeValue(forKey: "claude")
+            identityKeys[record.id] = defaultIdentity
+        }
+        for organization in desktopOrganizations where organization.identityKey != defaultClaudeIdentity {
+            guard let record = records.first(where: {
+                $0.family == "claude" && $0.identityKey == organization.identityKey && !$0.removedTombstone
+            }) else { continue }
+            let cardID = record.id
+            guard !cards.contains(where: { $0.id == cardID }) else { continue }
+            cards.append(ClaudeAccountCard(
+                id: cardID, identityKey: organization.identityKey, organizationID: organization.id,
+                displayName: "Claude — \(organizationLabel(record.label) ?? organization.label)",
+                usesDesktopCredentials: true, allowsUnattributedPiUsage: allowsUnattributedPiUsage
+            ))
+            identityKeys[cardID] = organization.identityKey
+        }
+
+        return ProviderAccountAssembly(
+            identityKeysByCard: identityKeys, extraCodexCards: extraCards, claudeCards: cards
+        )
     }
 
     /// One observation per (family, identity). A default-home login and an extra credential dump of
@@ -186,5 +289,73 @@ struct ProviderAccountAssembly {
         if let label, !label.isEmpty { return "Codex — \(label)" }
         let suffix = id.split(separator: "@").last.map(String.init) ?? id
         return "Codex — \(suffix)"
+    }
+
+    private struct DesktopOrganization {
+        var id: String
+        var identityKey: String
+        var label: String
+    }
+
+    private static func organizationLabel(_ value: String?) -> String? {
+        guard let value, let opening = value.lastIndex(of: "("), value.last == ")" else { return value }
+        return String(value[value.index(after: opening)..<value.index(before: value.endIndex)])
+    }
+
+    private static func discoverDesktopOrganizations(
+        desktop: ClaudeDesktopAuthStore,
+        cliIdentity: String?,
+        listDirectories: @Sendable (URL) -> [String]
+    ) -> [DesktopOrganization] {
+        guard let user = desktop.lastKnownAccountUUID(), desktop.hasCredentialMaterial() else { return [] }
+        let active = desktop.load(allowInteraction: false, expectedAccountUUID: user)
+        let activeOrganization = active.organization
+
+        let root = desktop.homeDirectory().appendingPathComponent("Library/Application Support/Claude")
+        let memberships = Set(["claude-code-sessions", "local-agent-mode-sessions"].flatMap { directory in
+            listDirectories(root.appendingPathComponent(directory).appendingPathComponent(user))
+                .compactMap { UUID(uuidString: $0)?.uuidString.lowercased() }
+        })
+        var organizations = memberships
+        if let activeOrganization { organizations.insert(activeOrganization) }
+        if let text = try? desktop.files.readTextIfPresent(root.appendingPathComponent("config.json").path),
+           let rootObject = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+        {
+            organizations.formUnion(rootObject.keys.compactMap {
+                $0.split(separator: ":").last.flatMap { UUID(uuidString: String($0))?.uuidString.lowercased() }
+            })
+        }
+        if let text = try? desktop.files.readTextIfPresent(
+            root.appendingPathComponent("plan-usage-history.json").path
+        ), let history = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+           let samples = history["samples"] as? [[String: Any]]
+        {
+            organizations.formUnion(samples.compactMap {
+                ($0["org"] as? String).flatMap { UUID(uuidString: $0)?.uuidString.lowercased() }
+            })
+        }
+        let cliOrganization = cliIdentity.flatMap { identity -> String? in
+            let parts = identity.split(separator: "|")
+            guard parts.count == 2,
+                  String(parts[0]).caseInsensitiveCompare(user) == .orderedSame
+            else { return nil }
+            return String(parts[1]).lowercased()
+        }
+
+        return organizations.sorted { lhs, rhs in
+            lhs == activeOrganization ? true : rhs == activeOrganization ? false : lhs < rhs
+        }.compactMap { organization in
+            guard memberships.contains(organization)
+                || organization == activeOrganization || organization == cliOrganization
+            else { return nil }
+            let result = organization == activeOrganization ? active : desktop.load(
+                allowInteraction: false, organization: organization, expectedAccountUUID: user
+            )
+            guard result.status == .available || result.status == .permissionRequired else { return nil }
+            let plan = result.oauth?.subscriptionType?.lowercased()
+            let label = plan.map { ["max", "pro", "free"].contains($0) } == true ? "Personal"
+                : plan?.capitalized ?? "Organization \(organization.prefix(8))"
+            return DesktopOrganization(id: organization, identityKey: "\(user)|\(organization)", label: label)
+        }
     }
 }

@@ -414,17 +414,43 @@ final class WidgetDataStore {
 
     func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
         var providers: [String: ProviderUsageHistory] = [:]
+        var identities: [String: String] = [:]
+        let hasMultipleClaudeCards = registry.providers.count {
+            ProviderAccountID.family(of: $0.id) == "claude"
+        } > 1
         for (providerID, descriptor) in registry.historyDescriptorsByProvider
         where descriptor.scope == .machineLocal && isProviderEnabled(providerID) {
             if let history = localSnapshots[providerID]?.usageHistory {
+                if ProviderAccountID.family(of: providerID) == "claude" {
+                    if let identity = providerIdentityKeys[providerID] {
+                        identities[providerID] = identity.lowercased()
+                    } else if hasMultipleClaudeCards || providerID != "claude" {
+                        AppLog.warn(.config, "sync: omitting Claude history without account ownership")
+                        continue
+                    }
+                }
                 providers[providerID] = history
             }
         }
+        let exportedClaudeIDs = providers.keys.filter {
+            ProviderAccountID.family(of: $0) == "claude"
+        }
+        if let onlyClaudeID = exportedClaudeIDs.first,
+           exportedClaudeIDs.count == 1, onlyClaudeID != "claude"
+        {
+            providers["claude"] = providers.removeValue(forKey: onlyClaudeID)
+            identities["claude"] = identities.removeValue(forKey: onlyClaudeID)
+        }
+        let hasClaudeAccountCards = providers.keys.contains {
+            ProviderAccountID.family(of: $0) == "claude" && $0 != "claude"
+        }
         return UsageHistoryDocument(
+            schema: hasClaudeAccountCards ? UsageHistoryDocument.accountSchema : UsageHistoryDocument.currentSchema,
             deviceID: deviceID,
             deviceName: deviceName,
             updatedAt: updatedAt,
-            providers: providers
+            providers: providers,
+            identities: identities.isEmpty ? nil : identities
         )
     }
 
@@ -443,6 +469,7 @@ final class WidgetDataStore {
             localSnapshots: localSnapshots,
             peerDocuments: peerHistoryDocuments,
             descriptors: enabledDescriptors,
+            providerIdentityKeys: providerIdentityKeys,
             now: renderDate
         )
         var rendered = localSnapshots
@@ -572,8 +599,8 @@ final class WidgetDataStore {
                 infoNote: descriptor.sample.infoNote
             )
             // Descriptor opt-in (session-window meters read "Not started" when unused); the fresh
-            // `.progress` result doesn't start from the sample, so carry the flag explicitly.
-            result.isSessionWindow = descriptor.sample.isSessionWindow
+            // `.progress` result doesn't start from the sample, so carry the signal explicitly.
+            result.sessionStartSignal = descriptor.sample.sessionStartSignal
             return result
         case .text:
             // Text lines carry provider notices for the local API; no dashboard descriptor consumes
