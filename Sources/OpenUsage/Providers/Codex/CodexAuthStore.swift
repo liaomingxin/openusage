@@ -38,6 +38,19 @@ struct CodexAccountIdentity: Equatable, Sendable {
     var label: String?
 }
 
+/// The paid ChatGPT period named by the `id_token`'s `https://api.openai.com/auth` claim:
+/// `chatgpt_subscription_active_start` → `chatgpt_subscription_active_until`. Read straight out of a
+/// credential file the store already opens — no network call and never a token refresh — and only
+/// these two dates leave that parse; nothing else from the token is copied, cached, or logged.
+///
+/// The claim is a snapshot from the last OAuth refresh, so it can be up to ~10 days stale. `start` is
+/// what lets a lapsed `end` be rolled forward a whole period at a time
+/// (`CodexUsageMapper.subscriptionLine`); it may be absent on older tokens.
+struct CodexSubscriptionPeriod: Equatable, Sendable {
+    var start: Date?
+    var end: Date
+}
+
 struct CodexAuthState: Hashable, Sendable {
     enum Source: Hashable, Sendable {
         case file(path: String, format: CodexAuthFileFormat)
@@ -264,6 +277,30 @@ struct CodexAuthStore: Sendable {
             return CodexAccountIdentity(identityKey: claimID.lowercased(), label: email)
         }
         return nil
+    }
+
+    /// The subscription period from the `id_token` already parsed for the account id. `nil` for an
+    /// API-key login (no `id_token`) and for any token whose claim omits the period — those cards
+    /// simply get no subscription row.
+    static func subscriptionPeriod(from auth: CodexAuth) -> CodexSubscriptionPeriod? {
+        guard let payload = auth.tokens?.idToken.flatMap({ ProviderParse.jwtPayload($0) }),
+              let claim = payload["https://api.openai.com/auth"] as? [String: Any],
+              let end = claimDate(claim["chatgpt_subscription_active_until"])
+        else {
+            return nil
+        }
+        return CodexSubscriptionPeriod(
+            start: claimDate(claim["chatgpt_subscription_active_start"]),
+            end: end
+        )
+    }
+
+    private static func claimDate(_ value: Any?) -> Date? {
+        guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        else {
+            return nil
+        }
+        return OpenUsageISO8601.date(from: text)
     }
 
     static func hasTokenLikeAuth(_ auth: CodexAuth) -> Bool {

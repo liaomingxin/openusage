@@ -36,7 +36,7 @@ time; it also reports unavailable iCloud, loading, write, and malformed-file sta
 | Setting | Options | What it does |
 |---|---|---|
 | Show Usage As | Used / Left | Whether bounded metrics read "48% used" or "52% left" — same toggle as clicking a headline. |
-| Reset Times | Countdown / Exact time | "Resets in 3h 25m" vs "Resets today at 6:38 PM" — same toggle as clicking a reset label. |
+| Reset Times | Countdown / Exact time | "Resets in 3h 25m" vs "Resets today at 6:38 PM" — same toggle as clicking a reset label. It also sets how the subscription **Renews** row reads ("Renews in 20d 6h" vs "Renews Sep 16"; that row stops at the day, since a billing date has no meaningful time of day). |
 | Always Show Pacing | Off / On | Off (default) shows pacing only when a metric is close to or over its limit. On surfaces it on every metric with a reset window: on-track rows gain their projection ("~33% left at reset") and an even-pace tick marking where steady use would put you right now. Metrics without a reset window have no pace to show. |
 
 ## Notifications

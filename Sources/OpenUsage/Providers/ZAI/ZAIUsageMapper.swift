@@ -1,7 +1,8 @@
 import Foundation
 
-/// Builds metric lines from the Z.ai `/api/monitor/usage/quota/limit` payload and the plan name from
-/// `/api/biz/subscription/list`. Ports and extends the legacy Tauri plugin's mapping:
+/// Builds metric lines from the Z.ai `/api/monitor/usage/quota/limit` payload, plus the plan name and
+/// the subscription renewal row from `/api/biz/subscription/list`. Ports and extends the legacy Tauri
+/// plugin's mapping:
 /// - a `CREDIT_LIMIT` (or legacy `TOKENS_LIMIT`) entry whose window is sub-daily (`unit: 3`, hours)
 ///   is the 5-hour session meter,
 /// - a `CREDIT_LIMIT` (or legacy `TOKENS_LIMIT`) entry whose window is multi-day (`unit: 6`, weeks)
@@ -20,10 +21,17 @@ enum ZAIUsageMapper {
 
     /// `(plan, lines)` from the quota + subscription payloads. `subscription` may be `nil` (the
     /// request is best-effort) and the quota's `limits` array may carry one to three entries — only
-    /// what's present is mapped, so a plan without web searches still shows the session meter.
+    /// what's present is mapped, so a plan without web searches still shows the session meter. The
+    /// subscription payload adds the renewal row when it names a `VALID` period.
     static func map(quotaBody: Data, subscriptionBody: Data?) throws -> (plan: String?, lines: [MetricLine]) {
         let plan = subscriptionBody.flatMap { planName(from: $0) }
-        let lines = try mapQuota(quotaBody)
+        var lines = try mapQuota(quotaBody)
+        if let renewal = subscriptionBody.flatMap({ renewalLine(from: $0) }) {
+            // The no-data badge means "the quota endpoint produced nothing"; a real renewal row
+            // replaces it rather than sitting underneath it.
+            if lines == [.noUsageData] { lines.removeAll() }
+            lines.append(renewal)
+        }
         return (plan, lines)
     }
 
@@ -102,6 +110,49 @@ enum ZAIUsageMapper {
             return nil
         }
         return name
+    }
+
+    /// The subscription row from the same `subscription/list` payload the plan name comes from — no
+    /// extra request. Uses `nextRenewTime` (the end of the running period); `autoRenew: 0` turns the
+    /// row into "Ends". An account with no `VALID` entry gets no row at all.
+    static func renewalLine(from body: Data) -> MetricLine? {
+        guard let root = ProviderParse.jsonObject(body),
+              let list = root["data"] as? [[String: Any]],
+              let entry = activeSubscription(list),
+              let renewsAt = renewTime(entry["nextRenewTime"])
+        else {
+            return nil
+        }
+        // Absent `autoRenew` reads as renewing — only an explicit 0 means the plan lapses.
+        let autoRenew = ProviderParse.number(entry["autoRenew"]) ?? 1
+        return .subscription(at: renewsAt, isEnding: autoRenew == 0)
+    }
+
+    /// The entry describing the running period. `data` is an array — plan changes and stacked add-ons
+    /// can produce several entries — so prefer the `VALID` one Z.ai flags as `inCurrentPeriod`, then
+    /// any other `VALID` entry. Entries that aren't `VALID` are past or cancelled and never picked.
+    private static func activeSubscription(_ list: [[String: Any]]) -> [String: Any]? {
+        let valid = list.filter { ($0["status"] as? String)?.uppercased() == "VALID" }
+        return valid.first { $0["inCurrentPeriod"] as? Bool == true } ?? valid.first
+    }
+
+    /// `nextRenewTime` is a bare calendar string ("2026-11-23", occasionally with a wall-clock time)
+    /// and carries no time zone. It's read in the Mac's own calendar so the row renders the exact day
+    /// Z.ai's dashboard shows; the countdown can therefore be a few hours out, which is immaterial for
+    /// a date that moves once a billing period.
+    private static func renewTime(_ value: Any?) -> Date? {
+        guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+            return nil
+        }
+        for format in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd"] {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.timeZone = TimeZone.current
+            formatter.dateFormat = format
+            if let date = formatter.date(from: text) { return date }
+        }
+        return nil
     }
 
     // MARK: - Private

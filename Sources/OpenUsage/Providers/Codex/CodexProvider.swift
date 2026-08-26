@@ -66,7 +66,11 @@ final class CodexProvider: ProviderRuntime {
                     estimatedCost: true,
                     sourceNote: "From your Codex logs (estimated)"
                 )
-        ] + WidgetDescriptor.spendTiles(provider: provider)
+        ] + WidgetDescriptor.spendTiles(provider: provider) + [
+            // Account metadata rather than usage, so it sits last (and On Demand by default). Extra
+            // account cards inherit this descriptor and fill it from their own auth file's claim.
+            .subscriptionRenewal(provider: provider)
+        ]
     }
 
     func hasLocalCredentials() async -> Bool {
@@ -173,6 +177,14 @@ final class CodexProvider: ProviderRuntime {
                 modelSourceNote: note
             )
             SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
+        }
+
+        // A pure local read of the credential this card already loaded — no request, no refresh. Extra
+        // account cards each carry their own auth file, so each one's row names its own subscription;
+        // an API-key login (no id_token) simply has no row.
+        if let period = CodexAuthStore.subscriptionPeriod(from: authState.auth),
+           let line = CodexUsageMapper.subscriptionLine(period: period, now: now()) {
+            mapped.lines.append(line)
         }
 
         MetricLine.appendNoDataIfNeeded(&mapped.lines)

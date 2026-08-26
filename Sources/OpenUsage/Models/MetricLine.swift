@@ -113,6 +113,11 @@ enum MetricLine: Hashable, Sendable, Codable {
         colorHex: String? = nil
     )
     case badge(label: String, text: String, colorHex: String? = nil, subtitle: String? = nil)
+    /// A row whose value is a calendar instant rather than a number — today only the subscription
+    /// renewal row ("Renews" / "Ends"). The `Date` is carried raw, exactly like a bounded row's
+    /// `resetsAt`, so the display edge formats it and it follows the global Countdown / Exact Time
+    /// mode ("Renews in 20d 6h" / "Renews Sep 16") instead of the mapper baking a string.
+    case date(label: String, at: Date, colorHex: String? = nil, subtitle: String? = nil)
 
     var label: String {
         switch self {
@@ -120,6 +125,7 @@ enum MetricLine: Hashable, Sendable, Codable {
              .progress(let label, _, _, _, _, _, _),
              .values(let label, _, _, _, _, _),
              .badge(let label, _, _, _),
+             .date(let label, _, _, _),
              .chart(let label, _, _):
             return label
         }
@@ -135,6 +141,20 @@ enum MetricLine: Hashable, Sendable, Codable {
             return label == Self.errorBadgeLabel
         }
         return false
+    }
+
+    /// The two labels a `.date` subscription row switches between: "Renews" while the plan keeps
+    /// billing, "Ends" once it is set to lapse (Cursor's pending cancellation, Z.ai's auto-renew off).
+    /// Shared so the mappers that emit the row and the descriptor that matches it can't drift — the
+    /// widget id stays `<provider>.renews` whichever word shows.
+    static let renewsLabel = "Renews"
+    static let endsLabel = "Ends"
+
+    /// The subscription row for one provider's billing date — "Renews" while the plan keeps billing,
+    /// "Ends" once it is set to lapse. One constructor so all three providers phrase the row the same
+    /// way; `subtitle` carries Codex's "Estimated" note when the date had to be rolled forward.
+    static func subscription(at date: Date, isEnding: Bool = false, subtitle: String? = nil) -> MetricLine {
+        .date(label: isEnding ? endsLabel : renewsLabel, at: date, subtitle: subtitle)
     }
 
     /// The shared "no usage data" placeholder badge, shown when a provider returns no metric lines.
@@ -164,6 +184,7 @@ enum MetricLine: Hashable, Sendable, Codable {
         case colorHex
         case subtitle
         case text
+        case at
         case points
         case note
     }
@@ -173,6 +194,7 @@ enum MetricLine: Hashable, Sendable, Codable {
         case values
         case progress
         case badge
+        case date
         case chart
     }
 
@@ -210,6 +232,13 @@ enum MetricLine: Hashable, Sendable, Codable {
             self = .badge(
                 label: label,
                 text: try container.decode(String.self, forKey: .text),
+                colorHex: try container.decodeIfPresent(String.self, forKey: .colorHex),
+                subtitle: try container.decodeIfPresent(String.self, forKey: .subtitle)
+            )
+        case .date:
+            self = .date(
+                label: label,
+                at: try container.decode(Date.self, forKey: .at),
                 colorHex: try container.decodeIfPresent(String.self, forKey: .colorHex),
                 subtitle: try container.decodeIfPresent(String.self, forKey: .subtitle)
             )
@@ -252,6 +281,12 @@ enum MetricLine: Hashable, Sendable, Codable {
             try container.encode(LineType.badge, forKey: .type)
             try container.encode(label, forKey: .label)
             try container.encode(text, forKey: .text)
+            try container.encodeIfPresent(colorHex, forKey: .colorHex)
+            try container.encodeIfPresent(subtitle, forKey: .subtitle)
+        case .date(let label, let at, let colorHex, let subtitle):
+            try container.encode(LineType.date, forKey: .type)
+            try container.encode(label, forKey: .label)
+            try container.encode(at, forKey: .at)
             try container.encodeIfPresent(colorHex, forKey: .colorHex)
             try container.encodeIfPresent(subtitle, forKey: .subtitle)
         case .chart(let label, let points, let note):

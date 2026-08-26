@@ -44,6 +44,18 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         lines.first { $0.label == label }
     }
 
+    /// The line backing one widget: its `metricLabel`, or any of the descriptor's
+    /// `alternateMetricLabels`. The single lookup every consumer (dashboard tiles, `/v1/limits`) goes
+    /// through, so a row whose label switches with plan state — "Renews" ⟷ "Ends" — can't fall out of
+    /// its tile.
+    func line(for descriptor: WidgetDescriptor) -> MetricLine? {
+        if let line = line(label: descriptor.metricLabel) { return line }
+        for label in descriptor.alternateMetricLabels {
+            if let line = line(label: label) { return line }
+        }
+        return nil
+    }
+
     /// The success-path counterpart to `error(provider:message:)`: derives `providerID`/`displayName`
     /// from the provider so every runtime builds its snapshot the same way (`refreshedAt` is required
     /// so each call passes its own `now()`).

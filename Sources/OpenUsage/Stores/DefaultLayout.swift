@@ -15,9 +15,10 @@ enum DefaultLayout {
 
         "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly", "codex.trend",
         "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+        "codex.renews",
 
         "cursor.usage", "cursor.auto", "cursor.api", "cursor.grokBot", "cursor.trend",
-        "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30",
+        "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30", "cursor.renews",
 
         "copilot.premium", "copilot.extra", "copilot.orgCredits", "copilot.orgSpend",
         "copilot.chat", "copilot.completions",
@@ -35,7 +36,7 @@ enum DefaultLayout {
         "openrouter.credits", "openrouter.balance",
         "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
 
-        "zai.session", "zai.weekly", "zai.webSearches"
+        "zai.session", "zai.weekly", "zai.webSearches", "zai.renews"
     ]
 
     /// Frozen snapshot of the default-on metrics from the release that introduced default seeding.
@@ -89,8 +90,11 @@ enum DefaultLayout {
         // model-specific limits), credits, reset details, and spend rows sit below the caret.
         "codex.spark", "codex.sparkWeekly",
         "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+        // The subscription row is account metadata, not a live meter — On Demand for all three
+        // providers that have one, and never pinned (its descriptor is `pinnable: false`).
+        "codex.renews",
         "cursor.grokBot", "cursor.onDemand", "cursor.requests", "cursor.credits",
-        "cursor.today", "cursor.yesterday", "cursor.last30",
+        "cursor.today", "cursor.yesterday", "cursor.last30", "cursor.renews",
         // Copilot: Credits (the metered premium pool) + Extra Usage stay above the fold; the org
         // billing pair (org-managed Business/Enterprise seats) and Chat + Completions sit below the
         // caret. Chat/Completions carry real counts on free only — on paid they're unlimited
@@ -105,7 +109,7 @@ enum DefaultLayout {
         // sit below the caret.
         "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
         // Z.ai: Session meter stays above the fold; Web Searches (monthly count) sits below the caret.
-        "zai.webSearches",
+        "zai.webSearches", "zai.renews",
         // Kimi Code: Session + Weekly stay above the fold; the booster wallet (pay-as-you-go only,
         // absent on subscription accounts) sits below the caret.
         "kimi.booster"

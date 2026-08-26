@@ -123,7 +123,7 @@ enum LocalUsageAPI {
         init(_ line: MetricLine) { self.line = line }
 
         enum CodingKeys: String, CodingKey {
-            case type, label, value, used, limit, format, resetsAt, periodDurationMs, color, subtitle, text, points, note
+            case type, label, value, used, limit, format, resetsAt, periodDurationMs, color, subtitle, text, at, points, note
         }
 
         func encode(to encoder: Encoder) throws {
@@ -162,6 +162,15 @@ enum LocalUsageAPI {
                 try container.encode("badge", forKey: .type)
                 try container.encode(label, forKey: .label)
                 try container.encode(text, forKey: .text)
+                try container.encode(color, forKey: .color)
+                try container.encode(subtitle, forKey: .subtitle)
+            case .date(let label, let at, let color, let subtitle):
+                // A calendar instant, exported as ISO-8601 under `at` — never a display string, so a
+                // consumer formats it however it likes. `label` is the row's live wording
+                // ("Renews" / "Ends").
+                try container.encode("date", forKey: .type)
+                try container.encode(label, forKey: .label)
+                try container.encode(OpenUsageISO8601.string(from: at), forKey: .at)
                 try container.encode(color, forKey: .color)
                 try container.encode(subtitle, forKey: .subtitle)
             case .chart(let label, let points, let note):

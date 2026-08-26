@@ -526,7 +526,7 @@ final class WidgetDataStore {
     func data(for descriptor: WidgetDescriptor) -> WidgetData {
         var result: WidgetData
         if let snapshot = snapshots[descriptor.providerID],
-           let line = snapshot.line(label: descriptor.metricLabel),
+           let line = snapshot.line(for: descriptor),
            let data = resolve(line, descriptor: descriptor) {
             result = data
         } else {
@@ -635,6 +635,16 @@ final class WidgetDataStore {
         case .badge(_, let text, _, let subtitle):
             var data = descriptor.sample
             data.valueTextOverride = text
+            data.subtitleOverride = subtitle
+            return data
+        case .date(let label, let at, _, let subtitle):
+            // The instant is carried raw and formatted at the display edge (see `WidgetData.dateText`),
+            // so the row follows the global Countdown / Exact Time mode like any reset label. The
+            // line's own label becomes the row title: the subscription row reads "Renews" or "Ends"
+            // depending on plan state, while its descriptor id stays fixed.
+            var data = descriptor.sample
+            data.title = label
+            data.dateValue = at
             data.subtitleOverride = subtitle
             return data
         case .chart(_, let points, let note):

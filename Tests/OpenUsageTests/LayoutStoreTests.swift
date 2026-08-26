@@ -664,12 +664,13 @@ final class LayoutStoreTests: XCTestCase {
             "claude.extra", "claude.today", "claude.yesterday", "claude.last30",
             "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly", "codex.trend",
             "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+            "codex.renews",
             "devin.daily", "devin.weekly", "devin.extra",
             "grok.weekly", "grok.trend",
             "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
             // Cursor spend tiles + usage trend are enabled, joining its live meters in the default layout.
             "cursor.usage", "cursor.auto", "cursor.api", "cursor.grokBot", "cursor.trend",
-            "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30"
+            "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30", "cursor.renews"
         ]))
         XCTAssertTrue(store.isMetricEnabled("claude.fable"))
         XCTAssertFalse(store.isPinned("claude.fable"))
@@ -701,7 +702,9 @@ final class LayoutStoreTests: XCTestCase {
         // Spark (the optional model-specific limits) leads the On Demand section, before credits.
         XCTAssertEqual(expandedByProvider["codex"], [
             "codex.spark", "codex.sparkWeekly",
-            "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30"
+            "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+            // The subscription row is account metadata, so it closes the On Demand section.
+            "codex.renews"
         ])
         XCTAssertEqual(primaryByProvider["devin"], ["devin.daily", "devin.weekly"])
         XCTAssertEqual(expandedByProvider["devin"], ["devin.extra"])
@@ -714,7 +717,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(primaryByProvider["cursor"], ["cursor.usage", "cursor.auto", "cursor.api", "cursor.trend"])
         XCTAssertEqual(expandedByProvider["cursor"], [
             "cursor.grokBot", "cursor.onDemand", "cursor.requests", "cursor.credits",
-            "cursor.today", "cursor.yesterday", "cursor.last30"
+            "cursor.today", "cursor.yesterday", "cursor.last30", "cursor.renews"
         ])
     }
 

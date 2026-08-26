@@ -15,7 +15,7 @@ struct WidgetData: Hashable {
     /// Subtitle shown on a placed tile with no real backing metric. Copy is intentionally exact.
     static let noDataSubtitle = "No data"
 
-    let title: String          // "Claude 5h", "Cursor credits"
+    var title: String          // "Claude 5h", "Cursor credits"
     let icon: IconSource
     let kind: MetricKind
     let used: Double
@@ -34,6 +34,10 @@ struct WidgetData: Hashable {
     /// credits — one entry per still-available credit). Empty for every other row. Kept as raw `Date`s so
     /// the tooltip formats live and follows the global relative/absolute mode (see `expiryTooltip`).
     var expiriesAt: [Date] = []
+    /// The calendar instant behind a `.date` row — today the subscription renewal / end date. Kept raw
+    /// like `resetsAt`, so the row formats live through `resetDisplayMode` ("in 20d 6h" ⟷ "Sep 16")
+    /// and ticks with the popover's clock. `nil` for every other row.
+    var dateValue: Date?
     /// Descriptor opt-in marking this as the Codex rate-limit-reset-credits row. When set, the value
     /// column reveals the resets popover on hover (a timeline of each credit's expiry, or an empty
     /// state when none are available) and lights up like the spend rows — so it stays reachable even
@@ -230,6 +234,8 @@ struct WidgetData: Hashable {
     var valueText: String {
         guard hasData else { return Self.noDataHeadline }
         if let valueTextOverride { return valueTextOverride }
+        // A date row's reading is the formatted instant, never a number.
+        if let dateText { return dateText }
         // A `.values` row's primary reading is its first selected value; meters fall through to the
         // bounded/`used` formatting.
         if let first = selectedValues.first {
@@ -245,6 +251,7 @@ struct WidgetData: Hashable {
     /// rather than a misleading "0".
     var menuBarValue: String {
         guard hasData else { return valueText }
+        if let dateText { return dateText }
         if let limit, limit > 0 {
             if kind == .percent {
                 // Percent is the only bounded unit that should collapse to a tray percentage. Clamp both
@@ -318,6 +325,7 @@ struct WidgetData: Hashable {
     var unboundedDetail: String {
         guard hasData else { return Self.noDataSubtitle }
         if let valueTextOverride { return valueTextOverride }
+        if let dateText { return dateText }
         let selected = selectedValues
         if !selected.isEmpty {
             // One value: a lone dollar amount takes the widget's trailing word ("$4.08 spent",
@@ -457,6 +465,14 @@ struct WidgetData: Hashable {
     var resetLabel: String? {
         guard let resetsAt else { return nil }
         return Formatters.resetRelativeLabel(until: resetsAt)
+    }
+
+    /// A `.date` row's value text ("in 20d 6h" / "Sep 16"), following the global Countdown / Exact
+    /// Time mode. Reads the wall clock like `resetLabel`, so the row re-renders live on the popover's
+    /// tick. `nil` for every other row.
+    var dateText: String? {
+        guard let dateValue else { return nil }
+        return Formatters.subscriptionDateLabel(at: dateValue, mode: resetDisplayMode)
     }
 
     /// Bounded/fallback formatting, delegated to the shared formatter so the popover and tray always

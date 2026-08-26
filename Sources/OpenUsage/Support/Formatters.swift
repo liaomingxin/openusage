@@ -75,6 +75,29 @@ enum Formatters {
     /// useful countdown. Shared so `deadlineLabel` and any bare-`whenLabel` caller agree on the wording.
     static let imminent = "soon"
 
+    /// The mode-aware phrase for a subscription billing date (the "Renews" / "Ends" row):
+    /// `.relative` → "in 20d 6h" (the shared countdown, collapsing to "soon" at the deadline),
+    /// `.absolute` → the plain calendar day "Sep 16" — "Sep 16, 2027" when it falls in another year.
+    /// Exact Time stops at the day on purpose: a billing date is day-grained (Z.ai reports no time at
+    /// all), so printing a wall-clock time would claim precision the sources don't have.
+    static func subscriptionDateLabel(
+        at date: Date,
+        mode: ResetDisplayMode,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
+        switch mode {
+        case .relative:
+            guard let when = whenLabel(at: date, mode: .relative, now: now, calendar: calendar) else { return nil }
+            return when == imminent ? when : "in \(when)"
+        case .absolute:
+            let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: now)
+            return sameYear
+                ? monthDayLabel(date)
+                : date.formatted(.dateTime.year().month(.abbreviated).day())
+        }
+    }
+
     static func resetRelativeLabel(until resetsAt: Date, now: Date = Date()) -> String? {
         deadlineLabel("Resets", at: resetsAt, mode: .relative, now: now)
     }

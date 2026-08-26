@@ -37,7 +37,9 @@ final class ZAIProvider: ProviderRuntime {
             .boundedCount(id: "zai.webSearches", provider: provider, title: "Web Searches",
                           metricLabel: "Web Searches", limit: 1000, suffix: "searches",
                           periodDurationMs: ZAIUsageMapper.monthlyPeriodMs)
-                .exportingLimit("webSearches", unit: "searches")
+                .exportingLimit("webSearches", unit: "searches"),
+            // Account metadata rather than usage, so it sits last (and On Demand by default).
+            .subscriptionRenewal(provider: provider)
         ]
     }
 
@@ -51,9 +53,9 @@ final class ZAIProvider: ProviderRuntime {
             return ProviderSnapshot.error(provider: provider, error: ZAIAuthError.missingKey)
         }
 
-        // The quota endpoint is required; the subscription endpoint is best-effort (plan name only),
-        // so a failure there must not blank out the meters. Both are fetched, and whatever the quota
-        // returns is mapped alongside the plan name if the subscription succeeded.
+        // The quota endpoint is required; the subscription endpoint is best-effort (plan name and the
+        // renewal row), so a failure there must not blank out the meters. Both are fetched, and
+        // whatever the quota returns is mapped alongside the subscription data if that call succeeded.
         let quota = await load { try await usageClient.fetchQuota(apiKey: auth.apiKey) }
         let subscription = await loadOptional { try await usageClient.fetchSubscription(apiKey: auth.apiKey) }
 

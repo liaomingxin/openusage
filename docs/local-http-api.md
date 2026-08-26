@@ -117,7 +117,9 @@ For bounded progress resources, `unit` follows the provider's live metric format
 | Z.ai | `session`, `weekly`, `webSearches` |
 
 Charts, colors, subtitles, formatted badges, layout state, and historical spend periods stay out of this
-contract. Codex's combined Credits UI row becomes two scalar resources: `credits` and `creditValue`.
+contract. So does the subscription renewal date: `/v1/limits` is for scalar resources with units, and a
+billing date is neither — it appears on `/v1/usage` as a `date` line instead (see below). Codex's
+combined Credits UI row becomes two scalar resources: `credits` and `creditValue`.
 
 ## Legacy usage response shape
 
@@ -152,6 +154,13 @@ contract. Codex's combined Credits UI row becomes two scalar resources: `credits
       "subtitle": null
     },
     {
+      "type": "date",
+      "label": "Renews",                        // or "Ends" when the plan is set to lapse
+      "at": "2026-09-16T13:11:01.000Z",
+      "color": null,
+      "subtitle": null                          // "Estimated" on a Codex date rolled forward
+    },
+    {
       "type": "barChart",
       "label": "Usage Trend",
       "points": [
@@ -166,7 +175,7 @@ contract. Codex's combined Credits UI row becomes two scalar resources: `credits
 }
 ```
 
-Line types are `progress`, `text`, `badge`, and `barChart`. A `barChart` line carries a `points` array — one `{ label, value, valueLabel? }` per day, oldest first — plus an optional `note`; `value` is the day's token count, `valueLabel` its pre-formatted readout, and `label` a localized month/day (e.g. "Mar 25"). `fetchedAt` is when the snapshot was last fetched successfully (ISO 8601).
+Line types are `progress`, `text`, `badge`, `date`, and `barChart`. A `date` line is a calendar instant rather than a number — today only the subscription renewal row — carried as ISO 8601 in `at`, never as a display string; its `label` is the row's live wording (`Renews` or `Ends`). A `barChart` line carries a `points` array — one `{ label, value, valueLabel? }` per day, oldest first — plus an optional `note`; `value` is the day's token count, `valueLabel` its pre-formatted readout, and `label` a localized month/day (e.g. "Mar 25"). `fetchedAt` is when the snapshot was last fetched successfully (ISO 8601).
 
 The in-app model breakdown shown when hovering spend rows is not included in this API yet. Spend rows continue to serialize as the same `text` lines so existing local integrations keep their current shape.
 

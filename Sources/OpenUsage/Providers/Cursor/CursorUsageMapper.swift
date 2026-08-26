@@ -115,7 +115,9 @@ enum CursorUsageMapper {
         usage: [String: Any],
         planName: String?,
         creditGrants: [String: Any]?,
-        stripeBalanceCents: Double
+        stripeBalanceCents: Double,
+        planBillingCycleEnd: Date? = nil,
+        subscriptionIsEnding: Bool = false
     ) throws -> CursorMappedUsage {
         let facts = CursorPlanUsageFacts(usage: usage)
         guard facts.isEnabled,
@@ -209,7 +211,45 @@ enum CursorUsageMapper {
             }
         }
 
+        appendSubscriptionLine(
+            periodEnd: cycle.billingCycleEnd ?? planBillingCycleEnd,
+            isEnding: subscriptionIsEnding,
+            to: &lines
+        )
+
         return CursorMappedUsage(plan: planLabel(planName), lines: lines)
+    }
+
+    /// Cursor's current period end as the subscription row. The date already rides on the payloads the
+    /// meters use (`GetCurrentPeriodUsage.billingCycleEnd`, with `GetPlanInfo`'s copy as a fallback),
+    /// so the row costs no extra request.
+    static func appendSubscriptionLine(periodEnd: Date?, isEnding: Bool, to lines: inout [MetricLine]) {
+        guard let periodEnd else { return }
+        lines.append(.subscription(at: periodEnd, isEnding: isEnding))
+    }
+
+    /// Whether `auth/stripe` says the plan will stop at the end of the current period rather than
+    /// renew: a non-null `pendingCancellationDate`, or a `subscriptionStatus` that has left "active".
+    /// Those two fields are all OpenUsage reads from that response — `paymentId`, the card metadata,
+    /// and the rest are never read, logged, or persisted.
+    static func subscriptionIsEnding(from body: [String: Any]?) -> Bool {
+        guard let body else { return false }
+        if let pending = body["pendingCancellationDate"], !(pending is NSNull) {
+            return true
+        }
+        guard let status = (body["subscriptionStatus"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+            // No status reported is not evidence of a cancellation — keep the row reading "Renews".
+            return false
+        }
+        return status.lowercased() != "active"
+    }
+
+    /// `GetPlanInfo.planInfo.billingCycleEnd` — epoch **milliseconds as a string** in that response,
+    /// unlike the numeric field on the usage payload. Only used when the usage payload omits its own.
+    static func planBillingCycleEnd(from planInfo: [String: Any]?) -> Date? {
+        guard let ms = ProviderParse.number(planInfo?["billingCycleEnd"]), ms > 0 else { return nil }
+        return Date(timeIntervalSince1970: ms / 1000)
     }
 
     private static func onDemandSpendCents(from spendLimitUsage: [String: Any], limit: Double, remaining: Double) -> Double {
@@ -426,19 +466,22 @@ enum CursorUsageMapper {
         ))
     }
 
-    private static func billingCycle(from usage: [String: Any]) -> (resetsAt: Date?, periodDurationMs: Int) {
+    /// `resetsAt`/`periodDurationMs` drive the meters; `billingCycleEnd` is the same instant kept
+    /// separately for the subscription row, so the row only ever shows a date Cursor actually reported
+    /// (never a duration-inferred reset).
+    private static func billingCycle(
+        from usage: [String: Any]
+    ) -> (resetsAt: Date?, periodDurationMs: Int, billingCycleEnd: Date?) {
         let cycleStart = ProviderParse.number(usage["billingCycleStart"])
         let cycleEnd = ProviderParse.number(usage["billingCycleEnd"])
+        let end = cycleEnd.map { Date(timeIntervalSince1970: $0 / 1000) }
         guard let cycleStart,
               let cycleEnd,
               cycleEnd > cycleStart
         else {
-            return (cycleEnd.map { Date(timeIntervalSince1970: $0 / 1000) }, billingPeriodMs)
+            return (end, billingPeriodMs, end)
         }
-        return (
-            Date(timeIntervalSince1970: cycleEnd / 1000),
-            Int(cycleEnd - cycleStart)
-        )
+        return (end, Int(cycleEnd - cycleStart), end)
     }
 
     private static func planLabel(_ value: String?) -> String? {

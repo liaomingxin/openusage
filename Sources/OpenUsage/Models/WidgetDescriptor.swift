@@ -14,6 +14,11 @@ struct WidgetDescriptor: Identifiable, Hashable {
     /// The Total Spend card keys on this to decide which providers feed the ring — a title match would
     /// wrongly rope in look-alike rows like OpenRouter's API-spend "Today".
     var isSpendTile: Bool = false
+    /// Extra provider line labels this descriptor also answers to, beyond `metricLabel`. Only the
+    /// subscription row uses it: its label switches between "Renews" and "Ends" with the plan's state
+    /// while its id stays `<provider>.renews`, so the tile must match either word (see
+    /// `ProviderSnapshot.line(for:)`). Empty for every other widget.
+    var alternateMetricLabels: [String] = []
     /// Stable scalar resources exported by `/v1/limits`. Empty for UI-only/history widgets.
     var limitResources: [LimitResourceDescriptor] = []
     /// Explicit aggregation semantics for this provider's normalized daily history. Exactly one

@@ -65,6 +65,29 @@ enum CodexUsageMapper {
         return CodexMappedUsage(plan: formatCodexPlan(body["plan_type"]), lines: lines)
     }
 
+    /// The subscription row from the local `id_token` claim.
+    ///
+    /// The claim is only rewritten when the OAuth token rotates (roughly every 10 days), so its period
+    /// end is regularly already in the past. Rather than print a date that has gone by — or spend a
+    /// token refresh purely for a display value — a lapsed end is rolled forward by whole
+    /// `end - start` periods until it lands in the future and the row is marked "Estimated". A lapsed
+    /// end with no derivable period length yields no row at all.
+    static func subscriptionLine(period: CodexSubscriptionPeriod, now: Date) -> MetricLine? {
+        if period.end > now {
+            return .subscription(at: period.end)
+        }
+        guard let start = period.start else { return nil }
+        let length = period.end.timeIntervalSince(start)
+        guard length > 0, length.isFinite else { return nil }
+        let periodsElapsed = (now.timeIntervalSince(period.end) / length).rounded(.down) + 1
+        guard periodsElapsed.isFinite else { return nil }
+        return .subscription(at: period.end.addingTimeInterval(length * periodsElapsed),
+                             subtitle: estimatedSubtitle)
+    }
+
+    /// Marks a subscription date this app rolled forward itself, rather than one Codex reported.
+    static let estimatedSubtitle = "Estimated"
+
     private static func progress(
         label: String,
         used: Double,

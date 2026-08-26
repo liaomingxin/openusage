@@ -52,10 +52,11 @@ struct WidgetRowView: View {
     var body: some View {
         // A row with a concrete reset date derives time-sensitive state (reset countdown, pace marker,
         // "Runs out in …") from the current clock, so it re-renders on a 30s tick — the cadence the
-        // original app uses — instead of waiting for the next data refresh. TimelineView only schedules
-        // ticks while the popover is actually visible. Rows without a reset date are static.
+        // original app uses — instead of waiting for the next data refresh. The subscription row's
+        // countdown ("Renews in 20d 6h") rides the same tick. TimelineView only schedules ticks while
+        // the popover is actually visible. Rows without a date are static.
         Group {
-            if data.resetsAt != nil || !data.expiriesAt.isEmpty {
+            if data.resetsAt != nil || !data.expiriesAt.isEmpty || data.dateValue != nil {
                 TimelineView(.periodic(from: .now, by: 30)) { _ in
                     rowContent
                 }

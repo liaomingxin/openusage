@@ -159,6 +159,21 @@ extension WidgetDescriptor {
                     sample: sample, pinnable: false)
     }
 
+    /// The subscription row: when the plan next bills (or lapses). The date rides raw on a
+    /// `MetricLine.date`, so the row reads "Renews in 20d 6h" or "Renews Sep 16" with the global
+    /// Countdown / Exact Time toggle and never needs the mapper to bake a string. The label switches to
+    /// "Ends" once the plan is set to lapse — the descriptor accepts both words while its id stays
+    /// `<provider>.renews`. Not pinnable: a date that moves once a month is a poor menu-bar tile, the
+    /// same reasoning as `usageTrend`.
+    static func subscriptionRenewal(provider: Provider) -> WidgetDescriptor {
+        let sample = WidgetData(title: MetricLine.renewsLabel, icon: provider.icon,
+                                kind: .count, used: 0, limit: nil)
+        var descriptor = make(id: "\(provider.id).renews", provider: provider,
+                              metricLabel: MetricLine.renewsLabel, sample: sample, pinnable: false)
+        descriptor.alternateMetricLabels = [MetricLine.endsLabel]
+        return descriptor
+    }
+
     private static func make(
         id: String,
         provider: Provider,

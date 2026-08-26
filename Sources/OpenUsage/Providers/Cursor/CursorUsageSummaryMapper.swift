@@ -51,6 +51,14 @@ enum CursorUsageSummaryMapper {
             throw CursorUsageError.requestBasedUnavailable(unavailableMessage)
         }
 
+        // The subscription row rides on the same `usage-summary` payload. This fallback path never
+        // calls `auth/stripe` (adding one would be a new request), so the label stays "Renews".
+        CursorUsageMapper.appendSubscriptionLine(
+            periodEnd: cycle.billingCycleEnd,
+            isEnding: false,
+            to: &lines
+        )
+
         return CursorMappedUsage(
             plan: planLabel(planName) ?? planLabel(summary?["membershipType"] as? String),
             lines: lines
@@ -230,14 +238,16 @@ enum CursorUsageSummaryMapper {
         if let start, let end, end > start {
             return BillingCycle(
                 resetsAt: end,
-                periodDurationMs: Int(end.timeIntervalSince(start) * 1000)
+                periodDurationMs: Int(end.timeIntervalSince(start) * 1000),
+                billingCycleEnd: end
             )
         }
 
         let requestStart = (requestUsage?["startOfMonth"] as? String).flatMap(OpenUsageISO8601.date(from:))
         return BillingCycle(
             resetsAt: requestStart?.addingTimeInterval(TimeInterval(CursorUsageMapper.billingPeriodMs) / 1000),
-            periodDurationMs: CursorUsageMapper.billingPeriodMs
+            periodDurationMs: CursorUsageMapper.billingPeriodMs,
+            billingCycleEnd: end
         )
     }
 
@@ -250,5 +260,8 @@ enum CursorUsageSummaryMapper {
     private struct BillingCycle {
         var resetsAt: Date?
         var periodDurationMs: Int
+        /// The period end Cursor actually reported, kept apart from `resetsAt` (which falls back to an
+        /// inferred month) so the subscription row never shows a date Cursor didn't send.
+        var billingCycleEnd: Date?
     }
 }

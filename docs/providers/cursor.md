@@ -13,8 +13,14 @@ Tracks your Cursor plan usage using the login from the Cursor app.
 | Extra Usage | On-demand spend; user-scoped when available, otherwise the team aggregate; shown as a meter when Cursor returns a limit |
 | Requests | Optional copy of the included request count vs. cap for custom layouts |
 | Credits | Credit balance left from grants and prepaid account balance |
+| Renews | When your Cursor plan next bills. Reads **Ends** instead when the subscription is set to stop at the end of the period. Enabled by default, tucked below the caret |
 
 When Cursor reports your plan name, OpenUsage shows it beside the provider name.
+
+The **Renews** row is the current billing cycle's end — the same date the usage payload already
+carries, so it costs no extra request. It follows the global **Reset Times** setting: `Renews in
+20d 6h` on Countdown, `Renews Sep 16` on Exact Time. If your plan is set to cancel at the end of
+the period (or Cursor no longer reports it as active), the row reads **Ends** on the same date.
 
 Grok Bot has its own usage allowance, separate from Cursor's normal billing-cycle meter. Its widget
 is enabled by default in Cursor's On Demand section. It uses your existing Cursor login, so signing
@@ -36,4 +42,4 @@ Today, Yesterday, Last 30 Days, and Usage Trend come from Cursor's usage export.
 
 ## Under the hood
 
-Connect RPC on `api2.cursor.sh` (dashboard usage and `DashboardService/GetSandUsageStatus` for Grok Bot), combined REST fallback at `cursor.com/api/usage` and `cursor.com/api/usage-summary` for Enterprise/team accounts, Stripe balance at `cursor.com/api/auth/stripe`, and the usage-events CSV export at `cursor.com/api/dashboard/export-usage-events-csv`. The fallback combines the included request allowance with structured percentages and user-scoped on-demand spend; neither REST response is treated as the whole account snapshot by itself. The primary dashboard usage request refreshes the token and retries once after a 401/403; optional endpoint failures stay nonfatal when the other fallback response is usable and are recorded in the diagnostic log. Per-day spend imputation uses exported token counts priced through the shared [model pricing](../pricing.md); Cursor-native models (`auto`, `composer-*`, …) come from its supplement layer, which maintainers sync from [Cursor models & pricing](https://cursor.com/docs/models-and-pricing.md).
+Connect RPC on `api2.cursor.sh` (dashboard usage and `DashboardService/GetSandUsageStatus` for Grok Bot), combined REST fallback at `cursor.com/api/usage` and `cursor.com/api/usage-summary` for Enterprise/team accounts, Stripe balance at `cursor.com/api/auth/stripe` (OpenUsage reads only the balance plus the two fields that say whether the plan renews or ends — never the payment or card details in that response), and the usage-events CSV export at `cursor.com/api/dashboard/export-usage-events-csv`. The fallback combines the included request allowance with structured percentages and user-scoped on-demand spend; neither REST response is treated as the whole account snapshot by itself. The primary dashboard usage request refreshes the token and retries once after a 401/403; optional endpoint failures stay nonfatal when the other fallback response is usable and are recorded in the diagnostic log. Per-day spend imputation uses exported token counts priced through the shared [model pricing](../pricing.md); Cursor-native models (`auto`, `composer-*`, …) come from its supplement layer, which maintainers sync from [Cursor models & pricing](https://cursor.com/docs/models-and-pricing.md).

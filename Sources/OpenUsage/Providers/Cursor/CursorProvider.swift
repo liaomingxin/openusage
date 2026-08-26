@@ -55,7 +55,10 @@ final class CursorProvider: ProviderRuntime {
         ] + WidgetDescriptor.spendTiles(
             provider: provider,
             valueTooltipNote: WidgetData.cursorUsageHistoryNote
-        )
+        ) + [
+            // Account metadata rather than usage, so it sits last (and On Demand by default).
+            .subscriptionRenewal(provider: provider)
+        ]
     }
 
     func hasLocalCredentials() async -> Bool {
@@ -110,11 +113,12 @@ final class CursorProvider: ProviderRuntime {
         // The access token may have rotated during the usage fetch's refresh-and-retry; read the live one.
         let currentToken = authState.accessToken ?? accessToken
 
-        let (planName, planInfoUnavailable) = await fetchPlanName(accessToken: currentToken)
+        let planInfo = await fetchPlanInfo(accessToken: currentToken)
+        let planName = planInfo.name
         let fallback = CursorUsageMapper.shouldUseRequestBasedFallback(
             usage: usage,
             planName: planName,
-            planInfoUnavailable: planInfoUnavailable
+            planInfoUnavailable: planInfo.unavailable
         )
         if fallback.shouldFallback {
             var mapped = try await usageSummaryAndRequestResult(
@@ -142,12 +146,14 @@ final class CursorProvider: ProviderRuntime {
         }
 
         let creditGrants = await fetchCreditGrants(accessToken: currentToken)
-        let stripeBalanceCents = await fetchStripeBalanceCents(accessToken: currentToken)
+        let stripe = await fetchStripeAccount(accessToken: currentToken)
         var mapped = try CursorUsageMapper.mapUsage(
             usage: usage,
             planName: planName,
             creditGrants: creditGrants,
-            stripeBalanceCents: stripeBalanceCents
+            stripeBalanceCents: stripe.balanceCents,
+            planBillingCycleEnd: planInfo.billingCycleEnd,
+            subscriptionIsEnding: stripe.isEnding
         )
         await appendGrokBotUsage(to: &mapped.lines, accessToken: currentToken)
         let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
@@ -284,21 +290,31 @@ final class CursorProvider: ProviderRuntime {
         return accessToken
     }
 
-    private func fetchPlanName(accessToken: String) async -> (String?, Bool) {
+    /// What `GetPlanInfo` contributes: the plan name shown beside the provider, and the same
+    /// billing-cycle end the usage payload carries — read here only as the subscription row's fallback.
+    /// The rest of that response (price, plan owner) is deliberately ignored.
+    private struct CursorPlanInfo {
+        var name: String?
+        var unavailable: Bool
+        var billingCycleEnd: Date?
+    }
+
+    private func fetchPlanInfo(accessToken: String) async -> CursorPlanInfo {
         guard let body = await fetchOptionalJSONObject(label: "plan", request: {
             try await self.usageClient.fetchPlan(accessToken: accessToken)
         }) else {
-            return (nil, true)
+            return CursorPlanInfo(name: nil, unavailable: true, billingCycleEnd: nil)
         }
-        guard let planInfo = body["planInfo"] as? [String: Any],
-              let planName = (planInfo["planName"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .nilIfEmpty
+        let planInfo = body["planInfo"] as? [String: Any]
+        let cycleEnd = CursorUsageMapper.planBillingCycleEnd(from: planInfo)
+        guard let planName = (planInfo?["planName"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
         else {
             AppLog.warn(LogTag.plugin("cursor"), "optional plan response contained invalid plan metadata")
-            return (nil, true)
+            return CursorPlanInfo(name: nil, unavailable: true, billingCycleEnd: cycleEnd)
         }
-        return (planName, false)
+        return CursorPlanInfo(name: planName, unavailable: false, billingCycleEnd: cycleEnd)
     }
 
     private func fetchCreditGrants(accessToken: String) async -> [String: Any]? {
@@ -321,17 +337,29 @@ final class CursorProvider: ProviderRuntime {
         return body
     }
 
-    private func fetchStripeBalanceCents(accessToken: String) async -> Double {
+    /// The two things the already-running `auth/stripe` call tells us: the prepaid balance behind the
+    /// Credits row, and whether the plan is set to lapse (the subscription row's "Renews" ⟷ "Ends").
+    /// Nothing else in that response — `paymentId`, card metadata — is read, logged, or persisted.
+    private struct CursorStripeAccount {
+        var balanceCents: Double = 0
+        var isEnding: Bool = false
+    }
+
+    private func fetchStripeAccount(accessToken: String) async -> CursorStripeAccount {
         guard let body = await fetchOptionalJSONObject(label: "prepaid-balance", request: {
             try await self.usageClient.fetchStripeBalance(accessToken: accessToken)
         }) else {
-            return 0
+            return CursorStripeAccount()
         }
+        let isEnding = CursorUsageMapper.subscriptionIsEnding(from: body)
         guard ProviderParse.number(body["customerBalance"]) != nil else {
             AppLog.warn(LogTag.plugin("cursor"), "optional prepaid-balance response contained invalid balance metadata")
-            return 0
+            return CursorStripeAccount(balanceCents: 0, isEnding: isEnding)
         }
-        return CursorUsageMapper.stripeBalanceCents(from: body)
+        return CursorStripeAccount(
+            balanceCents: CursorUsageMapper.stripeBalanceCents(from: body),
+            isEnding: isEnding
+        )
     }
 
     /// Optional endpoints enrich a usable primary snapshot; they never fail the whole provider. Keep

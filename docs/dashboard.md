@@ -43,13 +43,15 @@ The ring center is always two short lines — a compact number on top and a quie
 
 For Claude, Codex, Cursor, Grok, and OpenCode spend rows, the value gently highlights when you point at it, signaling it's interactive; hovering it for a moment opens a small model breakdown for that period: a ranked list of models, each showing its name and spend on one line, its share percentage and tokens on the next, and a thin share bar. Cursor groups its per-thinking-effort export slugs (like `claude-opus-4-8-thinking-max`) under the base model. Long tails fold into **Other** — anything past the top named models or under 5% of the period. Models no pricing source can price don't appear here (or in the row's totals) at all; the row's warning triangle names them instead (see [Pricing](pricing.md)).
 
+**Renews** (Cursor, Z.ai, and Codex) is a one-line row showing when that subscription next bills — `Renews in 20d 6h`, or `Renews Sep 16` with Exact Time (see [Settings](settings.md)). It reads **Ends** instead when the plan is set to stop at the end of the period (a pending Cursor cancellation, Z.ai auto-renew turned off). Codex's date comes from the login file on your Mac rather than a live call, so when that saved value has gone stale the row carries it forward and notes **Estimated** underneath. The row is on by default, tucked below each card's caret, and can't be starred for the menu bar — a date that moves once a month isn't a useful tile.
+
 **Usage Trend** (Claude, Codex, Cursor, Grok, and OpenCode) is a small bar chart of the last 30 days of token usage — one bar per day, drawn from the same source as that provider's spend rows (local logs for Claude, Codex, Grok, and OpenCode; Cursor's usage export for Cursor). **Hover it** for the peak day, the date range, and the source. It's on by default; turn it off or reorder it from Customize like any other metric. It can't be starred for the menu bar — the strip shows single values, not a chart.
 
 With [iCloud Sync](icloud-sync.md) on, the machine-local providers' spend rows, trends, warnings, and
 model breakdowns are rebuilt from all synced Macs. Cursor stays unchanged because its export is already
 account-wide. Quotas, plans, balances, and provider errors always describe this Mac's refresh.
 
-Rows with a reset date tick every 30 seconds, so countdowns and pace stay live between refreshes.
+Rows with a reset or renewal date tick every 30 seconds, so countdowns and pace stay live between refreshes.
 
 ## Right-click menus
 
