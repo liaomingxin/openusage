@@ -37,6 +37,15 @@ final class ClaudeSwapProvider: ProviderRuntime {
     private var liveRateLimitedUntil: Date?
     private static let rateLimitCooldown: TimeInterval = 5 * 60
 
+    /// When a refused Keychain read stops being retried until. Reading claude-swap's item can put a
+    /// macOS access prompt on screen, and clicking *Deny* answers that one prompt only — it doesn't
+    /// amend the item's ACL — so retrying on every background tick would put the same dialog back in
+    /// front of the user every few minutes, once per stashed card. After a refusal the card waits an
+    /// hour before asking again, and a manual refresh clears the wait outright: asking again is exactly
+    /// what the troubleshooting docs tell the user a manual refresh is for.
+    private var keychainRefusedUntil: Date?
+    private static let keychainRefusalCooldown: TimeInterval = 60 * 60
+
     init(
         card: ClaudeSwapCard,
         usageClient: ClaudeSwapUsageClient = ClaudeSwapUsageClient(),
@@ -154,10 +163,17 @@ final class ClaudeSwapProvider: ProviderRuntime {
     }
 
     /// claude-swap's stashed access token for this slot, when there is a fresh one to spend. Every
-    /// other outcome logs its reason and reads as "no live tier".
+    /// other outcome logs its reason and reads as "no live tier" — bar one: while a refused Keychain
+    /// read is still in its cooldown the read is skipped silently, the warning it already wrote being
+    /// the standing explanation.
     private func stashedToken() async -> ClaudeSwapStashedToken? {
         guard let email = card.email?.nilIfEmpty else {
             logLive("the slot's snapshot names no email, so its stashed login can't be located", level: .info)
+            return nil
+        }
+        if ProviderRefreshContext.isManual {
+            keychainRefusedUntil = nil
+        } else if let until = keychainRefusedUntil, now() < until {
             return nil
         }
         let slot = card.slot
@@ -167,6 +183,9 @@ final class ClaudeSwapProvider: ProviderRuntime {
                 try credentialReader.stashedToken(slot: slot, email: email)
             }
         } catch {
+            // A refusal, not an absence: the Keychain was there and said no (locked, denied, or a
+            // cancelled prompt). Stop asking for a while so the dialog doesn't keep reappearing.
+            keychainRefusedUntil = now().addingTimeInterval(Self.keychainRefusalCooldown)
             logLive(
                 "couldn't read claude-swap's stashed login (\(error.localizedDescription)); "
                 + "showing its cached usage",

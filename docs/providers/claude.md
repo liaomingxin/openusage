@@ -60,8 +60,10 @@ OpenUsage asks Anthropic for each stashed account's usage using the login claude
   token claude-swap has already stashed for that account. It's the same usage request the live Claude card
   makes, just on a stashed account's behalf.
 - **The first refresh asks for Keychain access** — claude-swap keeps each stashed login in a `claude-swap`
-  Keychain item, so macOS asks once whether OpenUsage may read it. Choose **Always Allow** and it won't ask
-  again. Choose Deny and the cards fall back to claude-swap's cached percentages.
+  Keychain item, so macOS asks whether OpenUsage may read it. Choose **Always Allow** and it won't ask
+  again. Choose Deny and the cards fall back to claude-swap's cached percentages, and OpenUsage stops
+  asking: background refreshes won't put the dialog back in front of you, and it only asks again the next
+  time you refresh manually.
 - **Your tokens are left alone** — OpenUsage only ever *reads* that Keychain item, and only takes the
   access token out of it. It never writes to the Keychain, never refreshes or rotates the logins
   claude-swap manages, and never reads their refresh tokens at all. Rotating one would break claude-swap's
@@ -101,8 +103,9 @@ Local spend does not require a Claude OAuth login. If Claude Code uses an API-ke
 - **"Updates blocked by Anthropic"** (an amber warning on the Claude header) — the usage API is throttling OpenUsage. It keeps the last values from the same login, shows when it will retry, and backs off in the meantime. A different login starts with a fresh cache and cooldown.
 - **A claude-swap card shows percentages but no Extra Usage** — it's serving claude-swap's cached numbers
   rather than live ones. Either macOS hasn't been allowed to read the `claude-swap` Keychain item (refresh
-  once and choose **Always Allow**), or the stashed login needs re-authenticating — run `cswap` and sign
-  that account in again. OpenUsage will not renew it for you, by design.
+  manually and choose **Always Allow** — after a Deny, a manual refresh is what asks again), or the stashed
+  login needs re-authenticating — run `cswap` and sign that account in again. OpenUsage will not renew it
+  for you, by design.
 - **Spend tiles show "No data"** — OpenUsage found no Claude Code logs in the last 30 days. If your logs live somewhere custom, set `CLAUDE_CONFIG_DIR` so both Claude Code and OpenUsage look in the same place.
 
 ## Under the hood

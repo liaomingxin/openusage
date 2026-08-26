@@ -401,6 +401,38 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
     }
 
+    /// Reading claude-swap's item can put a macOS access prompt on screen, and *Deny* answers that one
+    /// prompt only. Without a backoff the same dialog would come back every few minutes, once per
+    /// stashed card — so a refusal stops the automatic reads, and only a manual refresh asks again.
+    func testADeniedKeychainIsNotAskedAgainUntilAManualRefresh() async {
+        let keychain = SlotKeychain(failure: KeychainError.readFailed("User canceled the operation."))
+        let provider = provider(keychain: keychain, http: .refusingEverything())
+
+        _ = await provider.refresh()
+        XCTAssertEqual(keychain.reads.count, 1)
+
+        let second = await provider.refresh()
+        XCTAssertEqual(keychain.reads.count, 1, "an automatic refresh must not re-show the access prompt")
+        XCTAssertNil(second.errorCategory)
+        XCTAssertEqual(second.lines.map(\.label), ["Session", "Weekly"])
+
+        let manual = await ProviderRefreshContext.$isManual.withValue(true) { await provider.refresh() }
+        XCTAssertEqual(keychain.reads.count, 2, "a manual refresh is the user asking to be prompted again")
+        XCTAssertEqual(manual.lines.map(\.label), ["Session", "Weekly"])
+    }
+
+    /// An item that simply isn't there is not a refusal, so it must not start a backoff — the stash can
+    /// gain one at any moment when claude-swap signs that account in.
+    func testAnAbsentKeychainItemIsStillLookedForEveryRefresh() async {
+        let keychain = SlotKeychain()
+        let provider = provider(keychain: keychain, http: .refusingEverything())
+
+        _ = await provider.refresh()
+        _ = await provider.refresh()
+
+        XCTAssertEqual(keychain.reads.count, 4, "both labels, on both refreshes")
+    }
+
     func testLegacyAccountLabelStillReachesTheLiveTier() async {
         let http = UsageOnlyHTTPClient { _ in ClaudeSwapLiveFixtures.usageResponse }
         let keychain = SlotKeychain([ClaudeSwapLiveFixtures.legacyAccountLabel: freshBlob()])
