@@ -155,11 +155,15 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
 
         XCTAssertEqual(assembly.claudeCards.map(\.id), [workID, "claude"])
         XCTAssertEqual(assembly.identityKeysByCard, [workID: currentIdentity, "claude": previousIdentity])
-        XCTAssertEqual(assembly.claudeCards.map(\.displayName), ["Claude — SUNSTORY", "Claude — Personal"])
+        XCTAssertEqual(assembly.claudeCards.map(\.accountLabel), ["SUNSTORY", "Personal"])
         let providers = ProviderCatalog.make(
             claudeCards: assembly.claudeCards, claudeIdentityKeys: assembly.identityKeysByCard
         ).compactMap { $0 as? ClaudeProvider }
         XCTAssertEqual(providers.map { $0.provider.id }, [workID, "claude"])
+        // Two Claude cards: both titled "Claude", told apart by the organization label.
+        XCTAssertEqual(providers.map { $0.provider.familyName }, ["Claude", "Claude"])
+        XCTAssertEqual(providers.map { $0.provider.accountLabel }, ["SUNSTORY", "Personal"])
+        XCTAssertEqual(providers.map { $0.provider.displayName }, ["Claude — SUNSTORY", "Claude — Personal"])
         XCTAssertEqual(providers.map { $0.authStore.desktopOnly }, [false, true])
         XCTAssertEqual(providers.map { $0.authStore.preferOrganizationScopedDesktop }, [true, false])
         XCTAssertFalse(providers.contains { $0.allowsUnattributedPiUsage })

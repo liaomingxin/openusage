@@ -8,7 +8,7 @@ A fresh install doesn't turn on every provider OpenUsage knows about. It starts 
 
 This full detection only happens on a brand-new install. Updates never change the providers you already have on or off — but when an update ships a provider you've never seen, the same local check runs once for just that provider and turns it on only if you actually have the tool. See [Which Providers Are On](provider-enablement.md) for the full lifecycle.
 
-A second Codex login (a distinct ChatGPT account) shows as its own card next to Codex, named with that account's email. Extra cards stay tied to the original Codex card — consecutive in the grid order, sharing the same Always Visible / On Demand split. See [Codex](providers/codex.md).
+A second Codex login (a distinct ChatGPT account) shows as its own card next to Codex. The card is titled plainly **Codex** — hover the title to see that account's email. Everywhere else the name stands on its own (the menu bar, Customize, Total Spend, share cards) the extra card is named `Codex — <email>` so the two stay apart. Extra cards stay tied to the original Codex card — consecutive in the grid order, sharing the same Always Visible / On Demand split. See [Codex](providers/codex.md).
 
 Each provider card leads with its **Always Visible** metrics. Any metrics you've moved below the **On Demand** line are tucked away behind the in-card caret — click it to reveal them below the caret, click again to collapse. **⌥-click** a caret to expand or collapse every provider card at once. Open cards stay open across popover closes and app restarts. A provider with neither On Demand metrics nor quick links shows no caret.
 

@@ -27,9 +27,10 @@ enum ProviderCatalog {
                     allowsUnattributedSessions: card.allowsUnattributedPiUsage
                 )
                 return ClaudeProvider(
+                    // A lone Claude card carries no account label: nothing to tell it apart from.
                     provider: ClaudeProvider.makeProvider(
                         id: card.id,
-                        displayName: claudeCards.count == 1 ? "Claude" : card.displayName
+                        accountLabel: claudeCards.count == 1 ? nil : card.accountLabel
                     ),
                     authStore: ClaudeAuthStore(
                         desktopOrganization: card.organizationID,
@@ -47,7 +48,7 @@ enum ProviderCatalog {
         providers += extraCodexCards.map { card in
             CodexProvider(
                 id: card.id,
-                displayName: card.displayName,
+                accountLabel: card.accountLabel,
                 authStore: CodexAuthStore(scopedAuthPath: card.credentialPath),
                 scansLocalLogs: false
             )

@@ -4,6 +4,9 @@ Tracks your Claude subscription limits using the login you already have from Cla
 
 Each account and organization gets its own Claude card with separate limits and spending. Signing in to
 the same account and organization through both Claude Code and Claude Desktop still creates only one card.
+With more than one Claude card, each is still titled plainly **Claude** — hover a title to see its
+organization. Everywhere else the name stands on its own (the menu bar, Customize, Total Spend, share
+cards, the local API) the cards are named `Claude — <organization>` so they stay apart.
 
 ## What it tracks
 

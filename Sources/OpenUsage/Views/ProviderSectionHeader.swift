@@ -9,6 +9,11 @@ import SwiftUI
 /// optional `staleness` is the dashboard-only hint that the values shown are an aged snapshot still
 /// revalidating: a short "Outdated" tag whose hover tooltip carries the precise age ("Last updated 3h
 /// 12m ago"), so fossilized plan/limits never pass for current data.
+///
+/// The title is the provider's family name alone ("Codex", "Claude"): on a multi-account card the
+/// account (email or organization) rides in the title's hover tooltip instead of the title text, so a
+/// long email can't truncate the name or crowd the plan badge. Every other place the name stands on
+/// its own keeps the full `displayName`.
 struct ProviderSectionHeader: View {
     let provider: Provider
     var plan: String?
@@ -48,6 +53,12 @@ struct ProviderSectionHeader: View {
         self.onCopyScreenshot = onCopyScreenshot
     }
 
+    /// The card title — the family name, never "Codex — extra@example.com".
+    var title: String { provider.familyName }
+    /// Hovering the title names the account this card tracks. `nil` (no bubble) for a single-account
+    /// card. The owner asked for this tooltip explicitly.
+    var titleTooltip: String? { provider.accountLabel }
+
     var body: some View {
         HStack(spacing: 5) {
             // The provider mark replaces the dashboard's visual drag grip. Reordering still belongs
@@ -61,11 +72,12 @@ struct ProviderSectionHeader: View {
                 // Name + plan keep their width and stay on one line; under width pressure (a long plan
                 // name like "Super Grok Heavy") the lower-priority stale tag truncates first instead of
                 // wrapping the name to a second line.
-                Text(provider.displayName)
+                Text(title)
                     .font(.system(size: density.headerPointSize, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .layoutPriority(1)
+                    .hoverTooltip(titleTooltip)
                 if let plan {
                     ProviderPlanBadge(plan: plan)
                         .layoutPriority(1)
