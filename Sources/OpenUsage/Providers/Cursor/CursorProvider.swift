@@ -157,7 +157,7 @@ final class CursorProvider: ProviderRuntime {
         )
         await appendGrokBotUsage(to: &mapped.lines, accessToken: currentToken)
         let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
-        return snapshot(mapped, usageHistory: history)
+        return snapshot(mapped, usageHistory: history, warning: stripe.paymentWarning)
     }
 
     /// Grok Bot uses the same Cursor account but keeps a separate weekly allowance. Missing access is
@@ -337,12 +337,16 @@ final class CursorProvider: ProviderRuntime {
         return body
     }
 
-    /// The two things the already-running `auth/stripe` call tells us: the prepaid balance behind the
-    /// Credits row, and whether the plan is set to lapse (the subscription row's "Renews" ⟷ "Ends").
+    /// The three things the already-running `auth/stripe` call tells us: the prepaid balance behind the
+    /// Credits row, whether the plan is set to lapse (the subscription row's "Renews" ⟷ "Ends"), and
+    /// whether the account is in payment trouble (`paymentWarning`, the header triangle).
     /// Nothing else in that response — `paymentId`, card metadata — is read, logged, or persisted.
     private struct CursorStripeAccount {
         var balanceCents: Double = 0
         var isEnding: Bool = false
+        /// Header warning text when Cursor reports a failed payment; `nil` on a healthy account, which
+        /// is also what a missing, failed, or unreadable `auth/stripe` response yields.
+        var paymentWarning: String?
     }
 
     private func fetchStripeAccount(accessToken: String) async -> CursorStripeAccount {
@@ -352,13 +356,23 @@ final class CursorProvider: ProviderRuntime {
             return CursorStripeAccount()
         }
         let isEnding = CursorUsageMapper.subscriptionIsEnding(from: body)
+        // Billing trouble is worth surfacing even when the balance field is unusable, so read it before
+        // the balance guard below. An absent flag is the healthy case and stays silent; a present but
+        // unreadable one is loud, because it could be hiding a real payment failure.
+        if let rawPaymentFailed = body["lastPaymentFailed"],
+           !(rawPaymentFailed is NSNull),
+           rawPaymentFailed as? Bool == nil {
+            AppLog.warn(LogTag.plugin("cursor"), "optional prepaid-balance response contained invalid payment-status metadata")
+        }
+        let paymentWarning = CursorUsageMapper.paymentFailureWarning(from: body)
         guard ProviderParse.number(body["customerBalance"]) != nil else {
             AppLog.warn(LogTag.plugin("cursor"), "optional prepaid-balance response contained invalid balance metadata")
-            return CursorStripeAccount(balanceCents: 0, isEnding: isEnding)
+            return CursorStripeAccount(balanceCents: 0, isEnding: isEnding, paymentWarning: paymentWarning)
         }
         return CursorStripeAccount(
             balanceCents: CursorUsageMapper.stripeBalanceCents(from: body),
-            isEnding: isEnding
+            isEnding: isEnding,
+            paymentWarning: paymentWarning
         )
     }
 
@@ -436,13 +450,21 @@ final class CursorProvider: ProviderRuntime {
         CursorPlanUsageFacts(usage: usage).shouldTryGenericRequestFallback
     }
 
-    private func snapshot(_ mapped: CursorMappedUsage, usageHistory: ProviderUsageHistory? = nil) -> ProviderSnapshot {
+    /// `warning` is the provider header's amber triangle. Only the plan-usage path passes one: it is the
+    /// only path that reads `auth/stripe`, and the request-based fallbacks would need a new request to
+    /// learn the same thing.
+    private func snapshot(
+        _ mapped: CursorMappedUsage,
+        usageHistory: ProviderUsageHistory? = nil,
+        warning: String? = nil
+    ) -> ProviderSnapshot {
         ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
             lines: mapped.lines,
             refreshedAt: now(),
-            usageHistory: usageHistory
+            usageHistory: usageHistory,
+            warning: warning
         )
     }
 }
