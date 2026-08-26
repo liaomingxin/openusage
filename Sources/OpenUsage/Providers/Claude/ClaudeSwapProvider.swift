@@ -13,6 +13,11 @@ final class ClaudeSwapProvider: ProviderRuntime {
     let files: TextFileAccessing
     let now: @Sendable () -> Date
 
+    /// The last thing this card logged about its own state. A card parked in the no-data or
+    /// poll-failed state would otherwise write the same line on every refresh tick for as long as it
+    /// stayed there, so only a change is worth recording.
+    private var lastLoggedState: String?
+
     init(
         card: ClaudeSwapCard,
         usageClient: ClaudeSwapUsageClient = ClaudeSwapUsageClient(),
@@ -64,19 +69,34 @@ final class ClaudeSwapProvider: ProviderRuntime {
             now: now()
         ) {
         case .usage(let lines, let warning):
-            if let warning {
-                AppLog.warn(LogTag.plugin("claude"), "\(provider.id): serving claude-swap's last-good usage — \(warning)")
-            }
+            logStateChange(warning.map { "serving claude-swap's last-good usage — \($0)" }, level: .warn)
             return ProviderSnapshot.make(
                 provider: provider, plan: nil, lines: lines, refreshedAt: now(), warning: warning
             )
         case .noData(let reason):
-            AppLog.info(LogTag.plugin("claude"), "\(provider.id): no usage to show — \(reason)")
+            logStateChange("no usage to show — \(reason)", level: .info)
             var lines: [MetricLine] = []
             MetricLine.appendNoDataIfNeeded(&lines)
             return ProviderSnapshot.make(provider: provider, plan: nil, lines: lines, refreshedAt: now())
         case .failure(let error):
+            // The error snapshot is the loud signal here; tracking it still keeps a later transition
+            // back into no-data from being swallowed as "unchanged".
+            lastLoggedState = "failure: \(error.localizedDescription)"
             return ProviderSnapshot.error(provider: provider, error: error)
+        }
+    }
+
+    private enum LogLevel { case warn, info }
+
+    /// Record `message` only when it differs from what this card last said about itself. `nil` is the
+    /// healthy state — nothing to log, but still a change worth remembering.
+    private func logStateChange(_ message: String?, level: LogLevel) {
+        guard lastLoggedState != message else { return }
+        lastLoggedState = message
+        guard let message else { return }
+        switch level {
+        case .warn: AppLog.warn(LogTag.plugin("claude"), "\(provider.id): \(message)")
+        case .info: AppLog.info(LogTag.plugin("claude"), "\(provider.id): \(message)")
         }
     }
 }

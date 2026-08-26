@@ -18,8 +18,14 @@ struct ClaudeSwapDiscovery: Sendable {
         /// claude-swap's slot number as written in the file name; also the key its usage cache uses.
         var slot: String
         var identityKey: String
-        /// The account's email address, per the snapshot's `oauthAccount`.
+        /// The account's email address, per the snapshot's `oauthAccount`. This is the card's name.
         var label: String?
+        /// The account registry's label for the same account — `"email (Org Name)"` when the snapshot
+        /// names an organization, exactly what the default-home observer records. A slot can share its
+        /// identity with a Claude Desktop organization card, which derives its own name from the
+        /// record label, so the record must carry the organization-qualified form rather than the bare
+        /// email the card title uses.
+        var identityLabel: String?
     }
 
     /// claude-swap's stash lives at a fixed path, independent of `CLAUDE_CONFIG_DIR`.
@@ -75,7 +81,8 @@ struct ClaudeSwapDiscovery: Sendable {
             path: path,
             slot: slot,
             identityKey: identityKey,
-            label: account.emailAddress?.nilIfEmpty
+            label: account.emailAddress?.nilIfEmpty,
+            identityLabel: DefaultAccountObserver.claudeIdentityLabel(account)
         )
     }
 

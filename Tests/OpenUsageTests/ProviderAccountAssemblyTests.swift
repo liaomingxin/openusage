@@ -177,13 +177,21 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             ],
             claudeSwap: [
                 ClaudeSwapDiscovery.ExtraCredential(
-                    path: slotPath, slot: "2", identityKey: "acct-2|org-2", label: "other@example.com"
+                    path: slotPath, slot: "2", identityKey: "acct-2|org-2", label: "other@example.com",
+                    identityLabel: "other@example.com (Other Org)"
                 )
             ],
             desktop: ClaudeDesktopAuthStore(files: FakeFiles(), homeDirectory: { home })
         )
         let swapID = ProviderAccountID.make(family: "claude", identityKey: "acct-2|org-2")
         let codexID = ProviderAccountID.make(family: "codex", identityKey: "acct-extra-1")
+
+        // The registry keeps the organization-qualified label (a Desktop card sharing this identity
+        // derives its name from it); the card title stays the bare email.
+        XCTAssertEqual(
+            store.records.first { $0.identityKey == "acct-2|org-2" }?.label,
+            "other@example.com (Other Org)"
+        )
 
         XCTAssertEqual(assembly.claudeSwapCards, [
             ClaudeSwapCard(

@@ -49,6 +49,11 @@ Claude Desktop access is strictly read-only. OpenUsage may ask macOS for permiss
 `Claude Safe Storage` Keychain item so it can decrypt Desktop's current access token. It never uses
 Desktop's rotating refresh token and never modifies Desktop's config, cookies, or Keychain data.
 
+Accounts managed by [claude-swap](providers/claude.md#claude-swap-accounts) are read-only in a stricter
+sense: OpenUsage never opens the `claude-swap` Keychain service and never reads, refreshes, or rotates
+the logins claude-swap holds there. Those cards are built entirely from claude-swap's own files on disk
+— the config snapshot that names each account and the usage numbers claude-swap has already fetched.
+
 ## Other network requests
 
 Besides the provider API calls the vendor's own tools would make, OpenUsage fetches public [model price lists](pricing.md) about once an hour (from `raw.githubusercontent.com`, `models.dev`, and this project's GitHub Pages). These are plain downloads of public data — they carry no usage, log, or account information, and they run regardless of the analytics toggle. The spend tiles are computed from local CLI logs entirely on your Mac; no log data ever leaves it.

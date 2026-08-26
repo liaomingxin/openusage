@@ -59,14 +59,17 @@ final class ClaudeSwapDiscoveryTests: XCTestCase {
 
         XCTAssertEqual(slots, [
             ClaudeSwapDiscovery.ExtraCredential(
-                path: slotOne, slot: "1", identityKey: "acct-1|org-1", label: "one@example.com"
+                path: slotOne, slot: "1", identityKey: "acct-1|org-1", label: "one@example.com",
+                identityLabel: "one@example.com (Test Org)"
             ),
             ClaudeSwapDiscovery.ExtraCredential(
-                path: slotTwo, slot: "2", identityKey: "acct-2|org-2", label: "two@example.com"
+                path: slotTwo, slot: "2", identityKey: "acct-2|org-2", label: "two@example.com",
+                identityLabel: "two@example.com (Test Org)"
             ),
             // Numeric, not lexicographic: slot 10 sorts after slot 2.
             ClaudeSwapDiscovery.ExtraCredential(
-                path: slotTen, slot: "10", identityKey: "acct-10|org-10", label: "ten@example.com"
+                path: slotTen, slot: "10", identityKey: "acct-10|org-10", label: "ten@example.com",
+                identityLabel: "ten@example.com (Test Org)"
             ),
         ])
     }
@@ -94,6 +97,11 @@ final class ClaudeSwapDiscoveryTests: XCTestCase {
 
         XCTAssertEqual(slot.identityKey, identityKey)
         XCTAssertEqual(slot.identityKey, "acct-same|org-same")
+        // Two labels, deliberately: the bare email titles the card, while the account registry gets
+        // the organization-qualified form the default-home observer would have recorded — a Desktop
+        // organization card sharing this identity reads its own name out of that record.
+        XCTAssertEqual(slot.label, "same@example.com")
+        XCTAssertEqual(slot.identityLabel, "same@example.com (Test Org)")
     }
 
     func testSkipsMalformedUnnamedAndForeignFiles() {
@@ -296,6 +304,17 @@ final class ClaudeSwapUsageMapperTests: XCTestCase {
             .unsupportedSchema(3)
         ] {
             XCTAssertFalse(error.localizedDescription.isEmpty)
+        }
+    }
+
+    /// A `fetchedAt` in the future (a system clock change, a hand-edited cache) is evidence the
+    /// timestamp can't be trusted, not evidence of freshness — so the gate is closed on both sides.
+    func testMeasurementDatedInTheFutureReadsAsNoData() throws {
+        let mapped = try map(ClaudeSwapFixtures.usageCache(
+            healthyRow(fetchedAt: now.timeIntervalSince1970 + 600)
+        ))
+        guard case .noData = mapped else {
+            return XCTFail("a measurement dated in the future must not render as a percent, got \(mapped)")
         }
     }
 

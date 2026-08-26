@@ -50,7 +50,9 @@ enum ClaudeSwapUsageMapper {
         }
 
         let lines = usageLines(entry)
-        let isFresh = entry.fetchedAt.map { now.timeIntervalSince($0) <= freshnessWindow } ?? false
+        // Two-sided: a `fetchedAt` in the future (a system clock change, a hand-edited cache) is not
+        // evidence of freshness, it is evidence the timestamp can't be trusted.
+        let isFresh = entry.fetchedAt.map { (0...freshnessWindow).contains(now.timeIntervalSince($0)) } ?? false
         guard entry.hasLastGood, isFresh, !lines.isEmpty else {
             if let token = entry.lastError {
                 return .failure(.pollFailed(token))
@@ -60,7 +62,7 @@ enum ClaudeSwapUsageMapper {
             }
             return .noData(reason: isFresh
                 ? "claude-swap's stored measurement has no usage windows"
-                : "claude-swap's stored measurement is more than \(Int(freshnessWindow / 3600))h old")
+                : "claude-swap's stored measurement is not dated within the last \(Int(freshnessWindow / 3600))h")
         }
         // Fresh numbers plus a failed last poll: claude-swap keeps the last-good measurement across a
         // failure, so the meters still stand — the failure rides along as the header's amber notice.

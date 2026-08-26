@@ -45,7 +45,9 @@ Because every provider produces the same normalized `MetricLine` shapes, the UI 
 way and doesn't need to know provider-specific details. To add one, see
 [Adding a provider](adding-a-provider.md). Extra Codex accounts (distinct ChatGPT logins) are extra
 runtimes with their own card id (`codex@<hash>`), not a second snapshot on the default card. They
-share the family's metric layout (what's on, order, Always Visible vs On Demand).
+share the family's metric layout (what's on, order, Always Visible vs On Demand). claude-swap's
+stashed Claude logins work the same way (`claude@<hash>`), reading their numbers from claude-swap's own
+cache rather than the provider API.
 
 Claude, Codex, and pi share `IncrementalJSONLScanner` for local JSONL history. Its per-file parsed events
 are cached by path, size, and modification time in a versioned Application Support store, partitioned by

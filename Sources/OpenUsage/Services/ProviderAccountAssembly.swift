@@ -188,7 +188,10 @@ struct ProviderAccountAssembly {
             observations.append(ProviderAccountsStore.Observation(
                 family: "claude",
                 identityKey: slot.identityKey,
-                label: slot.label,
+                // The organization-qualified label, not the bare email: `mergedObservations` keeps the
+                // last non-nil label, and a Desktop organization card sharing this identity reads its
+                // own name out of the record.
+                label: slot.identityLabel ?? slot.label,
                 sources: [ProviderAccountSource(kind: .credentialFile, anchor: slot.path, holdsDefaultSource: false)]
             ))
             AppLog.info(.config, "accounts: claude-swap slot \(slot.slot) (\(slot.path)) identity \(slot.identityKey)")
