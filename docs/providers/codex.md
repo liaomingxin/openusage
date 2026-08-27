@@ -9,9 +9,14 @@ Tracks your ChatGPT/Codex subscription limits using the login from the Codex CLI
 | Session | 5-hour rolling window usage |
 | Weekly | 7-day window usage |
 | Spark / Spark Weekly | GPT-5.3-Codex-Spark model limits — a 5-hour and a weekly window. Shown only when your account has the limit (otherwise "No data"), and tucked below the "show more" caret by default |
+| GPT Reserve / GPT Reserve Weekly | A second usage window Codex reports for base-model requests (`gpt-reserve`) but never shows in its own UI. Usually just the weekly one. Shown only when your account has the limit (otherwise "No data"), and tucked below the caret by default |
 | Rate Limit Resets | On-demand rate-limit reset credits, shown as a count (e.g. `2 available`) with a colored dot for the soonest expiry; hover the value for a timeline of each credit's expiry |
 | Extra Usage | Flex credits, shown verbatim as dollars + credits (e.g. `$31.84 · 796 credits`) |
 | Today / Yesterday / Last 30 Days | Local spend, as cost, tokens, or both (see below) |
+| Account Trend | OpenAI's own day-by-day token chart for your whole account — every Mac you code on, not just this one (see below). Enabled by default, tucked below the caret |
+| Lifetime Tokens | Total tokens your ChatGPT account has ever used, as OpenAI counts them |
+| Day Streak | How many days in a row you've used Codex |
+| Threads | How many Codex threads your account has started |
 | Renews | When your ChatGPT subscription's current period ends. Enabled by default, tucked below the caret |
 
 When Codex reports your plan name, OpenUsage shows it beside the provider name.
@@ -26,13 +31,38 @@ period that has already ended is carried forward a whole period at a time and th
 
 Sign in once with the Codex CLI (`codex`); OpenUsage reads the same auth files (`$CODEX_HOME` respected) with a keychain fallback. Tokens refresh automatically and rotate back into the auth file.
 
-Extra ChatGPT logins dumped under `~/.cli-proxy-api` (`codex-*.json`) are picked up too. Each file that names a *different* ChatGPT account becomes its own Codex card. The card is titled plainly **Codex** — hover the title to see the account's email. Everywhere else the name stands on its own (the menu bar, Customize, Total Spend, share cards, the local API) the card is named `Codex — extra@example.com` so the two stay apart. A dump of the same account that's already signed in at the default Codex home does not add a second card. Extra cards are tied to the original Codex card: they show the same metric rows, in the same order, with the same Always Visible / On Demand split — customize Codex once and every account follows. Each extra card still gets its own menu-bar stars: a fresh install (or that card's Reset) pins its Session and Weekly, and the 2-stars-per-provider cap counts per card. Live subscription meters (Session, Weekly, Spark, credits, resets) come from that login's usage API; Today / Yesterday / Last 30 Days and Usage Trend stay empty unless that login also has Codex session logs.
+Extra ChatGPT logins dumped under `~/.cli-proxy-api` (`codex-*.json`) are picked up too. Each file that names a *different* ChatGPT account becomes its own Codex card. The card is titled plainly **Codex** — hover the title to see the account's email. Everywhere else the name stands on its own (the menu bar, Customize, Total Spend, share cards, the local API) the card is named `Codex — extra@example.com` so the two stay apart. A dump of the same account that's already signed in at the default Codex home does not add a second card. Extra cards are tied to the original Codex card: they show the same metric rows, in the same order, with the same Always Visible / On Demand split — customize Codex once and every account follows. Each extra card still gets its own menu-bar stars: a fresh install (or that card's Reset) pins its Session and Weekly, and the 2-stars-per-provider cap counts per card. Live subscription meters (Session, Weekly, Spark, credits, resets) come from that login's usage API, and so do that account's own account-wide rows (Account Trend, Lifetime Tokens, Day Streak, Threads); Today / Yesterday / Last 30 Days and Usage Trend stay empty unless that login also has Codex session logs.
 
 ## The spend tiles
 
 Today / Yesterday / Last 30 Days are computed **locally**: OpenUsage reads the Codex CLI's session rollouts under `~/.codex/sessions/` and `archived_sessions/` (or `$CODEX_HOME`) itself — no external tools needed. Symlinks are followed, so a Codex home linked into a synced location (say, a Dropbox folder) is read all the same. Codex usage from the [pi](https://github.com/earendil-works/pi) coding agent counts too: OpenUsage reads pi's session logs under `~/.pi/agent/sessions/` (or `$PI_CODING_AGENT_SESSION_DIR`) and folds any Codex usage there into the same tiles and trend. pi records its own per-message cost, so those dollars come straight from pi rather than being re-estimated. Days are grouped in your Mac's local time zone, so they line up with your own calendar. Each period is one tile showing cost and tokens together (`$4.08 · 1.2M tokens`); a day with no usage reads **No data** rather than a misleading `$0.00 · 0 tokens` — the same as every other spend-tracking provider. The live Session and Weekly meters are unaffected. The dollars are estimated from token counts at API rates (that's the ⓘ) using the shared [model pricing](../pricing.md); sessions that ran on the fast/priority service tier — as recorded in each session's own log — use the fast rates for exactly those turns. Older logs without tier metadata, and everything else, price at standard rates; the current `config.toml` setting is not consulted, so flipping the tier never reprices past days. Auto-review usage keeps its `codex-auto-review` name in the model breakdown, while its cost uses the dated model fallback available for that event. The token counts themselves are measured. Subagent and forked sessions copy their parent session's token history into their own log; OpenUsage recognizes those copies and counts each token once, no matter how many subagents a session spawns. No log data leaves your Mac.
 
 For supported GPT-5.4, GPT-5.5, and GPT-5.6 models, requests above 272k input tokens use OpenAI's long-context rates for the whole request. Daybreak Blue usage is priced as GPT-5.6 Sol, matching OpenAI's published alias and Daybreak pricing. Cached input uses the published cache-read discount when the pricing source provides one; otherwise it is estimated at the full input rate. Fast/priority estimates use each model's published Codex multiplier (for example, GPT-5.5 uses 2.5×); model names ending in `-fast` are normalized to their unscaled base rate before that multiplier is applied once.
+
+## Account-wide history
+
+Beside the local rows above, OpenUsage shows four numbers that come from OpenAI rather than from your
+Mac: **Account Trend**, **Lifetime Tokens**, **Day Streak** and **Threads**. Two things about them are
+worth knowing:
+
+- **They cover your whole account.** Every Mac you sign in to counts toward these, while Today /
+  Yesterday / Last 30 Days and the **Usage Trend** chart are read from *this* Mac's Codex logs. The two
+  never mix: Account Trend is its own separate chart beside Usage Trend, and nothing here feeds the
+  spend tiles, the Total Spend card, or the history OpenUsage syncs between your Macs.
+- **They're a day behind.** OpenAI recalculates them once a day, so the newest day they can show is
+  usually yesterday — today's usage isn't in them yet. Account Trend says so under the chart ("counted
+  through Aug 26"), and it simply stops at the last counted day instead of drawing an empty bar for
+  today.
+
+Account Trend is tokens only. There is no dollar figure anywhere in what OpenAI returns, so it can
+never show a cost — which is also why it carries no ⓘ estimate marker.
+
+Within the counted range, a day with no bar is a real idle day. Days before your account's first
+counted day aren't drawn at all.
+
+If OpenAI's numbers can't be fetched (a network hiccup, a slow response, a rollup OpenAI reports as
+failed), these four rows read **No data** and nothing else on the card changes — your Session, Weekly,
+credits and local spend rows are unaffected.
 
 ## Troubleshooting
 
@@ -44,9 +74,17 @@ For supported GPT-5.4, GPT-5.5, and GPT-5.6 models, requests above 272k input to
 
 `GET https://chatgpt.com/backend-api/wham/usage` with the Codex OAuth token; refresh via `auth.openai.com`. A 401/403 triggers one token refresh and retry. Session and Weekly are classified by each usage window's duration rather than by its primary/secondary slot. This matters when Codex temporarily removes one limit and moves the remaining weekly window into the primary slot. Payloads without a recognized duration retain the primary-as-Session and secondary-as-Weekly compatibility fallback; response headers fill percentages missing from the corresponding window.
 
-Spark and Spark Weekly come from the same response's `additional_rate_limits` array — model-specific limits that reuse the duration-based Session/Weekly classification. OpenUsage surfaces the entry whose name identifies GPT-5.3-Codex-Spark as those two meters; accounts without the limit simply omit the entry, so the rows read "No data". Other model limits in that array aren't shown.
+Spark and GPT Reserve come from the same response's `additional_rate_limits` array — extra named limits that reuse the duration-based Session/Weekly classification, so each entry becomes a 5-hour meter and a weekly one. OpenUsage surfaces the entry naming GPT-5.3-Codex-Spark as Spark / Spark Weekly, and the `gpt-reserve` entry (Codex meters it as `base_model_inference`) as GPT Reserve / GPT Reserve Weekly. Accounts without a limit simply omit the entry, so those rows read "No data"; the reserve entry normally carries only a weekly window, so GPT Reserve itself usually reads "No data" too. Other limits in that array aren't shown.
 
 OpenUsage preserves Codex's reported `used_percent` verbatim. If the API reports 1% used for an untouched window, the app shows 99% left; if it reports 0%, the app shows 100% left. Codex rows use the normal reset label rather than inferring a special "Not started" state. Burn-rate pacing still waits until enough of the window has elapsed to make a useful projection.
+
+The account-wide rows come from one extra read-only call per refresh:
+`GET https://chatgpt.com/backend-api/wham/profiles/me`, with the same token and account header the
+usage call already uses. It's best-effort — a failure is logged and leaves those four rows empty rather
+than failing the Codex refresh — and it runs alongside the reset-credit call, so it costs a request but
+practically no extra time. The response also carries your ChatGPT username, display name and avatar
+URL; OpenUsage reads only the usage numbers out of it. Those identity fields are dropped where the
+response is parsed: they never reach a row, the local API, or the log file.
 
 The "Renews" row is a pure local read: the Codex login file OpenUsage already opens carries the paid period's start and end, so no ChatGPT endpoint is called and no token refresh is triggered for it. OpenAI's own routes that used to carry a subscription date are unreachable to a non-browser client, and OpenUsage does not spend a token refresh just to freshen a display value — hence the roll-forward and the **Estimated** label. Each extra Codex card reads its own login file, so every account shows its own date (or no row, when that login has none).
 

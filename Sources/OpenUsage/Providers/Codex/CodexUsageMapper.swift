@@ -39,10 +39,11 @@ enum CodexUsageMapper {
             now: now
         ))
 
-        // Model-specific limits (e.g. GPT-5.3-Codex-Spark) ride in a separate `additional_rate_limits`
-        // array, each entry reusing the primary/secondary window shape. Surfaced as their own Spark /
-        // Spark Weekly meters (issue #796) — the JS edition had these; the Swift rewrite dropped them.
-        lines.append(contentsOf: sparkLines(body: body, now: now))
+        // Model-specific limits (e.g. GPT-5.3-Codex-Spark) and the account's hidden `gpt-reserve`
+        // base-model window ride in a separate `additional_rate_limits` array, each entry reusing the
+        // primary/secondary window shape. Surfaced as their own meter pairs (issue #796) — the JS
+        // edition had Spark; the Swift rewrite dropped it.
+        lines.append(contentsOf: additionalLimitLines(body: body, now: now))
 
         // On-demand rate-limit reset credits, shown before Credits — mirrors the JS plugin (PR #577).
         // The row reads "2 available" (the count is carried raw, so the menu-bar tile reads the same
@@ -199,36 +200,50 @@ enum CodexUsageMapper {
         }
     }
 
-    /// Spark (and any future model-specific) limits from `additional_rate_limits`. Each array entry is a
-    /// named limit whose `rate_limit` reuses the primary (5-hour) / secondary (weekly) window shape, so
-    /// the parsing mirrors the core Session/Weekly path exactly. We surface the entry whose
-    /// `limit_name`/`metered_feature` names Spark as the
-    /// `Spark` and `Spark Weekly` meters; a non-dictionary or null array element is skipped rather than
-    /// discarding its valid siblings. Returns an empty list when the field is absent or carries no Spark
-    /// entry (the common case for accounts without the limit), so those rows simply read "No data".
-    private static func sparkLines(body: [String: Any], now: Date) -> [MetricLine] {
-        guard let rawEntries = body["additional_rate_limits"] as? [Any] else { return [] }
-        let entries = rawEntries.compactMap { $0 as? [String: Any] }
-        guard let spark = entries.first(where: isSparkEntry),
-              let rateLimit = spark["rate_limit"] as? [String: Any]
-        else {
-            return []
-        }
-
-        return classifiedWindowLines(
-            rateLimit: rateLimit,
-            labels: (session: "Spark", weekly: "Spark Weekly"),
-            now: now
-        )
+    /// One `additional_rate_limits` entry OpenUsage surfaces: the lowercased substring that identifies
+    /// it on `limit_name`/`metered_feature`, and the labels its 5-hour / weekly windows carry.
+    private struct AdditionalLimit {
+        var match: String
+        var labels: (session: String, weekly: String)
     }
 
-    /// True when an `additional_rate_limits` entry is the Spark limit — matched on either `limit_name`
-    /// ("GPT-5.3-Codex-Spark") or `metered_feature`, case-insensitively, so a wording change on either
-    /// field still resolves it.
-    private static func isSparkEntry(_ entry: [String: Any]) -> Bool {
+    /// The named limits from `additional_rate_limits`, in row order — one meter pair per entry.
+    ///
+    /// `spark` is the GPT-5.3-Codex-Spark model limit; `reserve` is `gpt-reserve`
+    /// (`metered_feature: base_model_inference`), a second weekly window Codex reports but never shows
+    /// in its own UI. Both are matched on a substring so a wording change on either field still
+    /// resolves the entry.
+    private static let additionalLimits: [AdditionalLimit] = [
+        AdditionalLimit(match: "spark", labels: (session: "Spark", weekly: "Spark Weekly")),
+        AdditionalLimit(match: "reserve", labels: (session: "GPT Reserve", weekly: "GPT Reserve Weekly"))
+    ]
+
+    /// Named limits from `additional_rate_limits`. Each array entry is a named limit whose `rate_limit`
+    /// reuses the primary (5-hour) / secondary (weekly) window shape, so the parsing mirrors the core
+    /// Session/Weekly path exactly and each entry becomes one meter pair. A non-dictionary or null array
+    /// element is skipped rather than discarding its valid siblings, and an entry whose name matches
+    /// nothing we declare is ignored. Returns an empty list when the field is absent or carries none of
+    /// the known entries (the common case for accounts without those limits), so those rows read
+    /// "No data".
+    private static func additionalLimitLines(body: [String: Any], now: Date) -> [MetricLine] {
+        guard let rawEntries = body["additional_rate_limits"] as? [Any] else { return [] }
+        let entries = rawEntries.compactMap { $0 as? [String: Any] }
+        return additionalLimits.flatMap { limit -> [MetricLine] in
+            guard let entry = entries.first(where: { matches($0, limit.match) }),
+                  let rateLimit = entry["rate_limit"] as? [String: Any]
+            else {
+                return []
+            }
+            return classifiedWindowLines(rateLimit: rateLimit, labels: limit.labels, now: now)
+        }
+    }
+
+    /// True when an `additional_rate_limits` entry names `match` on either `limit_name`
+    /// ("GPT-5.3-Codex-Spark", "gpt-reserve") or `metered_feature`, case-insensitively.
+    private static func matches(_ entry: [String: Any], _ match: String) -> Bool {
         [entry["limit_name"], entry["metered_feature"]]
             .compactMap { ($0 as? String)?.lowercased() }
-            .contains { $0.contains("spark") }
+            .contains { $0.contains(match) }
     }
 
     private static func resetDate(_ window: [String: Any]?, now: Date) -> Date? {

@@ -57,6 +57,13 @@ final class CodexProvider: ProviderRuntime {
                 .exportingLimit("spark", unit: "percent"),
             .percent(id: metricID("sparkWeekly"), provider: provider, title: "Spark Weekly")
                 .exportingLimit("sparkWeekly", unit: "percent"),
+            // The `gpt-reserve` base-model window from the same `additional_rate_limits` array — a
+            // second meter Codex reports but never shows in its own UI. Seeded On Demand and unpinned,
+            // like Spark; accounts without the limit read "No data".
+            .percent(id: metricID("gptReserve"), provider: provider, title: "GPT Reserve")
+                .exportingLimit("gptReserve", unit: "percent"),
+            .percent(id: metricID("gptReserveWeekly"), provider: provider, title: "GPT Reserve Weekly")
+                .exportingLimit("gptReserveWeekly", unit: "percent"),
             .combined(id: metricID("credits"), provider: provider, title: "Extra Usage", metricLabel: "Credits")
                 .exportingLimit("credits", kind: .balance, unit: "credits", source: .value(kind: .count, label: "credits"))
                 .exportingLimit("creditValue", kind: .balance, unit: "usd", source: .value(kind: .dollars)),
@@ -69,6 +76,25 @@ final class CodexProvider: ProviderRuntime {
                     sourceNote: "From your Codex logs (estimated)"
                 )
         ] + WidgetDescriptor.spendTiles(provider: provider) + [
+            // OpenAI's own account-wide rollup (`wham/profiles/me`), declared after — never inside —
+            // the local history rows above. Account Trend is a second, separate chart: it counts every
+            // Mac the account codes on, carries no dollars, and lags a day behind the local scan, so it
+            // must never merge with or replace the machine-local Usage Trend. The `.accountWide`
+            // classification here says so out loud, and keeps this source out of the iCloud sync file.
+            .chart(id: metricID("accountTrend"), provider: provider, title: "Account Trend")
+                .exportingHistory(
+                    scope: .accountWide,
+                    estimatedCost: false,
+                    sourceNote: "From your OpenAI account (updated daily)"
+                ),
+            // Each row's own `MetricValue` carries its unit ("tokens" / "days" / "threads"), so these
+            // need no `traySuffix` override the way Rate Limit Resets does.
+            .values(id: metricID("lifetimeTokens"), provider: provider, title: "Lifetime Tokens",
+                    selection: .kind(.count)),
+            .values(id: metricID("dayStreak"), provider: provider, title: "Day Streak",
+                    selection: .kind(.count)),
+            .values(id: metricID("threads"), provider: provider, title: "Threads",
+                    selection: .kind(.count)),
             // Account metadata rather than usage, so it sits last (and On Demand by default). Extra
             // account cards inherit this descriptor and fill it from their own auth file's claim.
             .subscriptionRenewal(provider: provider)
@@ -146,10 +172,13 @@ final class CodexProvider: ProviderRuntime {
         let response = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
         // The access token may have rotated during the usage fetch's refresh-and-retry; read the live one.
         let currentToken = authState.auth.tokens?.accessToken ?? accessToken
-        let resetCredits = await fetchResetCreditsBestEffort(
-            accessToken: currentToken,
-            accountID: authState.auth.tokens?.accountID
-        )
+        let accountID = authState.auth.tokens?.accountID
+        // Both supplementary reads run together, so the account-wide rollup costs one extra request but
+        // effectively no extra wall-clock. Neither can fail the refresh.
+        async let pendingResetCredits = fetchResetCreditsBestEffort(accessToken: currentToken, accountID: accountID)
+        async let pendingAccountStats = fetchAccountStatsBestEffort(accessToken: currentToken, accountID: accountID)
+        let resetCredits = await pendingResetCredits
+        let accountStats = await pendingAccountStats
         var mapped = try CodexUsageMapper.mapUsageResponse(response, resetCredits: resetCredits, now: now())
 
         // Local spend tiles, scanned natively from the Codex CLI's session rollouts and priced through
@@ -181,6 +210,13 @@ final class CodexProvider: ProviderRuntime {
             SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
         }
 
+        // OpenAI's account-wide rollup, appended after the machine-local rows so the two stay visibly
+        // separate: distinct labels, distinct rows, no merging. Absent when the call or the payload
+        // wasn't usable (logged there), which just leaves these rows reading "No data".
+        if let accountStats {
+            mapped.lines.append(contentsOf: CodexAccountStatsMapper.lines(stats: accountStats, now: now()))
+        }
+
         // A pure local read of the credential this card already loaded — no request, no refresh. Extra
         // account cards each carry their own auth file, so each one's row names its own subscription;
         // an API-key login (no id_token) simply has no row.
@@ -208,6 +244,21 @@ final class CodexProvider: ProviderRuntime {
             return try await usageClient.fetchResetCredits(accessToken: accessToken, accountID: accountID)
         } catch {
             AppLog.warn(LogTag.plugin("codex"), "reset-credit fetch failed; using usage-body count: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Fetches OpenAI's account-wide usage rollup without ever failing the refresh. Like the
+    /// reset-credit call this is supplementary — a network error, timeout, or unusable payload just
+    /// yields `nil` and the account rows read "No data", while Session / Weekly / Credits and the local
+    /// spend rows are unaffected. Logged, not thrown; the parser logs an unusable payload itself.
+    private func fetchAccountStatsBestEffort(accessToken: String, accountID: String?) async -> CodexAccountStats? {
+        do {
+            let response = try await usageClient.fetchAccountStats(accessToken: accessToken, accountID: accountID)
+            return CodexAccountStatsParser.parse(response)
+        } catch {
+            AppLog.warn(LogTag.plugin("codex"),
+                        "account stats fetch failed; keeping the existing rows: \(error.localizedDescription)")
             return nil
         }
     }

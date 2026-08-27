@@ -67,9 +67,16 @@ struct WidgetRegistry: Sendable {
         descriptorsByProvider.mapValues { $0.filter { !$0.limitResources.isEmpty } }
     }
 
+    /// Each provider's history classification. Everything downstream of this — preserving the last-good
+    /// history, the iCloud sync document, the cross-Mac merge — operates on the machine-local scan a
+    /// snapshot carries in `usageHistory`, so a provider that declares more than one resource (Codex
+    /// has an account-wide trend beside its local one) resolves to the machine-local one regardless of
+    /// declaration order. Falling back to the first declared keeps providers with only an account-wide
+    /// source (Cursor, Z.ai) classified exactly as before.
     var historyDescriptorsByProvider: [String: UsageHistoryDescriptor] {
         descriptorsByProvider.compactMapValues { descriptors in
-            descriptors.compactMap(\.historyResource).first
+            let resources = descriptors.compactMap(\.historyResource)
+            return resources.first { $0.scope == .machineLocal } ?? resources.first
         }
     }
 

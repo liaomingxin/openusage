@@ -70,6 +70,12 @@ subscription calls, a Z.ai refresh reads `/api/monitor/usage/model-usage` and
 calls — to fill the usage-history and MCP-tool rows. They send your API key and a time range, and
 nothing else. See [Z.ai](providers/zai.md).
 
+A Codex refresh also reads `wham/profiles/me` on `chatgpt.com` — the account-wide token history,
+lifetime tokens, day streak and thread count behind those rows. It sends the same login the usage call
+uses and nothing else. The reply happens to include your ChatGPT username, display name and avatar URL;
+OpenUsage drops those where it parses the response, so they never reach a row, the local API, or the log
+file. See [Codex](providers/codex.md).
+
 To avoid re-reading unchanged Claude, Codex, and pi logs after every relaunch, OpenUsage keeps their
 parsed usage events in `~/Library/Application Support/OpenUsage/log-scan-cache/`. These records contain
 the usage metadata needed for local totals, including any per-event cost already recorded by a provider,

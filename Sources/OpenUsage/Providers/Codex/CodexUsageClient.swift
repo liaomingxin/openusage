@@ -11,6 +11,7 @@ struct CodexUsageClient: Sendable {
     static let refreshURL = URL(string: "https://auth.openai.com/oauth/token")!
     static let usageURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
     static let resetCreditsURL = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
+    static let profileURL = URL(string: "https://chatgpt.com/backend-api/wham/profiles/me")!
     static let consumeResetCreditURL = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume")!
 
     var http: any HTTPClient
@@ -113,6 +114,31 @@ struct CodexUsageClient: Sendable {
         return try await http.send(HTTPRequest(
             method: "GET",
             url: Self.resetCreditsURL,
+            headers: headers,
+            timeout: 10
+        ))
+    }
+
+    /// OpenAI's account-wide usage rollup — lifetime tokens, the day streak, the thread count and a
+    /// ~2-month daily token history covering every Mac the account codes on. A plain GET with the same
+    /// two headers the usage call sends; the desktop client's `OpenAI-Beta` / `originator` pair isn't
+    /// required here. Best-effort: the provider tolerates a failure and keeps the rows it already has.
+    ///
+    /// The response also carries the account's `profile` (username, display name, avatar URL). Nothing
+    /// reads it — see `CodexAccountStatsParser.parse`.
+    func fetchAccountStats(accessToken: String, accountID: String?) async throws -> HTTPResponse {
+        var headers = [
+            "Authorization": "Bearer \(accessToken)",
+            "Accept": "application/json",
+            "User-Agent": "OpenUsage"
+        ]
+        if let accountID, !accountID.isEmpty {
+            headers["ChatGPT-Account-Id"] = accountID
+        }
+
+        return try await http.send(HTTPRequest(
+            method: "GET",
+            url: Self.profileURL,
             headers: headers,
             timeout: 10
         ))
