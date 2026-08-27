@@ -14,13 +14,29 @@ cards, the local API) the cards are named `Claude — <organization>` so they st
 |---|---|
 | Session | 5-hour rolling window usage |
 | Weekly | 7-day window usage |
-| Fable | Separate weekly Fable limit (model-scoped window from the `limits` array) |
+| Fable | Separate weekly Fable limit (a model-scoped window) |
 | Sonnet | Separate weekly Sonnet limit (plan-dependent) |
 | Extra Usage | Extra-usage credits spent against your monthly cap |
 | Today / Yesterday / Last 30 Days | Local spend, as cost, tokens, or both (see below) |
 
 Fable is enabled and always visible directly below Weekly by default. Sonnet stays off until you
 enable it in Customize. When Claude reports your plan name, OpenUsage shows it beside the provider name.
+
+All four windows come from the list of limits Anthropic returns, so a per-model weekly window it adds
+later shows up in OpenUsage's data without an app update. Older responses that don't carry that list
+still fill Session, Weekly and Sonnet from Anthropic's original fields, so nothing goes blank.
+
+## Which limit is binding
+
+Anthropic says which of your windows is the one actually in force, and OpenUsage marks it: that row
+reads **Binding limit** under its bar. Without it the meters all look alike — a Fable window at 87%
+reads no differently from a Session window at 21% — and nothing tells you which one will stop you
+first. When Anthropic is also flagging that window, the same line says so: **Binding limit ·
+Anthropic warning**.
+
+If Anthropic marks nothing, nothing is marked; if it ever marks more than one window, each of them
+says so. claude-swap cards get the same marker whenever they're showing live numbers — claude-swap's
+own cached percentages don't record it.
 
 ## Where credentials come from
 
@@ -123,7 +139,8 @@ Local spend does not require a Claude OAuth login. If Claude Code uses an API-ke
 
 ## Under the hood
 
-`GET https://api.anthropic.com/api/oauth/usage` with the selected OAuth token. Claude Code tokens refresh via `platform.claude.com/v1/oauth/token`; Claude Desktop tokens are read-only and must be renewed by Desktop itself. If a token is expired or revoked, OpenUsage retries with the next credential source before reporting an error.
+`GET https://api.anthropic.com/api/oauth/usage` with the selected OAuth token — one request, which
+also carries the list of limits behind the meters, the binding marker, and Extra Usage. Claude Code tokens refresh via `platform.claude.com/v1/oauth/token`; Claude Desktop tokens are read-only and must be renewed by Desktop itself. If a token is expired or revoked, OpenUsage retries with the next credential source before reporting an error.
 
 claude-swap cards make the same usage request with the token stashed for that account, and nothing else: they have no token endpoint configured at all, so an expired or rejected stashed token ends in claude-swap's cached percentages rather than in a refresh.
 
