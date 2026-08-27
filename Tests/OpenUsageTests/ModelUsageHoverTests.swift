@@ -17,6 +17,42 @@ final class ModelUsageHoverTests: XCTestCase {
         XCTAssertEqual(decoded, line)
     }
 
+    /// A snapshot cached before the breakdown carried a unit still decodes, and reads as the spend
+    /// rows' "tokens" — the field is optional precisely so an older payload can't fail to decode.
+    func testBreakdownWithoutAUnitDecodesAsTokens() throws {
+        let json = Data(#"""
+        {"type":"values","label":"Today","values":[{"number":300,"kind":"count","label":"tokens","estimated":false}],
+         "modelBreakdown":{"totalTokens":300,"models":[{"model":"alpha","totalTokens":300}],"sourceNote":"From test logs"}}
+        """#.utf8)
+        let decoded = try JSONDecoder().decode(MetricLine.self, from: json)
+        guard case .values(_, _, _, _, _, let breakdown) = decoded else {
+            return XCTFail("expected a values line")
+        }
+        XCTAssertNil(try XCTUnwrap(breakdown).unitLabel)
+        XCTAssertEqual(try XCTUnwrap(breakdown).unit, "tokens")
+    }
+
+    /// A breakdown that names its own unit keeps it across a round trip — Z.ai's MCP tool list is
+    /// counted in calls, not tokens.
+    func testBreakdownKeepsItsOwnUnitAcrossACodableRoundTrip() throws {
+        let line = MetricLine.values(
+            label: "MCP Tools",
+            values: [MetricValue(number: 27, kind: .count, label: "calls")],
+            modelBreakdown: ModelUsageBreakdown(
+                totalTokens: 27, totalCostUSD: nil,
+                models: [ModelUsageEntry(model: "Web Search MCP", totalTokens: 27, costUSD: nil)],
+                sourceNote: "From your api.z.ai usage history",
+                unitLabel: "calls"
+            )
+        )
+        let decoded = try JSONDecoder().decode(MetricLine.self, from: try JSONEncoder().encode(line))
+        XCTAssertEqual(decoded, line)
+        guard case .values(_, _, _, _, _, let breakdown) = decoded else {
+            return XCTFail("expected a values line")
+        }
+        XCTAssertEqual(try XCTUnwrap(breakdown).unit, "calls")
+    }
+
     func testDataStoreResolvesSingleAndMultipleModelBreakdowns() {
         let cases: [(providerID: String, breakdown: ModelUsageBreakdown, models: [String])] = [
             ("claude", sampleBreakdown(), ["alpha", "beta"]),
@@ -55,6 +91,41 @@ final class ModelUsageHoverTests: XCTestCase {
             XCTAssertEqual(data.modelBreakdown?.models.map(\.model), item.models, item.providerID)
             XCTAssertEqual(data.modelBreakdown?.sourceNote, item.breakdown.sourceNote, item.providerID)
         }
+    }
+
+    /// Z.ai's MCP Tools row opts into the same hover machinery as the spend tiles, so the real
+    /// descriptor has to resolve a breakdown — the `isUsagePeriod` opt-in is what gates it.
+    func testDataStoreResolvesTheZAIMCPToolsBreakdown() {
+        let zai = ZAIProvider(authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment([:])))
+        let descriptor = zai.widgetDescriptors.first { $0.id == "zai.mcpTools" }!
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [zai.provider], descriptors: [descriptor]),
+            providers: [],
+            defaults: makeDefaults("ZAIMCPTools")
+        )
+        store.snapshots["zai"] = ProviderSnapshot(
+            providerID: "zai",
+            displayName: "Z.ai",
+            lines: [.values(
+                label: "MCP Tools",
+                values: [MetricValue(number: 27, kind: .count, label: "calls")],
+                modelBreakdown: ModelUsageBreakdown(
+                    totalTokens: 27, totalCostUSD: nil,
+                    models: [
+                        ModelUsageEntry(model: "Web Search MCP", totalTokens: 15, costUSD: nil),
+                        ModelUsageEntry(model: "Web Read MCP", totalTokens: 12, costUSD: nil)
+                    ],
+                    sourceNote: "From your api.z.ai usage history",
+                    unitLabel: "calls"
+                )
+            )]
+        )
+
+        let data = store.data(for: descriptor)
+        XCTAssertEqual(data.unboundedDetail, "27 calls")
+        XCTAssertTrue(data.hasModelBreakdown)
+        XCTAssertEqual(data.modelBreakdown?.models.map(\.model), ["Web Search MCP", "Web Read MCP"])
+        XCTAssertEqual(data.modelBreakdown?.unit, "calls")
     }
 
     func testWholePercentsAlwaysSumToOneHundred() {

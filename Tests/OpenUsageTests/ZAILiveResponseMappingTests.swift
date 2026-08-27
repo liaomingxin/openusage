@@ -75,6 +75,8 @@ final class ZAILiveResponseMappingTests: XCTestCase {
 
     // Captured from a GLM Coding Max plan on 2026-08-27, trimmed to the fields the mapper reads. A
     // 30-day range comes back in whole (Beijing) days; a range up to seven days comes back hourly.
+    // `tool-usage` repeats `toolSummaryList` in two places — on `data` and inside `totalUsage` — so
+    // the capture keeps both, exactly as the live response sends them.
     private let liveModelUsage = #"""
     {"code":200,"msg":"Operation successful","success":true,"data":{
       "x_time":["2026-08-25","2026-08-26","2026-08-27"],
@@ -100,6 +102,8 @@ final class ZAILiveResponseMappingTests: XCTestCase {
         "toolSummaryList":[{"toolCode":"search-prime","toolName":"联网搜索 MCP","toolNameI18n":"Web Search MCP","totalUsageCount":15,"sortOrder":1},
                            {"toolCode":"web-reader","toolName":"网页读取 MCP","toolNameI18n":"Web Read MCP","totalUsageCount":12,"sortOrder":2}]},
       "toolDataList":[{"toolCode":"search-prime","toolName":"联网搜索 MCP","toolNameI18n":"Web Search MCP","sortOrder":1,"usageCount":[0,4,1],"totalUsageCount":15}],
+      "toolSummaryList":[{"toolCode":"search-prime","toolName":"联网搜索 MCP","toolNameI18n":"Web Search MCP","totalUsageCount":15,"sortOrder":1},
+                         {"toolCode":"web-reader","toolName":"网页读取 MCP","toolNameI18n":"Web Read MCP","totalUsageCount":12,"sortOrder":2}],
       "granularity":"daily"}}
     """#
 
@@ -113,7 +117,27 @@ final class ZAILiveResponseMappingTests: XCTestCase {
                        ["GLM-5.3", "GLM-5.2"])
 
         let tools = try XCTUnwrap(ZAIActivityMapper.parseToolUsage(Data(liveToolUsage.utf8)))
-        XCTAssertEqual(tools, ZAIToolActivity(webSearches: 15, webReads: 12, zreadCalls: 0))
+        XCTAssertEqual(tools.webSearches, 15)
+        XCTAssertEqual(tools.webReads, 12)
+        XCTAssertEqual(tools.zreadCalls, 0)
+        // The live payload nests `toolSummaryList` inside `totalUsage`, and it names each MCP tool.
+        XCTAssertEqual(tools.tools, [
+            ZAIToolUsageEntry(name: "Web Search MCP", calls: 15),
+            ZAIToolUsageEntry(name: "Web Read MCP", calls: 12)
+        ])
+
+        // The MCP Tools row reads the window total and carries those names behind it.
+        let lines = ZAIActivityMapper.lines(
+            window: nil, recent: nil, tools: tools, platform: .global,
+            now: Date(timeIntervalSince1970: 1_787_772_600)
+        )
+        guard case .values(let label, let values, _, _, _, let breakdown) = lines.first else {
+            return XCTFail("expected an MCP Tools values line")
+        }
+        XCTAssertEqual(label, "MCP Tools")
+        XCTAssertEqual(values.map(\.number), [27])
+        XCTAssertEqual(try XCTUnwrap(breakdown).models.map(\.model), ["Web Search MCP", "Web Read MCP"])
+        XCTAssertEqual(try XCTUnwrap(breakdown).unit, "calls")
     }
 
     private func progress(_ lines: [MetricLine], _ label: String) -> (used: Double, limit: Double, periodDurationMs: Int?)? {
