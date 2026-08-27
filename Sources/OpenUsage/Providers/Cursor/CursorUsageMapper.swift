@@ -228,23 +228,6 @@ enum CursorUsageMapper {
         lines.append(.subscription(at: periodEnd, isEnding: isEnding))
     }
 
-    /// Whether `auth/stripe` says the plan will stop at the end of the current period rather than
-    /// renew: a non-null `pendingCancellationDate`, or a `subscriptionStatus` that has left "active".
-    /// Those two fields are all OpenUsage reads from that response — `paymentId`, the card metadata,
-    /// and the rest are never read, logged, or persisted.
-    static func subscriptionIsEnding(from body: [String: Any]?) -> Bool {
-        guard let body else { return false }
-        if let pending = body["pendingCancellationDate"], !(pending is NSNull) {
-            return true
-        }
-        guard let status = (body["subscriptionStatus"] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
-            // No status reported is not evidence of a cancellation — keep the row reading "Renews".
-            return false
-        }
-        return status.lowercased() != "active"
-    }
-
     /// `GetPlanInfo.planInfo.billingCycleEnd` — epoch **milliseconds as a string** in that response,
     /// unlike the numeric field on the usage payload. Only used when the usage payload omits its own.
     static func planBillingCycleEnd(from planInfo: [String: Any]?) -> Date? {
@@ -439,16 +422,6 @@ enum CursorUsageMapper {
             return ModelUsageEntry(model: model, totalTokens: tokens, costUSD: costUSD,
                                    variants: isTrivial ? nil : list)
         }
-    }
-
-    static func stripeBalanceCents(from body: [String: Any]?) -> Double {
-        guard let body,
-              let balance = ProviderParse.number(body["customerBalance"]),
-              balance < 0
-        else {
-            return 0
-        }
-        return abs(balance)
     }
 
     private static func appendCredits(creditGrants: [String: Any]?, stripeBalanceCents: Double, to lines: inout [MetricLine]) {

@@ -206,6 +206,137 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertTrue(logs.contains("optional prepaid-balance response contained invalid balance metadata"), logs)
     }
 
+    /// The dunning fields ride on the `auth/stripe` response OpenUsage already fetches. They must
+    /// raise the provider header warning when Cursor reports payment trouble, stay completely silent
+    /// on the healthy shapes (including the one this Mac sees, where both fields are absent), and never
+    /// add or remove a metric row either way.
+    func testPaymentFailureRaisesTheHeaderWarningWithoutChangingAnyRow() async throws {
+        struct DunningCase {
+            var name: String
+            var stripeJSON: String
+            var expectsWarning: Bool
+            var expectedLog: String?
+        }
+        let invalidStatusLog = "prepaid-balance response contained invalid payment-status metadata"
+        let cases = [
+            DunningCase(
+                name: "fields absent (this Mac)",
+                stripeJSON: #"{"customerBalance":0}"#,
+                expectsWarning: false,
+                expectedLog: nil
+            ),
+            DunningCase(
+                name: "healthy account",
+                stripeJSON: #"{"customerBalance":0,"lastPaymentFailed":false,"paymentRecoveryAction":null}"#,
+                expectsWarning: false,
+                expectedLog: nil
+            ),
+            DunningCase(
+                name: "last payment failed",
+                stripeJSON: #"{"customerBalance":0,"lastPaymentFailed":true,"paymentRecoveryAction":null}"#,
+                expectsWarning: true,
+                expectedLog: nil
+            ),
+            DunningCase(
+                name: "recovery action queued",
+                stripeJSON: #"{"customerBalance":0,"lastPaymentFailed":false,"paymentRecoveryAction":"update_payment_method"}"#,
+                expectsWarning: true,
+                expectedLog: nil
+            ),
+            DunningCase(
+                name: "recovery action as an object",
+                stripeJSON: #"{"customerBalance":0,"paymentRecoveryAction":{"kind":"retry"}}"#,
+                expectsWarning: true,
+                expectedLog: nil
+            ),
+            DunningCase(
+                name: "recovery action blank",
+                stripeJSON: #"{"customerBalance":0,"paymentRecoveryAction":"  "}"#,
+                expectsWarning: false,
+                expectedLog: nil
+            ),
+            DunningCase(
+                name: "unreadable payment flag",
+                stripeJSON: #"{"customerBalance":0,"lastPaymentFailed":"yes"}"#,
+                expectsWarning: false,
+                expectedLog: invalidStatusLog
+            )
+        ]
+
+        for dunningCase in cases {
+            let stripeJSON = dunningCase.stripeJSON
+            let provider = makeProvider { request in
+                switch request.url {
+                case CursorUsageClient.usageURL:
+                    return Self.primaryUsageResponse
+                case CursorUsageClient.planURL:
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"planInfo":{"planName":"Pro"}}"#.utf8))
+                case CursorUsageClient.stripeURL:
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(stripeJSON.utf8))
+                default:
+                    return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+                }
+            }
+
+            let (snapshot, logs) = try await captureLogs { await provider.refresh() }
+
+            XCTAssertNil(snapshot.errorCategory, dunningCase.name)
+            // Every shape leaves the meters alone: a dunning notice is a header warning, not a row.
+            XCTAssertEqual(progress(snapshot.lines, "Total usage")?.used, 20, dunningCase.name)
+            XCTAssertEqual(snapshot.lines.map(\.label), Self.healthyLineLabels, dunningCase.name)
+            if dunningCase.expectsWarning {
+                XCTAssertEqual(snapshot.warning, CursorUsageMapper.paymentFailedWarning, dunningCase.name)
+            } else {
+                XCTAssertNil(snapshot.warning, dunningCase.name)
+            }
+            if let expectedLog = dunningCase.expectedLog {
+                XCTAssertTrue(logs.contains(expectedLog), "\(dunningCase.name): \(logs)")
+            } else {
+                XCTAssertFalse(logs.contains(invalidStatusLog), "\(dunningCase.name): \(logs)")
+            }
+        }
+    }
+
+    /// The warning is fixed copy: Cursor's own `paymentRecoveryAction` value only steers it, so an
+    /// undocumented (and possibly identifying) value can never reach the tooltip or the log file.
+    func testPaymentWarningNeverEchoesTheRecoveryActionValue() async throws {
+        let secretAction = "recover_cus_ZZZTOPSECRET"
+        let provider = makeProvider { request in
+            switch request.url {
+            case CursorUsageClient.usageURL:
+                return Self.primaryUsageResponse
+            case CursorUsageClient.planURL:
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"planInfo":{"planName":"Pro"}}"#.utf8))
+            case CursorUsageClient.stripeURL:
+                return HTTPResponse(
+                    statusCode: 200, headers: [:],
+                    body: Data(#"{"customerBalance":0,"paymentId":"cus_ZZZTOPSECRET","lastPaymentFailed":true,"paymentRecoveryAction":"\#(secretAction)"}"#.utf8)
+                )
+            default:
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+        }
+
+        let (snapshot, logs) = try await captureLogs { await provider.refresh() }
+
+        XCTAssertEqual(snapshot.warning, CursorUsageMapper.paymentFailedWarning)
+        XCTAssertFalse(snapshot.warning?.contains(secretAction) ?? false)
+        XCTAssertFalse(logs.contains(secretAction), logs)
+        XCTAssertFalse(logs.contains("cus_ZZZTOPSECRET"), logs)
+    }
+
+    /// Unit-level coverage of the shapes the provider can't easily reach: no response at all, and a
+    /// payload that carries neither field.
+    func testPaymentFailureWarningIsNilWithoutDunningFields() {
+        XCTAssertNil(CursorUsageMapper.paymentFailureWarning(from: nil))
+        XCTAssertNil(CursorUsageMapper.paymentFailureWarning(from: [:]))
+        XCTAssertNil(CursorUsageMapper.paymentFailureWarning(from: ["customerBalance": -500]))
+        XCTAssertEqual(
+            CursorUsageMapper.paymentFailureWarning(from: ["lastPaymentFailed": true]),
+            CursorUsageMapper.paymentFailedWarning
+        )
+    }
+
     func testFailedGenericRequestFallbackIsLoggedBeforePrimaryMappingError() async throws {
         let provider = makeProvider { request in
             if request.url.absoluteString.hasPrefix(CursorUsageClient.restUsageURL.absoluteString) {
@@ -234,6 +365,10 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertNotNil(snapshot.errorCategory)
         XCTAssertTrue(logs.contains("optional request-based usage fallback failed"), logs)
     }
+
+    /// The rows `primaryUsageResponse` produces, in order. Asserted verbatim by the dunning cases so a
+    /// payment warning can never quietly add, drop, or reorder a metric row.
+    private nonisolated static let healthyLineLabels = ["Total usage", "Renews"]
 
     private nonisolated static var primaryUsageResponse: HTTPResponse {
         HTTPResponse(
