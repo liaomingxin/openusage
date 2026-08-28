@@ -12,6 +12,7 @@ final class CodexProvider: ProviderRuntime {
     /// Extra-account cards (credential dumps without a Codex home) skip local JSONL spend so they
     /// don't inherit the default home's sessions.
     let scansLocalLogs: Bool
+    let fallbackModel: @MainActor () -> String?
 
     /// `accountLabel` is the extra card's ChatGPT email (or id suffix); `nil` for the default-home card.
     init(
@@ -22,7 +23,8 @@ final class CodexProvider: ProviderRuntime {
         logUsageScanner: CodexLogUsageScanner = CodexLogUsageScanner(),
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
-        scansLocalLogs: Bool = true
+        scansLocalLogs: Bool = true,
+        fallbackModel: @escaping @MainActor () -> String? = { CodexFallbackModelSetting.current() }
     ) {
         self.provider = Provider(
             id: id,
@@ -40,6 +42,7 @@ final class CodexProvider: ProviderRuntime {
         self.now = now
         self.pricing = pricing
         self.scansLocalLogs = scansLocalLogs
+        self.fallbackModel = fallbackModel
     }
 
     private func metricID(_ name: String) -> String { "\(provider.id).\(name)" }
@@ -185,7 +188,9 @@ final class CodexProvider: ProviderRuntime {
         // the shared pricing store, merged with Codex usage that happened inside pi (attributed back
         // here). Both scans run on their scanner actors, off the main actor.
         let pricing = await pricing()
-        let nativeScan = scansLocalLogs ? await logUsageScanner.scan(now: now(), pricing: pricing) : nil
+        let nativeScan = scansLocalLogs
+            ? await logUsageScanner.scan(now: now(), pricing: pricing, fallbackModel: fallbackModel())
+            : nil
         let piScan = scansLocalLogs
             ? await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
             : nil
@@ -193,21 +198,26 @@ final class CodexProvider: ProviderRuntime {
         // Cancellation can land between the native and pi scans. Treat the pair as one unit so a
         // partial result cannot replace the last-good combined history in WidgetDataStore.
         if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
-            let note = piScan == nil
+            let baseNote = piScan == nil
                 ? "From your Codex logs (estimated)"
                 : "From your Codex logs and pi (estimated)"
             usageHistory = ProviderUsageHistory(
                 series: scan.series,
                 modelUsage: scan.modelUsage,
-                unknownModelsByDay: scan.unknownModelsByDay
+                unknownModelsByDay: scan.unknownModelsByDay,
+                fallbackPricingModelsByDay: scan.fallbackPricingModelsByDay
             )
             SpendTileMapper.appendTokenUsage(
                 scan.series, to: &mapped.lines, now: now(),
                 unknownModelsByDay: scan.unknownModelsByDay,
                 modelUsage: scan.modelUsage,
-                modelSourceNote: note
+                modelSourceNote: baseNote,
+                fallbackPricingModelsByDay: scan.fallbackPricingModelsByDay
             )
-            SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
+            SpendTileMapper.appendUsageTrend(
+                scan.series, to: &mapped.lines, now: now(), note: baseNote,
+                fallbackPricingModelsByDay: scan.fallbackPricingModelsByDay
+            )
         }
 
         // OpenAI's account-wide rollup, appended after the machine-local rows so the two stay visibly
