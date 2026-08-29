@@ -15,49 +15,77 @@ private let subscriptionJSON = #"""
 /// Fixed instant every Z.ai card test refreshes at.
 private let testNow = Date(timeIntervalSince1970: 1_787_772_600)
 
-/// A daily-bucket `model-usage` payload anchored on `testNow`, so Today / Yesterday resolve the same
-/// way wherever the suite runs.
-private var modelUsageJSON: String {
-    let days = (0...1).map { offset -> String in
+/// The machine-local day keys around `testNow`, so Today / Yesterday resolve the same way wherever
+/// the suite runs. Index 0 is today, 1 yesterday.
+private var testDayKeys: [String] {
+    (0...1).map { offset -> String in
         let day = Calendar.current.date(byAdding: .day, value: -offset, to: testNow) ?? testNow
         return DailyUsageAccumulator.dayKey(from: day)
     }
-    return """
-    {"success":true,"data":{
-      "x_time":["\(days[1])","\(days[0])"],
-      "tokensUsage":[2000000,1000000],
-      "modelCallCount":[20,10],
-      "totalUsage":{"totalTokensUsage":3000000,"totalModelCallCount":30},
-      "modelDataList":[{"modelName":"GLM-5.3","tokensUsage":[2000000,1000000],"totalTokens":3000000}],
-      "granularity":"daily"}}
+}
+
+/// A daily-bucket `credit-usage/activity` payload anchored on `testNow`: the account-wide totals
+/// behind Usage Trend and Last 30 Days.
+private var creditActivityJSON: String {
+    """
+    {"success":true,"data":{"timezone":"Asia/Shanghai",
+      "summary":{"totalTokens":3000000},
+      "series":[{"date":"\(testDayKeys[1])","totalTokens":2000000},
+                 {"date":"\(testDayKeys[0])","totalTokens":1000000}]}}
     """
 }
 
-private let toolUsageJSON = #"""
-{"success":true,"data":{"totalUsage":{"totalNetworkSearchCount":1,"totalWebReadMcpCount":3,"totalZreadMcpCount":0}}}
+/// A daily-bucket `credit-usage/usage-detail` (MODEL) payload anchored on `testNow`, behind the
+/// period rows and their per-model breakdown.
+private var creditModelDetailJSON: String {
+    """
+    {"success":true,"data":{"timezone":"Asia/Shanghai",
+      "modelUsage":{"xTime":["\(testDayKeys[1])","\(testDayKeys[0])"],
+        "totalUsage":{"totalTokens":3000000},
+        "modelDataList":[{"modelName":"GLM-5.3","totalTokensUsage":[2000000,1000000]}]}}}
+    """
+}
+
+private let creditMcpDetailJSON = #"""
+{"success":true,"data":{"mcpUsage":{"totalUsage":{"totalMcpCalls":4},
+  "mcpDataList":[{"mcpCode":"search-prime","mcpNameI18n":"Web Search MCP","mcpCallCount":[1]},
+                 {"mcpCode":"web-reader","mcpNameI18n":"Web Read MCP","mcpCallCount":[3]}]}}}
 """#
 
 private func jsonResponse(_ json: String) -> HTTPResponse {
     HTTPResponse(statusCode: 200, headers: [:], body: Data(json.utf8))
 }
 
-/// Routes by path so a test doesn't have to know which host the platform picked.
+/// Routes by path so a test doesn't have to know which host the platform picked. The quota fixture
+/// is credit-metered, so the history endpoints served here are the credit family the provider routes
+/// to (the legacy family is covered by `ZAICreditRoutingTests`); `activity` and `modelDetail` are
+/// injectable so a test can fail the whole history path at once.
 private func zaiRoutingClient(
     record: (@Sendable (URL) -> Void)? = nil,
-    modelUsage: @escaping @Sendable () -> HTTPResponse = { jsonResponse(modelUsageJSON) }
+    activity: @escaping @Sendable () -> HTTPResponse = { jsonResponse(creditActivityJSON) },
+    modelDetail: @escaping @Sendable () -> HTTPResponse = { jsonResponse(creditModelDetailJSON) }
 ) -> RoutingHTTPClient {
     RoutingHTTPClient { request in
         record?(request.url)
         switch request.url.path {
         case ZAIUsageClient.quotaPath: return jsonResponse(quotaJSON)
         case ZAIUsageClient.subscriptionPath: return jsonResponse(subscriptionJSON)
-        case ZAIUsageClient.modelUsagePath: return modelUsage()
-        case ZAIUsageClient.toolUsagePath: return jsonResponse(toolUsageJSON)
+        case ZAIUsageClient.creditActivityPath: return activity()
+        case ZAIUsageClient.creditUsageDetailPath:
+            return isMcpDetailRequest(request.url) ? jsonResponse(creditMcpDetailJSON) : modelDetail()
         default:
             XCTFail("unexpected Z.ai request path \(request.url.path)")
             return jsonResponse("{}")
         }
     }
+}
+
+/// True when the request asks for the MCP slice of `usage-detail`.
+private func isMcpDetailRequest(_ url: URL) -> Bool {
+    guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else {
+        return false
+    }
+    return items.contains { $0.name == "usageType" && $0.value == "MCP" }
 }
 
 // MARK: - Platform storage
@@ -138,6 +166,8 @@ final class ZAIPlatformRoutingTests: XCTestCase {
         XCTAssertEqual(ZAIUsageClient.subscriptionURL(.global).absoluteString, "https://api.z.ai/api/biz/subscription/list")
         XCTAssertEqual(ZAIUsageClient.modelUsageURL(.cn).absoluteString, "https://open.bigmodel.cn/api/monitor/usage/model-usage")
         XCTAssertEqual(ZAIUsageClient.toolUsageURL(.cn).absoluteString, "https://open.bigmodel.cn/api/monitor/usage/tool-usage")
+        XCTAssertEqual(ZAIUsageClient.creditActivityURL(.cn).absoluteString, "https://open.bigmodel.cn/api/monitor/credit-usage/activity")
+        XCTAssertEqual(ZAIUsageClient.creditUsageDetailURL(.global).absoluteString, "https://api.z.ai/api/monitor/credit-usage/usage-detail")
     }
 
     func testQuickLinksPointAtTheChosenConsole() {
@@ -213,11 +243,12 @@ final class ZAIPlatformRoutingTests: XCTestCase {
 @MainActor
 final class ZAICardContentsTests: XCTestCase {
     private func makeProvider(
-        modelUsage: @escaping @Sendable () -> HTTPResponse = { jsonResponse(modelUsageJSON) }
+        activity: @escaping @Sendable () -> HTTPResponse = { jsonResponse(creditActivityJSON) },
+        modelDetail: @escaping @Sendable () -> HTTPResponse = { jsonResponse(creditModelDetailJSON) }
     ) -> ZAIProvider {
         ZAIProvider(
             authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment(["ZAI_API_KEY": "zai-test"])),
-            usageClient: ZAIUsageClient(http: zaiRoutingClient(modelUsage: modelUsage)),
+            usageClient: ZAIUsageClient(http: zaiRoutingClient(activity: activity, modelDetail: modelDetail)),
             now: { testNow }
         )
     }
@@ -258,9 +289,8 @@ final class ZAICardContentsTests: XCTestCase {
     }
 
     func testUsageHistoryFailureLeavesTheMetersIntact() async {
-        let snapshot = await makeProvider(modelUsage: {
-            HTTPResponse(statusCode: 500, headers: [:], body: Data("{}".utf8))
-        }).refresh()
+        let failure: @Sendable () -> HTTPResponse = { HTTPResponse(statusCode: 500, headers: [:], body: Data("{}".utf8)) }
+        let snapshot = await makeProvider(activity: failure, modelDetail: failure).refresh()
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertFalse(snapshot.lines.contains { $0.isError })

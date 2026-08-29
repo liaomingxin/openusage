@@ -11,7 +11,7 @@ call, and MCP-tool history.
 | Weekly | 7-day rolling window usage (percentage), with the credits behind it under the bar |
 | Web Searches | Monthly web-search / web-reader / Zread allowance (used / limit). Below the caret |
 | Usage Trend | Daily tokens over the last 30 days, as a small bar chart |
-| Today / Yesterday / Last 30 Days | Tokens and API calls for the period, e.g. `66.1M tokens · 426 calls`. Below the caret |
+| Today / Yesterday / Last 30 Days | Tokens for the period, e.g. `66.1M tokens`, plus the API call count on token-metered plans (`66.1M tokens · 426 calls`). Below the caret |
 | MCP Tools | MCP tool calls over the last 30 days, with a per-tool breakdown on hover. Below the caret |
 | Renews | When your GLM Coding Plan's current period ends. Reads **Ends** when auto-renew is off. Below the caret |
 
@@ -23,7 +23,10 @@ the percentage, e.g. `1,030 / 28,000 credits`, under the bar.
 
 Hovering **Today**, **Yesterday**, or **Last 30 Days** opens the per-model breakdown for that period.
 A GLM Coding Plan is a flat subscription, so nothing is priced: the panel ranks models by their share
-of tokens rather than by cost.
+of tokens rather than by cost. On credit-metered plans (every current Pro, Lite, Max, and Ultra
+plan) Z.ai no longer reports call counts, so those rows carry tokens only; the numbers come from
+the same accounting Z.ai's own usage page shows, including usage the per-model split can't
+attribute.
 
 **MCP Tools** reads the window's total (`27 calls`), and hovering it opens the same kind of
 breakdown the period rows use — one line per tool Z.ai names, ranked by its share of the calls, e.g.
@@ -93,18 +96,27 @@ export ZAI_API_KEY="YOUR_API_KEY"
 
 ## Under the hood
 
-Four undocumented internal endpoints Z.ai's own usage dashboard uses (stable in practice), all on
-your chosen host — `https://api.z.ai` or `https://open.bigmodel.cn`:
+Six undocumented internal endpoints Z.ai's own usage dashboard uses (stable in practice), all on
+your chosen host — `https://api.z.ai` or `https://open.bigmodel.cn`. Which family serves the history
+rows depends on how the plan meters usage, read from the quota response:
+
+- **Credit plans** (a `CREDIT_LIMIT` entry — every current plan) use the `credit-usage` family,
+  the same endpoints Z.ai's own usage page reads for them.
+- **Token plans** (the older `TOKENS_LIMIT` windows) keep the legacy `model-usage` / `tool-usage`
+  pair.
 
 | Endpoint | Feeds | Required? |
 |---|---|---|
-| `GET /api/monitor/usage/quota/limit` | Session, Weekly, Web Searches | Yes |
+| `GET /api/monitor/usage/quota/limit` | Session, Weekly, Web Searches, and the routing above | Yes |
 | `GET /api/biz/subscription/list` | Plan name and Renews | Best-effort |
-| `GET /api/monitor/usage/model-usage` | Usage Trend, Today, Yesterday, Last 30 Days | Best-effort |
-| `GET /api/monitor/usage/tool-usage` | MCP Tools | Best-effort |
+| `GET /api/monitor/credit-usage/activity` | Usage Trend, Last 30 Days (credit plans) | Best-effort |
+| `GET /api/monitor/credit-usage/usage-detail?usageType=MODEL` | Today, Yesterday, and every period's per-model breakdown (credit plans) | Best-effort |
+| `GET /api/monitor/credit-usage/usage-detail?usageType=MCP` | MCP Tools (credit plans) | Best-effort |
+| `GET /api/monitor/usage/model-usage` | Usage Trend, Today, Yesterday, Last 30 Days (token plans) | Best-effort |
+| `GET /api/monitor/usage/tool-usage` | MCP Tools (token plans) | Best-effort |
 
 Best-effort means a failure there is logged and leaves only its own rows empty — the quota meters are
-never blanked by it.
+never blanked by it. Each history call is also independent: one failing leaves the others standing.
 
 The quota response carries a `limits` array. Each `CREDIT_LIMIT` entry (called `TOKENS_LIMIT` in
 older responses) is a percentage quota window; its window length decides which meter it feeds
@@ -113,11 +125,14 @@ under the bar. A `TIME_LIMIT` entry is the monthly web-search count; plans that 
 simply show **No data** on that row. Reset times come back as epoch milliseconds. Missing required
 usage values are reported as an invalid response instead of being shown as zero.
 
-The tool response reports the window's per-tool summary (`toolSummaryList`) alongside its older
-search / read / ZRead totals. The summary is what names each tool and backs the hover breakdown; the
-totals are the fallback when a response carries no summary. Tools are named with Z.ai's own English
-label, falling back to its Chinese name and then to the bare tool code, so nothing about the set is
-hardcoded.
+The credit endpoints answer in the same shape Z.ai's own page reads: `activity` reports the
+account-wide daily series and window totals behind the trend and Last 30 Days (the widest
+accounting, so the card matches what Z.ai's dashboard shows), `usage-detail` MODEL reports the
+per-model buckets behind the breakdowns, and `usage-detail` MCP reports the per-tool call counts
+behind MCP Tools. They also declare their bucket `timezone` and `granularity` explicitly; the legacy
+endpoints don't, so those keep assuming the Beijing clock. The credit family reports no call
+counts — Z.ai dropped the figure when it moved to credit metering — so credit-plan period rows
+carry tokens only.
 
 The subscription response is a list, so the renewal row picks the entry Z.ai marks as the running
 period (`status: VALID`, `inCurrentPeriod`) and reads its `nextRenewTime`. That date is a bare
@@ -127,14 +142,18 @@ billing period.
 
 ### Days and time zones
 
-The two history endpoints take a start and end time on Z.ai's own clock (Beijing time), so OpenUsage
-formats its requests in that zone and reads the bucket labels back in it.
+The history endpoints take a start and end time on Z.ai's own clock (Beijing time), so OpenUsage
+formats its requests in that zone and reads the bucket labels back in it. On credit plans the
+payload declares its `timezone` and the labels are read in whatever zone it names.
 
 Z.ai chooses the bucket size: a range up to seven days comes back hour by hour, anything longer comes
 back as whole Beijing days. That is why the history is fetched twice per refresh —
 
 - a **30-day** call, in whole days, behind Usage Trend and Last 30 Days, and
 - a **short** call, hour by hour, behind Today and Yesterday.
+
+On credit plans the short call is `usage-detail` MODEL, whose hourly buckets include the hour still
+in progress — so Today counts what has actually happened so far, not just completed hours.
 
 Hourly buckets are added up into *your* Mac's calendar days, so Today and Yesterday mean your today
 and yesterday wherever you are. Whole-day buckets are already complete days on Z.ai's calendar and are

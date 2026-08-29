@@ -99,7 +99,10 @@ final class ZAIProvider: ProviderRuntime {
             let subscription = await loadOptional("subscription") {
                 try await usageClient.fetchSubscription(apiKey: auth.apiKey, platform: auth.platform)
             }
-            let activity = await loadActivity(auth: auth)
+            // Credit-metered plans read their history from the credit-usage endpoints; token plans
+            // keep the legacy pair. See `loadActivity`.
+            let credit = ZAIUsageMapper.isCreditPackage(body)
+            let activity = await loadActivity(auth: auth, credit: credit)
             do {
                 let mapped = try ZAIUsageMapper.map(
                     quotaBody: body,
@@ -131,16 +134,24 @@ final class ZAIProvider: ProviderRuntime {
         }
     }
 
-    /// The three usage-history payloads behind the trend, the day rows and MCP Tools.
+    /// The usage-history payloads behind the trend, the day rows and MCP Tools, on whichever endpoint
+    /// family the plan meters with.
     ///
-    /// Two `model-usage` calls, not one: Z.ai returns hourly buckets only for ranges up to seven days
-    /// and whole (Beijing) days for anything longer, and only hourly buckets can be attributed to the
-    /// Mac's own calendar days. So the 30-day call feeds the trend and the Last 30 Days total, while a
-    /// short call feeds Today and Yesterday. Each is independent: one failing leaves only its own rows
-    /// empty.
+    /// The legacy path makes two `model-usage` calls, not one: Z.ai returns hourly buckets only for
+    /// ranges up to seven days and whole (Beijing) days for anything longer, and only hourly buckets
+    /// can be attributed to the Mac's own calendar days. So the 30-day call feeds the trend and the
+    /// Last 30 Days total, while a short call feeds Today and Yesterday; `tool-usage` feeds MCP Tools.
+    /// Each call is independent: one failing leaves only its own rows empty.
+    ///
+    /// The credit path mirrors the split with the endpoint family Z.ai's own page reads for
+    /// credit-metered plans: `activity` (the account-wide totals behind the trend and Last 30 Days),
+    /// `usage-detail` MODEL in both ranges (per-model breakdowns, plus the hourly short call behind
+    /// Today / Yesterday), and `usage-detail` MCP (the tool counts). See `ZAICreditUsageMapper`.
     private func loadActivity(
-        auth: ZAIAuth
+        auth: ZAIAuth,
+        credit: Bool
     ) async -> (window: ZAIModelActivity?, recent: ZAIModelActivity?, tools: ZAIToolActivity?) {
+        if credit { return await loadCreditActivity(auth: auth) }
         let now = now()
         let window = await loadOptional("model-usage (30 days)") {
             try await usageClient.fetchModelUsage(
@@ -161,6 +172,39 @@ final class ZAIProvider: ProviderRuntime {
             )
         }.flatMap { ZAIActivityMapper.parseToolUsage($0) }
         return (window, recent, tools)
+    }
+
+    /// The credit-plan history. Four best-effort calls, each independent: the 30-day `activity`
+    /// totals and the 30-day `usage-detail` model split merge into one window (the totals are the
+    /// row values, the split is the hover breakdown); the short-range `usage-detail` call carries
+    /// Today / Yesterday; the MCP detail carries the tool row.
+    private func loadCreditActivity(
+        auth: ZAIAuth
+    ) async -> (window: ZAIModelActivity?, recent: ZAIModelActivity?, tools: ZAIToolActivity?) {
+        let now = now()
+        let trendStart = ZAIActivityMapper.trendWindowStart(now: now)
+        let totals = await loadOptional("credit-usage/activity (30 days)") {
+            try await usageClient.fetchCreditActivity(
+                apiKey: auth.apiKey, platform: auth.platform, start: trendStart, end: now
+            )
+        }.flatMap { ZAICreditUsageMapper.parseActivity($0) }
+        let breakdown = await loadOptional("credit-usage/usage-detail (30 days, models)") {
+            try await usageClient.fetchCreditUsageDetail(
+                apiKey: auth.apiKey, platform: auth.platform, start: trendStart, end: now, kind: .model
+            )
+        }.flatMap { ZAICreditUsageMapper.parseModelDetail($0) }
+        let recent = await loadOptional("credit-usage/usage-detail (recent days, models)") {
+            try await usageClient.fetchCreditUsageDetail(
+                apiKey: auth.apiKey, platform: auth.platform,
+                start: ZAIActivityMapper.recentWindowStart(now: now), end: now, kind: .model
+            )
+        }.flatMap { ZAICreditUsageMapper.parseModelDetail($0) }
+        let tools = await loadOptional("credit-usage/usage-detail (30 days, MCP)") {
+            try await usageClient.fetchCreditUsageDetail(
+                apiKey: auth.apiKey, platform: auth.platform, start: trendStart, end: now, kind: .mcp
+            )
+        }.flatMap { ZAICreditUsageMapper.parseMcpDetail($0) }
+        return (ZAICreditUsageMapper.window(totals: totals, breakdown: breakdown), recent, tools)
     }
 
     /// Run the required quota call and classify the outcome: the body on 2xx, an auth failure on

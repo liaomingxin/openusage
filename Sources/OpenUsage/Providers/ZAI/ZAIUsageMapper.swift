@@ -58,6 +58,20 @@ enum ZAIUsageMapper {
         return ((root["msg"] as? String) ?? "").lowercased().contains("coding plan")
     }
 
+    /// True when the quota payload meters credits rather than the older token windows — a
+    /// `CREDIT_LIMIT` entry among the limits. Z.ai's own usage page splits on this too: credit plans
+    /// read their usage history from the `credit-usage` endpoints, token plans from the legacy
+    /// `model-usage` / `tool-usage` pair, and OpenUsage routes the same way (`ZAIProvider`). A payload
+    /// carrying both types reads as credit — the newer accounting is the one that matches Z.ai's page.
+    static func isCreditPackage(_ body: Data) -> Bool {
+        guard let root = ProviderParse.jsonObject(body) else { return false }
+        let container = (root["data"] as? [String: Any]) ?? root
+        guard let limits = container["limits"] as? [[String: Any]] else { return false }
+        return limits.contains {
+            ($0["type"] as? String) == "CREDIT_LIMIT" || ($0["name"] as? String) == "CREDIT_LIMIT"
+        }
+    }
+
     /// Session + weekly + web-search meters from the quota payload. Missing required values are an
     /// invalid response rather than zero usage; an explicit empty array remains a valid no-data state.
     static func mapQuota(_ body: Data) throws -> [MetricLine] {

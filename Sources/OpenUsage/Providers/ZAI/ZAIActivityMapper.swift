@@ -14,13 +14,19 @@ enum ZAITime {
         formatter(format: "yyyy-MM-dd HH:mm:ss").string(from: date)
     }
 
-    /// `base` with the range query the two history endpoints expect.
-    static func rangeURL(_ base: URL, start: Date, end: Date) -> URL {
+    /// `base` with the range query the two history endpoints expect. `extraQueryItems` ride along
+    /// after the bounds (the credit endpoints add their `type` / `usageType` selectors).
+    static func rangeURL(
+        _ base: URL,
+        start: Date,
+        end: Date,
+        extraQueryItems: [URLQueryItem] = []
+    ) -> URL {
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return base }
         components.queryItems = [
             URLQueryItem(name: "startTime", value: requestString(start)),
             URLQueryItem(name: "endTime", value: requestString(end))
-        ]
+        ] + extraQueryItems
         return components.url ?? base
     }
 
@@ -31,14 +37,20 @@ enum ZAITime {
     /// is a real instant, so it is converted into the Mac's own calendar day. A daily bucket is
     /// already a whole day on the server's Beijing calendar — re-labelling it in another zone would
     /// invent precision the payload doesn't have — so its label is used as the key unchanged.
-    static func dayKey(forBucketLabel label: String, calendar: Calendar = .current) -> String? {
+    /// `serverTimeZone` is the zone the labels are wall-clock in; the legacy endpoints never declare
+    /// one (Beijing is assumed), the credit endpoints carry an explicit `timezone` field.
+    static func dayKey(
+        forBucketLabel label: String,
+        calendar: Calendar = .current,
+        serverTimeZone: TimeZone = serverTimeZone
+    ) -> String? {
         let text = label.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         if text.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil {
             return text
         }
         for format in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm"] {
-            if let date = formatter(format: format).date(from: text) {
+            if let date = formatter(format: format, timeZone: serverTimeZone).date(from: text) {
                 return DailyUsageAccumulator.dayKey(from: date, calendar: calendar)
             }
         }
@@ -46,10 +58,14 @@ enum ZAITime {
     }
 
     private static func formatter(format: String) -> DateFormatter {
+        formatter(format: format, timeZone: serverTimeZone)
+    }
+
+    private static func formatter(format: String, timeZone: TimeZone) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = serverTimeZone
+        formatter.timeZone = timeZone
         formatter.dateFormat = format
         return formatter
     }
@@ -63,6 +79,10 @@ struct ZAIModelActivity: Equatable, Sendable {
     var modelUsage: ModelUsageSeries = ModelUsageSeries(daily: [])
     var totalTokens: Int = 0
     var totalCalls: Int = 0
+    /// Whether the source meters per-call counts. The credit-plan endpoints don't (Z.ai dropped the
+    /// figure when it moved to credit metering), so periods built from them carry tokens only;
+    /// the legacy `model-usage` endpoint still reports them.
+    var reportsCallCounts: Bool = true
 
     var dayKeys: Set<String> { Set(tokensByDay.keys).union(callsByDay.keys) }
 
@@ -154,13 +174,7 @@ enum ZAIActivityMapper {
                 modelsByDay[day, default: [:]][name, default: 0] += tokens
             }
         }
-        activity.modelUsage = ModelUsageSeries(daily: modelsByDay.sorted { $0.key < $1.key }.map { day, models in
-            DailyModelUsageEntry(
-                date: day,
-                models: models.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
-                    .map { ModelUsageEntry(model: $0.key, totalTokens: $0.value, costUSD: nil) }
-            )
-        })
+        activity.modelUsage = modelSeries(from: modelsByDay)
 
         // Z.ai reports the window totals directly; they are exact for the requested range, so they win
         // over re-summing the buckets. A payload without them falls back to the sum.
@@ -257,7 +271,8 @@ enum ZAIActivityMapper {
         if let window, window.totalTokens > 0 || window.totalCalls > 0 {
             lines.append(.values(
                 label: "Last 30 Days",
-                values: usageValues(tokens: window.totalTokens, calls: window.totalCalls),
+                values: usageValues(tokens: window.totalTokens, calls: window.totalCalls,
+                                    reportsCalls: window.reportsCallCounts),
                 modelBreakdown: SpendTileMapper.modelBreakdown(
                     window.modelUsage,
                     days: window.dayKeys,
@@ -320,7 +335,7 @@ enum ZAIActivityMapper {
         guard tokens > 0 || calls > 0 else { return nil }
         return .values(
             label: label,
-            values: usageValues(tokens: tokens, calls: calls),
+            values: usageValues(tokens: tokens, calls: calls, reportsCalls: activity.reportsCallCounts),
             modelBreakdown: SpendTileMapper.modelBreakdown(
                 activity.modelUsage,
                 days: [day],
@@ -331,25 +346,37 @@ enum ZAIActivityMapper {
         )
     }
 
-    /// One period's activity: tokens then calls, rendered combined as "66.1M tokens · 426 calls". No
-    /// dollars — a GLM Coding Plan is a flat subscription, so there is nothing to price.
-    private static func usageValues(tokens: Int, calls: Int) -> [MetricValue] {
-        [
-            MetricValue(number: Double(tokens), kind: .count, label: "tokens"),
-            MetricValue(number: Double(calls), kind: .count, label: "calls")
-        ]
+    /// One period's activity: tokens then — when the source reports them — calls, rendered combined
+    /// as "66.1M tokens · 426 calls". Credit-plan periods carry tokens alone ("66.1M tokens"):
+    /// Z.ai's credit accounting dropped call counts, so inventing a "· 0 calls" would read as a real
+    /// measurement. No dollars — a GLM Coding Plan is a flat subscription, so there is nothing to price.
+    private static func usageValues(tokens: Int, calls: Int, reportsCalls: Bool) -> [MetricValue] {
+        var values = [MetricValue(number: Double(tokens), kind: .count, label: "tokens")]
+        if reportsCalls {
+            values.append(MetricValue(number: Double(calls), kind: .count, label: "calls"))
+        }
+        return values
     }
 
     /// The `data` object of a 2xx response, or `nil` when the body isn't a usable success payload.
-    private static func payload(_ body: Data) -> [String: Any]? {
+    /// Shared with the credit-usage parsers, which answer in the same envelope.
+    static func payload(_ body: Data) -> [String: Any]? {
         guard let root = ProviderParse.jsonObject(body) else { return nil }
         if (root["success"] as? Bool) == false { return nil }
         return root["data"] as? [String: Any]
     }
 
+    /// A non-negative finite integer read of a JSON value (number or numeric string). Shared with the
+    /// credit-usage parsers.
+    static func int(_ value: Any?) -> Int? {
+        guard let number = ProviderParse.number(value), number.isFinite, number >= 0,
+              number < Double(Int.max) else { return nil }
+        return Int(number)
+    }
+
     /// Fold a bucket-parallel numeric array into per-day totals. Entries whose label didn't parse are
-    /// skipped rather than dropped into a wrong day.
-    private static func accumulate(_ raw: Any?, into totals: inout [String: Int], dayKeys: [String?]) {
+    /// skipped rather than dropped into a wrong day. Shared with the credit-usage parsers.
+    static func accumulate(_ raw: Any?, into totals: inout [String: Int], dayKeys: [String?]) {
         guard let values = raw as? [Any] else { return }
         for (index, value) in values.enumerated() {
             guard index < dayKeys.count, let day = dayKeys[index], let amount = int(value), amount > 0 else { continue }
@@ -357,9 +384,15 @@ enum ZAIActivityMapper {
         }
     }
 
-    private static func int(_ value: Any?) -> Int? {
-        guard let number = ProviderParse.number(value), number.isFinite, number >= 0,
-              number < Double(Int.max) else { return nil }
-        return Int(number)
+    /// The ranked per-day model series every `modelDataList`-shaped payload normalizes into — used by
+    /// both the legacy and the credit-usage model parsers.
+    static func modelSeries(from modelsByDay: [String: [String: Int]]) -> ModelUsageSeries {
+        ModelUsageSeries(daily: modelsByDay.sorted { $0.key < $1.key }.map { day, models in
+            DailyModelUsageEntry(
+                date: day,
+                models: models.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
+                    .map { ModelUsageEntry(model: $0.key, totalTokens: $0.value, costUSD: nil) }
+            )
+        })
     }
 }
