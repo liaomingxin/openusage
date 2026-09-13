@@ -73,7 +73,9 @@ secrets（只有上游作者有），fork 上跑不了；发版**只走 personal
 
 ## 同步上游更新
 
-**上次同步**：上游 `v0.7.10`（tip `05c40a1d`），2026-08-28 以 merge commit 合入。
+**上次同步**：上游 `v0.7.12-beta.1`（tip `bb055e26`），2026-09-13 以 merge commit 合入（上一次：`v0.7.10` / `05c40a1d`，2026-08-28）。
+
+建议开同步分支合并、验证通过后再快进回 `main`；并开启 `git config rerere.enabled true`，同样的冲突下次自动套用解法。
 
 ```bash
 git fetch upstream
@@ -88,13 +90,16 @@ git push origin main
 |---|---|---|
 | `Sources/OpenUsage/Stores/DefaultLayout.swift` | 上游增删 metric 或其他分支（如 grok 钉菜单栏）同改 | 合并两边的数组项，保持 kimi 的三行（metricIDs/pinned/expanded） |
 | `Sources/OpenUsage/Providers/ProviderCatalog.swift` | 上游新增 provider；或上游改 `make()` 的签名（2026-08 加了 `claudeCards:`/`claudeIdentityKeys:`，fork 又加了 `claudeSwapCards:`） | 合并两边参数与数组，顺序固定为 **Claude 卡 → fork 的 claude-swap 卡 → `CodexProvider()` → fork 的额外 Codex 卡 → Cursor → 字母序尾巴（kimi 在 Grok 后）** |
-| `Sources/OpenUsage/Providers/Codex/CodexProvider.swift` | 上游改本地日志扫描（如 fallback pricing），fork 的额外账号卡带动态 `id`/`accountLabel` 并设 `scansLocalLogs: false` | 同时保留 `fallbackModel`、scan/usage-history 的 fallback provenance 和 `scansLocalLogs`；仅默认 home 扫 Codex JSONL 和 pi，额外卡不得继承本机日志。 |
+| `Sources/OpenUsage/Providers/Codex/CodexProvider.swift` | 上游改本地日志扫描（如 fallback pricing；v0.7.11 起改成 native / pi / **OpenCode** 三路 `async let` 并发），fork 的额外账号卡带动态 `id`/`accountLabel` 并设 `scansLocalLogs: false` | 用上游的并发写法，但**每一路**都用 `scansLocalLogs` 门控（上游以后再加本地来源也一样）；仅默认 home 扫本机数据，额外卡不得继承。回归测试：`CodexExtraCardCatalogTests.testExtraCardSkipsOpenCodeCodexUsage` |
 | `Sources/OpenUsage/Services/ProviderAccountAssembly.swift` | **最难的一个。** 上游加 Claude 多账号卡（`ClaudeAccountCard`、Desktop 组织发现），fork 加 Codex 额外卡（`CodexExtraCard`、`mergedObservations`）和 claude-swap 卡（`ClaudeSwapCard`），两边改同一批函数 | **三边都留**：一个 `make(observer:accountsStore:families:extraCodex:claudeSwap:desktop:listDesktopOrganizationDirectories:)`，先塞额外 Codex observation，再塞 claude-swap 槽位 observation（family 是 `claude`），再跑 Claude Desktop 组织发现，然后**只 reconcile 一次**（走 `mergedObservations`，同一身份合成一条记录），最后三份卡各建一份。上游原来的两处 early return 要改成「发现流程的判断条件」，否则那些分支会漏掉额外卡 |
 | `Sources/OpenUsage/Services/ProviderAccountAssembly.swift`（体量） | 已经 430+ 行、装着三套卡片模型，上游一改这里必冲突 | 冲突太痛时把「发卡」那段（`reconcile` 之后到 `return` 之间）抽成 `ProviderAccountCards` 辅助类型，冲突面就只剩观测拼装那几行；现在还在 ~500 行门槛内，先不动 |
 | `Sources/OpenUsage/App/AppContainer.swift`、`Sources/OpenUsage/Services/UsageReader.swift` | `ProviderCatalog.make(...)` 调用点，两边各加各的参数 | 四个参数一起传：`extraCodexCards:` + `claudeCards:` + `claudeSwapCards:` + `claudeIdentityKeys:`；`UsageReader` 里保留上游把 `ProviderEnablementStore(defaults:)` 放在 registry 之后的位置 |
 | `Tests/OpenUsageTests/LocalLimitsAPITests.swift` | 上游新增 provider 的 key 清单 | expected 字典里补上两边的条目 |
-| `Sources/OpenUsage/Providers/ErrorCategory.swift` | 同上 | 保留两边的 CategorizedError 扩展 |
-| `Sources/OpenUsage/Providers/Kimi/`（整个目录） | **上游官方也实现了 kimi** | 二选一：保留自己的版本（删上游的），或采用上游的（删 `Providers/Kimi/`、DefaultLayout/Catalog/测试里的 kimi 条目） |
+| `README.md`、`docs/README.md` | 上游新增 provider 的列表项（字母序紧挨 Kimi，如 Ollama） | 两边都留，按字母序 |
+| 上游新增的测试里 `guard case .progress(...)`（**不报冲突，编译才报**） | fork 给 `MetricLine.progress` 加了第 8 个关联值 `detail`，上游测试按 7 个解构，报 `failed to produce diagnostic` / `type 'Equatable' has no member` | 在模式末尾补一个 `_` |
+| `Sources/OpenUsage/App/SettingsMigrator.swift` | 上游已占用 schema v3（重映射失效 pin ID） | fork 以后要加迁移从 **v4** 起，并先看上游有没有占号 |
+| `Sources/OpenUsage/Providers/ErrorCategory.swift` | 上游新增 provider 的错误分类扩展 | 保留两边的 CategorizedError 扩展 |
+| `Sources/OpenUsage/Providers/Kimi/`（整个目录） | **如果**上游官方也实现了 kimi（截至 `v0.7.12-beta.1` 上游还没有） | 二选一：保留自己的版本（删上游的），或采用上游的（删 `Providers/Kimi/`、DefaultLayout/Catalog/测试里的 kimi 条目） |
 
 合并后必做：`swift test` + `./script/build_and_run.sh` 起一次确认，再打下一个 `-kimi.N` tag 发布。
 
