@@ -55,6 +55,10 @@ Claude Desktop support is read-only. OpenUsage decrypts its currently valid acce
 never changes Desktop's config, cookies, or Keychain entry. This prevents OpenUsage from invalidating
 Claude Desktop's session.
 
+Both older Desktop login caches and newer account-specific caches are supported. Account-specific
+tokens must match the account currently signed in to Desktop and the card's organization. A newer
+cache entry or deletion marker takes precedence over an older copy of the same login.
+
 macOS asks once before OpenUsage can access that Keychain item. Background refreshes never open the
 password dialog: OpenUsage first asks you to refresh manually, and choosing **Always Allow** makes later
 refreshes silent. If Desktop's short-lived token expires, open Claude Desktop so it can renew the login,
@@ -117,6 +121,16 @@ Today / Yesterday / Last 30 Days are computed **locally**: OpenUsage reads the C
 Sessions that do not identify their account, including usage from pi and third-party tools such as
 Conductor, count as long as OpenUsage has never seen more than one Claude account. Once multiple
 accounts are discovered, unattributed usage is left out instead of being assigned to the wrong card.
+
+Subagent logs inherit their parent session's ownership, even when that parent is older than the
+spend window. Sessions with conflicting account or organization records are excluded. OpenUsage
+checks each parent once per refresh and reuses unchanged ownership results, including conflicts,
+across refreshes. Failed reads are retried on the next refresh, and large ownership scans stop
+when the refresh is cancelled.
+
+Claude subagents, including agents nested inside workflows, inherit their parent session's account.
+Their usage appears while they run and is included in the same spend tiles. Existing workflow logs
+are picked up on the next refresh; there is no need to rerun the workflow or clear the usage cache.
 
 Local spend does not require a Claude OAuth login. If Claude Code uses an API-key gateway instead, the spend tiles and usage trend still load from its session logs; the Claude header shows **Not logged in** because the live Session and Weekly meters still require a Claude subscription login.
 

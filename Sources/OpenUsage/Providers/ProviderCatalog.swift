@@ -60,6 +60,7 @@ enum ProviderCatalog {
             DevinProvider(),
             GrokProvider(),
             KimiProvider(),
+            OllamaProvider(),
             OpenCodeProvider(),
             OpenRouterProvider(),
             ZAIProvider()

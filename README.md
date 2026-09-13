@@ -36,6 +36,7 @@ Either way, the app updates itself in place via signed, notarized [Sparkle](docs
 - **[Devin](docs/providers/devin.md)** — weekly and daily quota, extra usage balance
 - **[Grok](docs/providers/grok.md)** — weekly shared pool, pay-as-you-go, local daily spend
 - **[Kimi Code](docs/providers/kimi.md)** — session, weekly, and booster-wallet usage from the Kimi CLI login
+- **[Ollama](docs/providers/ollama.md)** — Ollama Cloud session and weekly limits, recent activity spend
 - **[OpenCode](docs/providers/opencode.md)** — Go session/weekly/monthly caps, Zen spend, local daily spend
 - **[OpenRouter](docs/providers/openrouter.md)** — credit balance, daily/weekly/monthly spend (API key)
 - **[Z.ai](docs/providers/zai.md)** — session, weekly, web-search quotas (GLM Coding Plan, API key)

@@ -1,5 +1,71 @@
 # Changelog
 
+## v0.7.12-beta.1
+
+### New Features
+- Add Muse Spark 1.3 effort variants to model pricing ([#1244](https://github.com/robinebers/openusage/pull/1244)) by @validatedev
+
+### Bug Fixes
+- Separate Cursor Grok Bot mode pricing rates ([#1246](https://github.com/robinebers/openusage/pull/1246)) by @robinebers
+- Price Codex reserve usage at Luna rates ([#1247](https://github.com/robinebers/openusage/pull/1247)) by @robinebers
+- Avoid repeated Claude session ownership scans ([#1245](https://github.com/robinebers/openusage/pull/1245)) by @robinebers
+- Attribute nested Claude workflow usage to parent sessions ([#1241](https://github.com/robinebers/openusage/pull/1241)) by @robinebers
+- Exempt keep-open issues from stale auto-close ([#1225](https://github.com/robinebers/openusage/pull/1225)) by @robinebers
+
+---
+
+### Changelog
+**Full Changelog**: [v0.7.11...v0.7.12-beta.1](https://github.com/robinebers/openusage/compare/v0.7.11...v0.7.12-beta.1)
+
+- [cd7900b](https://github.com/robinebers/openusage/commit/cd7900b7d7afd6c6d1ecddc9e6b6f315c7e1205e) fix(pricing): separate Cursor Grok Bot mode rates (#1246) by @robinebers
+- [639bdbf](https://github.com/robinebers/openusage/commit/639bdbf98b766ac6622974db61e992c4884c2754) fix(codex): price reserve usage at Luna rates (#1247) by @robinebers
+- [29a2b84](https://github.com/robinebers/openusage/commit/29a2b84f7488c14ddd5fedfe7db98363eb1d70a9) Fix repeated Claude session ownership scans (#1245) by @robinebers
+- [adf0110](https://github.com/robinebers/openusage/commit/adf0110c048f8bfef79a83a3080c9e23a86d5e1c) fix: attribute nested Claude workflow usage to parent sessions (#1241) by @robinebers
+- [dd02c12](https://github.com/robinebers/openusage/commit/dd02c1276594ed35ba85e6c09c1a2bfcafab13c3) feat(pricing): integrate Muse Spark 1.3 effort variants (#1244) by @validatedev
+- [70dea9a](https://github.com/robinebers/openusage/commit/70dea9a8fa21ed205aa9ad625b416a1e7792d5a1) fix: exempt keep-open issues from stale auto-close (#1225) by @robinebers
+
+## v0.7.11
+
+### New Features
+- Add opt-in Ollama Cloud usage tracking ([#1173](https://github.com/robinebers/openusage/pull/1173)) by @tduarte
+- Include OpenCode Codex OAuth usage in Codex totals and share request pricing with pi ([#1195](https://github.com/robinebers/openusage/pull/1195)) by @validatedev
+
+### Bug Fixes
+- Restore Antigravity spend across conversation stores and improve model pricing and grouping ([#1206](https://github.com/robinebers/openusage/pull/1206)) by @Nabsku
+- Support Claude Desktop's account-prefixed credential caches ([#1212](https://github.com/robinebers/openusage/pull/1212)) by @robinebers
+- Hide misleading pacing projections on untouched meters ([#1016](https://github.com/robinebers/openusage/pull/1016)) by @robinebers
+- Add Gemini 3.8 Flash pricing and Cursor model aliases ([#1211](https://github.com/robinebers/openusage/pull/1211)) by @robinebers
+- Add GPT-6 Astra pricing, including Codex priority and long-context rates ([#1208](https://github.com/robinebers/openusage/pull/1208)) by @robinebers
+- Include Grok subagent, resumed, and forked usage without double-counting replayed events ([#1193](https://github.com/robinebers/openusage/pull/1193)) by @robinebers
+- Restore missing menu-bar pins caused by outdated metric IDs ([#1179](https://github.com/robinebers/openusage/pull/1179)) by @FelixIsaac
+- Recognize Codex Business Premium plans ([#1194](https://github.com/robinebers/openusage/pull/1194)) by @robinebers
+- Accept older iCloud history containing Codex account metadata ([#1196](https://github.com/robinebers/openusage/pull/1196)) by @robinebers
+- Add Fable 5.1 pricing and Grok bot aliases ([#1197](https://github.com/robinebers/openusage/pull/1197)) by @robinebers
+
+### Chores
+- Update PostHog from 3.69.6 to 3.69.12 ([#1185](https://github.com/robinebers/openusage/pull/1185)) by @app/dependabot
+- Update PostHog from 3.69.12 to 3.71.0 ([#1220](https://github.com/robinebers/openusage/pull/1220)) by @app/dependabot
+
+---
+
+### Changelog
+**Full Changelog**: [v0.7.10...v0.7.11](https://github.com/robinebers/openusage/compare/v0.7.10...v0.7.11)
+
+- [a03048e](https://github.com/robinebers/openusage/commit/a03048ebc887b203352d2a24a309cdfacdd13409) Merge pull request #1220 from robinebers/dependabot/swift/github.com/posthog/posthog-ios-3.71.0 by @app/dependabot
+- [7a23679](https://github.com/robinebers/openusage/commit/7a2367996eb180e2c53b9aaddbe0ce1236a2ae3c) Merge pull request #1173 from tduarte/claude/ollama-cloud-provider-5cbefb by @tduarte
+- [60f29f9](https://github.com/robinebers/openusage/commit/60f29f9ec5d32536a12d4ee8843c76f7f4a55e6a) fix(antigravity): restore local spend from all conversation stores and price every logged model (#1206) by @Nabsku
+- [8321283](https://github.com/robinebers/openusage/commit/8321283f61335b9e1d942c61f38de042a431a0a6) fix(claude): read account-prefixed Desktop token caches (#1212) by @robinebers
+- [0745977](https://github.com/robinebers/openusage/commit/07459778fd2796c47a30e08350db9dec7e966003) Stop showing a fabricated "~100% left at reset" on untouched meters (#1016) by @robinebers
+- [651df83](https://github.com/robinebers/openusage/commit/651df8383f520f06bda86bbe90d04b5cfc09e82b) fix(pricing): support Gemini 3.8 Flash Cursor usage (#1211) by @robinebers
+- [fee60b9](https://github.com/robinebers/openusage/commit/fee60b923a213df8d21d33f50a21a5442f820d39) fix(pricing): add GPT-6 Astra rates (#1208) by @robinebers
+- [bb94841](https://github.com/robinebers/openusage/commit/bb94841fb260de573f7fc5e38bb83529b873a58b) fix(grok): include subagent session usage (#1193) by @robinebers
+- [17b0b26](https://github.com/robinebers/openusage/commit/17b0b26654895fd370686af2bbed79e65be5864e) fix(settings): remap dead menu-bar pin IDs on upgrade (schema v3) (#1179) by @FelixIsaac
+- [ec23a9a](https://github.com/robinebers/openusage/commit/ec23a9af2f3970f38b71ec675ccfd122fe8d5f9b) chore(deps): bump github.com/posthog/posthog-ios from 3.69.6 to 3.69.12 (#1185) by @app/dependabot
+- [d5166d6](https://github.com/robinebers/openusage/commit/d5166d651308b161f99231cb3f2107985da68c90) fix(codex): recognize Business Premium entitlement (#1194) by @robinebers
+- [db09426](https://github.com/robinebers/openusage/commit/db09426d3bd11929516081abe1c2298aeb290f34) feat(codex): attribute OpenCode Codex OAuth usage and share Codex request pricing (#1195) by @validatedev
+- [b15fd6c](https://github.com/robinebers/openusage/commit/b15fd6cc240af16e8af9608521d47052c5d36f8c) fix(sync): accept legacy Codex account identity metadata (#1196) by @robinebers
+- [30d556d](https://github.com/robinebers/openusage/commit/30d556d8c2cdd4cad13b6aad5a5d4b775454f20f) fix(pricing): add Fable 5.1 rates and Grok bot aliases (#1197) by @robinebers
+
 ## v0.7.10
 
 ### New Features
