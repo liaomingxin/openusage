@@ -210,6 +210,58 @@ final class CodexExtraCardCatalogTests: XCTestCase {
         XCTAssertFalse(extra.scansLocalLogs)
     }
 
+    /// Extra cards carry no Codex home, so this Mac's local usage belongs to the default card alone —
+    /// OpenCode's Codex OAuth rows included. Otherwise every extra card would echo the default card's spend.
+    func testExtraCardSkipsOpenCodeCodexUsage() async throws {
+        let now = OpenUsageISO8601.date(from: "2099-02-20T16:00:00.000Z")!
+        let milliseconds = Int(OpenUsageISO8601.date(
+            from: "2099-02-20T14:00:00.000Z"
+        )!.timeIntervalSince1970 * 1000)
+        let openCodeRows = "[[\(milliseconds),0,150,\"gpt-test\",100,0,0,50,0,\"open-code-message\"]]"
+        let openCodeScanner = OpenCodeCodexUsageScanner(
+            authStore: OpenCodeAuthStore(
+                files: FakeFiles(["/oc/auth.json": #"{"openai":{"type":"oauth","access":"token"}}"#]),
+                environment: FakeEnvironment(["OPENCODE_DATA_DIR": "/oc"]),
+                homeDirectory: { URL(fileURLWithPath: "/unused") }
+            ),
+            sqlite: OpenCodeFakeSQLite(data: ["/oc/opencode.db": openCodeRows]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        let extra = CodexProvider(
+            id: "codex@deadbeef",
+            accountLabel: "extra@example.com",
+            authStore: CodexAuthStore(
+                environment: FakeEnvironment(["CODEX_HOME": "/tmp/codex-home"]),
+                files: FakeFiles(["/tmp/codex-home/auth.json": #"{"tokens":{"access_token":"token"}}"#]),
+                keychain: FakeKeychain()
+            ),
+            usageClient: CodexUsageClient(http: FakeHTTPClient(response: HTTPResponse(
+                statusCode: 200, headers: [:], body: Data("{}".utf8)
+            ))),
+            logUsageScanner: CodexLogFixture.scanner(home: nil),
+            openCodeUsageScanner: openCodeScanner,
+            now: { now },
+            pricing: {
+                ModelPricing(
+                    supplement: PricingSupplement(),
+                    primary: PricingCatalog(entries: ["gpt-test": ModelRates(
+                        inputPerMillion: 1000, outputPerMillion: 3000,
+                        cacheWritePerMillion: 1000, cacheReadPerMillion: 100
+                    )]),
+                    secondary: PricingCatalog(entries: [:])
+                )
+            },
+            scansLocalLogs: false
+        )
+
+        let snapshot = await extra.refresh()
+
+        XCTAssertNil(snapshot.usageHistory)
+        for label in ["Today", "Yesterday", "Last 30 Days", "Usage Trend"] {
+            XCTAssertFalse(snapshot.lines.contains { $0.label == label }, label)
+        }
+    }
+
     func testCatalogInsertsExtraCardsAfterDefaultCodex() throws {
         let extraID = ProviderAccountID.make(family: "codex", identityKey: "acct-extra-1")
         let providers = ProviderCatalog.make(extraCodexCards: [
