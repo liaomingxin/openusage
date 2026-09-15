@@ -41,12 +41,15 @@ struct ClaudeSwapCard: Equatable, Sendable {
 struct ClaudeAccountCard: Equatable, Sendable {
     let id: String
     let identityKey: String
-    let organizationID: String
+    let organizationID: String?
     /// The organization this card tracks ("SUNSTORY", "Personal"). Only a dashboard with more than one
     /// Claude card uses it — see `ProviderCatalog`.
     let accountLabel: String
     let usesDesktopCredentials: Bool
     let allowsUnattributedPiUsage: Bool
+    var swapAccount: ClaudeSwapAccount? = nil
+    var additionalLogDirectories: [String] = []
+    var organizationName: String? = nil
 }
 
 /// The launch-time account pass: read which account is signed in at each family's default home,
@@ -192,6 +195,11 @@ struct ProviderAccountAssembly {
             AppLog.info(.config, "accounts: extra Codex credential \(extra.path) identity \(extra.identityKey)")
         }
 
+        // Fork: claude-swap accounts come from `ClaudeSwapDiscovery` (config snapshots, read-only live
+        // tier with a cached-usage fallback) as `ClaudeSwapCard`s. Upstream's own Claude Swap support
+        // (`ClaudeSwapAccount.discover` → `ClaudeAccountCard.swapAccount`, #1226) is deliberately not
+        // wired here: both key a slot by the same `accountUuid|organizationUuid` identity, so running
+        // both would mint two runtimes for one record id. See FORK.md.
         for slot in claudeSwap {
             observations.append(ProviderAccountsStore.Observation(
                 family: "claude",
@@ -277,7 +285,7 @@ struct ProviderAccountAssembly {
             cards.append(ClaudeAccountCard(
                 id: record.id, identityKey: defaultIdentity, organizationID: String(organization),
                 accountLabel: label, usesDesktopCredentials: false,
-                allowsUnattributedPiUsage: allowsUnattributedPiUsage
+                allowsUnattributedPiUsage: allowsUnattributedPiUsage, organizationName: label
             ))
             identityKeys.removeValue(forKey: "claude")
             identityKeys[record.id] = defaultIdentity
@@ -291,7 +299,8 @@ struct ProviderAccountAssembly {
             cards.append(ClaudeAccountCard(
                 id: cardID, identityKey: organization.identityKey, organizationID: organization.id,
                 accountLabel: organizationLabel(record.label) ?? organization.label,
-                usesDesktopCredentials: true, allowsUnattributedPiUsage: allowsUnattributedPiUsage
+                usesDesktopCredentials: true, allowsUnattributedPiUsage: allowsUnattributedPiUsage,
+                organizationName: organizationLabel(record.label) ?? organization.label
             ))
             identityKeys[cardID] = organization.identityKey
         }

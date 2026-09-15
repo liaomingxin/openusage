@@ -33,6 +33,7 @@ struct ProviderAccountSource: Codable, Equatable, Sendable {
         /// A standalone credential file (cli-proxy-api `codex-*.json`, an extra Codex dump).
         /// `anchor` is the file path.
         case credentialFile
+        case claudeSwap
     }
 
     var kind: Kind

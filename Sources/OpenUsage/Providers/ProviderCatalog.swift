@@ -24,7 +24,8 @@ enum ProviderCatalog {
                 let user = identity.split(separator: "|").first.map(String.init)
                 let scanner = ClaudeLogUsageScanner(
                     accountUUID: user, organizationUUID: card.organizationID,
-                    allowsUnattributedSessions: card.allowsUnattributedPiUsage
+                    allowsUnattributedSessions: card.allowsUnattributedPiUsage,
+                    additionalConfigDirectories: card.additionalLogDirectories
                 )
                 return ClaudeProvider(
                     // A lone Claude card carries no account label: nothing to tell it apart from.
@@ -36,7 +37,9 @@ enum ProviderCatalog {
                         desktopOrganization: card.organizationID,
                         expectedIdentityKey: identity,
                         desktopOnly: card.usesDesktopCredentials,
-                        preferOrganizationScopedDesktop: claudeCards.count > 1 && !card.usesDesktopCredentials
+                        swapAccount: card.swapAccount,
+                        preferOrganizationScopedDesktop: claudeCards.count > 1
+                            && card.organizationID != nil && !card.usesDesktopCredentials
                     ),
                     logUsageScanner: scanner,
                     allowsUnattributedPiUsage: card.allowsUnattributedPiUsage

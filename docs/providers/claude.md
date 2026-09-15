@@ -21,6 +21,9 @@ cards, the local API) the cards are named `Claude — <organization>` so they st
 
 Fable is enabled and always visible directly below Weekly by default. Sonnet stays off until you
 enable it in Customize. When Claude reports your plan name, OpenUsage shows it beside the provider name.
+The plan comes from Anthropic's live account profile, so an upgrade (say, Max 5x to Max 20x) shows up on
+the next refresh without signing in to Claude Code again. If the profile can't be read, the badge falls
+back to the plan saved with your login.
 
 All four windows come from the list of limits Anthropic returns, so a per-model weekly window it adds
 later shows up in OpenUsage's data without an app update. Older responses that don't carry that list
@@ -157,5 +160,7 @@ Local spend does not require a Claude OAuth login. If Claude Code uses an API-ke
 also carries the list of limits behind the meters, the binding marker, and Extra Usage. Claude Code tokens refresh via `platform.claude.com/v1/oauth/token`; Claude Desktop tokens are read-only and must be renewed by Desktop itself. If a token is expired or revoked, OpenUsage retries with the next credential source before reporting an error.
 
 claude-swap cards make the same usage request with the token stashed for that account, and nothing else: they have no token endpoint configured at all, so an expired or rejected stashed token ends in claude-swap's cached percentages rather than in a refresh.
+
+The plan badge reads `GET https://api.anthropic.com/api/oauth/profile` (the organization's `rate_limit_tier`), because the plan Claude Code saves at sign-in never updates afterwards. To stay clear of Anthropic's rate limits, that lookup runs at most once per access token — after a usage fetch has succeeded — and cards bound to a specific account reuse the profile they already fetched to verify identity, so they make no extra request. Inference-only tokens skip it entirely.
 
 When the five-hour session window hasn't begun (the usage API reports no reset time), the Session row shows **Not started** on the trailing label; hover explains that the session begins after your first message. A reported reset time means the window is running, so the row always shows the countdown then — even when Anthropic's whole-percent numbers still read 0% because less than 1% has been used, which matches what Claude Code itself shows.

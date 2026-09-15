@@ -563,8 +563,12 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
     /// cards regardless of what a future edit wires together.
     func testClaudeSwapSourcesBuildNoAuthStoreAndNameNoTokenEndpoint() throws {
         let directory = Self.providerSources.appendingPathComponent("Claude")
+        // `ClaudeSwapAccount.swift` is upstream's own Claude Swap support (#1226): a `ClaudeAuthStore`
+        // extension that reads Swap's vault. The fork doesn't wire it (see FORK.md), so it isn't one of
+        // this card's sources — but the card sources must never route through it either.
+        let upstreamSwapSource = "ClaudeSwapAccount.swift"
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            .filter { $0.hasPrefix("ClaudeSwap") && $0.hasSuffix(".swift") }
+            .filter { $0.hasPrefix("ClaudeSwap") && $0.hasSuffix(".swift") && $0 != upstreamSwapSource }
         XCTAssertFalse(names.isEmpty, "expected to find the claude-swap sources to scan")
 
         for name in names {
@@ -573,7 +577,8 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
                 .split(separator: "\n", omittingEmptySubsequences: false)
                 .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
                 .joined(separator: "\n")
-            for forbidden in ["ClaudeAuthStore(", "refreshToken", "oauth/token", "writeGenericPassword"] {
+            for forbidden in ["ClaudeAuthStore(", "refreshToken", "oauth/token", "writeGenericPassword",
+                              "ClaudeSwapAccount", "loadSwapVaultCredential"] {
                 XCTAssertFalse(
                     code.contains(forbidden),
                     "\(name) must not reference \(forbidden) — a claude-swap card is read-only"
