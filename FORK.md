@@ -73,7 +73,7 @@ secrets（只有上游作者有），fork 上跑不了；发版**只走 personal
 
 ## 同步上游更新
 
-**上次同步**：上游 `v0.7.12-beta.1`（tip `bb055e26`），2026-09-13 以 merge commit 合入（上一次：`v0.7.10` / `05c40a1d`，2026-08-28）。
+**上次同步**：上游 `v0.7.12-beta.2`（tip `86df736e`），2026-09-16 以 merge commit 合入（之前：`v0.7.12-beta.1` / `bb055e26`，2026-09-13；`v0.7.10` / `05c40a1d`，2026-08-28）。
 
 建议开同步分支合并、验证通过后再快进回 `main`；并开启 `git config rerere.enabled true`，同样的冲突下次自动套用解法。
 
@@ -96,9 +96,10 @@ git push origin main
 | `Sources/OpenUsage/App/AppContainer.swift`、`Sources/OpenUsage/Services/UsageReader.swift` | `ProviderCatalog.make(...)` 调用点，两边各加各的参数 | 四个参数一起传：`extraCodexCards:` + `claudeCards:` + `claudeSwapCards:` + `claudeIdentityKeys:`；`UsageReader` 里保留上游把 `ProviderEnablementStore(defaults:)` 放在 registry 之后的位置 |
 | `Tests/OpenUsageTests/LocalLimitsAPITests.swift` | 上游新增 provider 的 key 清单 | expected 字典里补上两边的条目 |
 | `README.md`、`docs/README.md` | 上游新增 provider 的列表项（字母序紧挨 Kimi，如 Ollama） | 两边都留，按字母序 |
-| 上游新增的测试里 `guard case .progress(...)`（**不报冲突，编译才报**） | fork 给 `MetricLine.progress` 加了第 8 个关联值 `detail`，上游测试按 7 个解构，报 `failed to produce diagnostic` / `type 'Equatable' has no member` | 在模式末尾补一个 `_` |
+| 上游新增的测试里 `guard case .progress(...)`（**不报冲突，编译才报**，每次同步几乎都会遇到） | fork 给 `MetricLine.progress` 加了第 8 个关联值 `detail`，上游测试按 7 个解构，报 `failed to produce diagnostic` / `type 'Equatable' has no member` | 在模式末尾补一个 `_` |
 | `Sources/OpenUsage/App/SettingsMigrator.swift` | 上游已占用 schema v3（重映射失效 pin ID） | fork 以后要加迁移从 **v4** 起，并先看上游有没有占号 |
 | `Sources/OpenUsage/Providers/ErrorCategory.swift` | 上游新增 provider 的错误分类扩展 | 保留两边的 CategorizedError 扩展 |
+| **上游官方的 Claude Swap 支持（#1226，`v0.7.12-beta.2` 起）** | 上游读 `~/.claude-swap-backup/sequence.json`，把 swap 账号做成 `ClaudeAccountCard.swapAccount`（`ClaudeSwapAccount.swift`，`ClaudeAuthStore`/`ClaudeProvider`/`ClaudeLogUsageScanner` 里带 `swapAccount`/`additionalConfigDirectories` 参数）。和 fork 的 claude-swap 卡用**同一个身份 key**（`accountUuid\|organizationUuid`）→ 同一个 record id，两边同时接上会出两张同 id 的卡 | **2026-09-16 决定：保留 fork 实现**（缓存兜底、429/钥匙串冷却、琥珀警告）。合并时：`ProviderAccountAssembly` 里**不调用** `ClaudeSwapAccount.discover`、去掉上游的 swap 卡循环和「无组织默认登录」分支（那里有注释说明）；上游那些参数/文件原样保留（值恒为 nil/空），以减少以后的冲突面。删掉依赖接入的 3 个上游测试：`ClaudeSwapAccountTests.testDiscoversThreeAccountsAndDeduplicatesDefaultLogin`、`ClaudeSwapOverlapTests.testSwapDesktopOverlapKeepsTwoNamedIdentitiesAcrossDefaultSwitches`、`ClaudeSwapReviewRegressionTests.testUUIDOnlyDefaultRemainsAvailableAlongsideSwap`（上游再改它们会冲突，继续删）。结构护栏测试跳过上游的 `ClaudeSwapAccount.swift`，并禁止 fork 的 `ClaudeSwap*` 源码引用 `ClaudeSwapAccount`/`loadSwapVaultCredential`。`docs/providers/claude.md` 保留 fork 的「claude-swap accounts」一节 |
 | `Sources/OpenUsage/Providers/Kimi/`（整个目录） | **如果**上游官方也实现了 kimi（截至 `v0.7.12-beta.1` 上游还没有） | 二选一：保留自己的版本（删上游的），或采用上游的（删 `Providers/Kimi/`、DefaultLayout/Catalog/测试里的 kimi 条目） |
 
 合并后必做：`swift test` + `./script/build_and_run.sh` 起一次确认，再打下一个 `-kimi.N` tag 发布。
@@ -116,6 +117,8 @@ git push origin main
     （`subscriptionType`/`rateLimitTier`，只是标签、不是凭证，用来显示「Max 20x」徽章），
     走 `ClaudeUsageClient.fetchUsage` + `ClaudeUsageMapper`，和正式 Claude 卡同一个接口同一个 mapper，
     所以有 Session/Weekly/Fable/Sonnet/**Extra Usage**。
+    套餐徽章移植了上游 #1262：usage 成功后用同一个 token `GET /api/oauth/profile`，**每个 token 只查一次**
+    （失败也记住），profile 的账号/组织必须和卡的身份 key 一致才采用，否则保留钥匙串里的计划名。
     429 会按 `Retry-After`（默认 5 分钟）暂停实时层，手动刷新也照样等；钥匙串**被拒**（不是「没这项」）
     会停 1 小时不再读，免得每 5 分钟弹一次授权框，手动刷新清掉这个冷却。
     token 被 Anthropic 拒掉时，除了写日志还会在卡片上挂琥珀色警告（提示跑 `cswap` 重新登录）。
@@ -125,7 +128,7 @@ git push origin main
     配置里根本没有 token endpoint（`ClaudeSwapOAuth.readOnlyConfig` 的 refreshURL 故意指回 usage URL）。
     刷新会和 cswap 自己的轮换打架，把它的 refresh token 弄废。结构性回归测试见
     `ClaudeSwapLiveUsageTests.testClaudeSwapSourcesBuildNoAuthStoreAndNameNoTokenEndpoint`
-    与 `UsageOnlyHTTPClient`（任何非 GET usage 的请求直接 XCTFail）。
+    与 `UsageOnlyHTTPClient`（除 GET usage / GET profile 外的任何请求直接 XCTFail）。
   - `hasLocalCredentials()` 永远只看配置快照文件，**不读 keychain**，免得首次运行检测就弹授权框。
 
   相关文件：`Providers/Claude/ClaudeSwap{Discovery,CredentialReader,UsageClient,UsageMapper,Provider}.swift`、
