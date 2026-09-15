@@ -80,14 +80,17 @@ currently signed in to `~/.claude` is the live Claude card, but the reserve card
 OpenUsage asks Anthropic for each stashed account's usage using the login claude-swap has already saved.
 
 - **What appears** — the same live meters the active Claude card shows: Session, Weekly, Fable, Sonnet, and
-  **Extra Usage**, under the account's own plan badge (**Max 20x**, **Pro**, …). There is no usage trend or
+  **Extra Usage**, under the account's own plan badge (**Max 20x**, **Pro**, …). The badge follows Anthropic's
+  live profile for that account, so an upgrade shows up without signing in again. There is no usage trend or
   spend tile on these cards: local session logs belong to whichever account is active, not to a stashed
   one. A card that has fallen back to claude-swap's cached numbers shows no plan badge, because the cache
   doesn't record one.
 - **Where the data comes from** — the account names itself from claude-swap's config snapshot in
   `~/.claude-swap-backup/configs/`, and the numbers come straight from Anthropic, read with the access
   token claude-swap has already stashed for that account. It's the same usage request the live Claude card
-  makes, just on a stashed account's behalf.
+  makes, just on a stashed account's behalf, plus one profile lookup per stashed token for the plan badge.
+  If that lookup fails, or names a different account than the slot, the card keeps the plan claude-swap
+  saved with the login.
 - **The first refresh asks for Keychain access** — claude-swap keeps each stashed login in a `claude-swap`
   Keychain item, so macOS asks whether OpenUsage may read it. Choose **Always Allow** and it won't ask
   again. Choose Deny and the cards fall back to claude-swap's cached percentages, and OpenUsage stops
@@ -159,7 +162,7 @@ Local spend does not require a Claude OAuth login. If Claude Code uses an API-ke
 `GET https://api.anthropic.com/api/oauth/usage` with the selected OAuth token — one request, which
 also carries the list of limits behind the meters, the binding marker, and Extra Usage. Claude Code tokens refresh via `platform.claude.com/v1/oauth/token`; Claude Desktop tokens are read-only and must be renewed by Desktop itself. If a token is expired or revoked, OpenUsage retries with the next credential source before reporting an error.
 
-claude-swap cards make the same usage request with the token stashed for that account, and nothing else: they have no token endpoint configured at all, so an expired or rejected stashed token ends in claude-swap's cached percentages rather than in a refresh.
+claude-swap cards make the same usage request with the token stashed for that account, plus the same one-time profile lookup for the plan badge, and nothing else: they have no token endpoint configured at all, so an expired or rejected stashed token ends in claude-swap's cached percentages rather than in a refresh.
 
 The plan badge reads `GET https://api.anthropic.com/api/oauth/profile` (the organization's `rate_limit_tier`), because the plan Claude Code saves at sign-in never updates afterwards. To stay clear of Anthropic's rate limits, that lookup runs at most once per access token — after a usage fetch has succeeded — and cards bound to a specific account reuse the profile they already fetched to verify identity, so they make no extra request. Inference-only tokens skip it entirely.
 

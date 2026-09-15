@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// One extra Claude card backed by a claude-swap slot: an account parked in claude-swap's stash
@@ -53,6 +54,20 @@ final class ClaudeSwapProvider: ProviderRuntime {
     /// successful read; a tick that learns nothing about the login (no request sent, no answer) leaves it
     /// standing.
     private var liveFailureWarning: String?
+
+    /// The plan Anthropic's profile endpoint reports for the stashed access token (upstream #1262).
+    /// The plan in claude-swap's blob is whatever Claude Code stamped at sign-in, and it never updates,
+    /// so an upgraded stashed account would keep its old badge. Looked up at most once per access
+    /// token — a failed lookup included — and only after the usage call succeeded, so it can never cost
+    /// the card its meters and adds no traffic to an account that is being throttled. A plain `GET`
+    /// with the same token: nothing is refreshed or written.
+    private struct LivePlan {
+        var accessTokenFingerprint: Data
+        /// `nil` when the lookup failed, the profile named another account, or it carried no plan;
+        /// the stashed plan is shown instead.
+        var plan: String?
+    }
+    private var livePlan: LivePlan?
 
     /// The one failure on these cards the user has to fix themselves, because the obvious remedy —
     /// refreshing the token — is exactly what a claude-swap card must never do. Written to the log and
@@ -161,8 +176,9 @@ final class ClaudeSwapProvider: ProviderRuntime {
                 return nil
             }
             logLive(nil, level: .info)
+            let plan = await resolveLivePlan(stashed) ?? mapped.plan
             return ProviderSnapshot.make(
-                provider: provider, plan: mapped.plan, lines: mapped.lines, refreshedAt: now(),
+                provider: provider, plan: plan, lines: mapped.lines, refreshedAt: now(),
                 warning: mapped.warning
             )
         } catch ClaudeAuthError.tokenExpired {
@@ -177,6 +193,51 @@ final class ClaudeSwapProvider: ProviderRuntime {
             logLive("live usage failed (\(error.localizedDescription)); showing claude-swap's cached usage", level: .warn)
             return nil
         }
+    }
+
+    /// The live plan for the stashed login, fetching the profile at most once per access token. The
+    /// profile must name this card's own account (and organization, when the card knows it): a slot
+    /// whose stashed token answers for someone else keeps its stashed plan rather than wearing another
+    /// account's badge.
+    private func resolveLivePlan(_ stashed: ClaudeSwapStashedToken) async -> String? {
+        let fingerprint = Data(SHA256.hash(data: Data(stashed.accessToken.utf8)))
+        if let livePlan, livePlan.accessTokenFingerprint == fingerprint {
+            return livePlan.plan
+        }
+        var plan: String?
+        do {
+            let response = try await liveUsageClient.fetchProfile(
+                accessToken: stashed.accessToken, config: ClaudeSwapOAuth.readOnlyConfig
+            )
+            let profile = try ClaudeUsageClient.decodeProfile(response)
+            if profileNamesThisCard(profile) {
+                plan = ClaudeUsageMapper.formatLivePlan(
+                    profile: profile,
+                    credentials: ClaudeOAuth(
+                        subscriptionType: stashed.subscriptionType, rateLimitTier: stashed.rateLimitTier
+                    )
+                )
+            } else {
+                emit("live profile names a different account than this slot; showing the stashed plan", level: .warn)
+            }
+        } catch {
+            // A cancelled refresh is not a verdict on the endpoint; let the next refresh try again.
+            guard !Task.isCancelled else { return nil }
+            emit(
+                "live plan lookup failed (\(error.localizedDescription)); showing the stashed plan "
+                + "until claude-swap rotates the token",
+                level: .warn
+            )
+        }
+        livePlan = LivePlan(accessTokenFingerprint: fingerprint, plan: plan)
+        return plan
+    }
+
+    private func profileNamesThisCard(_ profile: ClaudeAccountProfile) -> Bool {
+        let parts = card.identityKey.lowercased().split(separator: "|", omittingEmptySubsequences: false)
+        guard let account = parts.first, profile.account.uuid.lowercased() == account else { return false }
+        guard parts.count == 2 else { return true }
+        return profile.organization?.uuid.lowercased() == String(parts[1])
     }
 
     /// claude-swap's stashed access token for this slot, when there is a fresh one to spend. Every

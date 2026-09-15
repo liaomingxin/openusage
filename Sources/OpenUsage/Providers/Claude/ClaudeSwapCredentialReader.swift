@@ -26,15 +26,18 @@ struct ClaudeSwapStashedToken: Equatable, Sendable {
     }
 }
 
-/// The whole OAuth surface a claude-swap card is allowed to touch: one production endpoint, reached
-/// with one verb (`GET`), using a token somebody else owns.
+/// The whole OAuth surface a claude-swap card is allowed to touch: two read-only production endpoints
+/// (usage, and the profile that carries the live plan), reached with one verb (`GET`), using a token
+/// somebody else owns.
 enum ClaudeSwapOAuth {
     /// claude-swap manages claude.ai subscription logins, which are always production logins. The
     /// staging / custom-OAuth environment overrides `ClaudeAuthStore` honours describe whichever login
     /// is active in `~/.claude`, never a stashed one, so they are not consulted here.
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    /// Where `ClaudeUsageClient.fetchProfile` sends its `GET`: the usage URL's sibling.
+    static let profileURL = URL(string: "https://api.anthropic.com/api/oauth/profile")!
 
-    /// `ClaudeUsageClient.fetchUsage` reads `usageURL` and nothing else, so the remaining fields are
+    /// `ClaudeUsageClient.fetchUsage` and `fetchProfile` read `usageURL` and nothing else, so the remaining fields are
     /// inert on this path. They are pointed back at the usage endpoint on purpose: with no token
     /// endpoint anywhere in a claude-swap card's configuration, even a future miswiring could only
     /// issue a harmless request to the usage URL instead of rotating claude-swap's refresh token. The

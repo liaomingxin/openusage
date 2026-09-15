@@ -83,18 +83,30 @@ final class SlotKeychain: KeychainAccessing, @unchecked Sendable {
     }
 }
 
-/// An HTTP double that fails the test if anything but the usage endpoint is ever touched. Every live
-/// test routes through it, so "no card can reach the token endpoint" is asserted structurally rather
-/// than by inspection: a refresh would have to POST `platform.claude.com/v1/oauth/token`, and any
-/// request that isn't a `GET` to the usage URL fails here.
+/// An HTTP double that fails the test if anything but the usage or profile endpoint is ever touched.
+/// Every live test routes through it, so "no card can reach the token endpoint" is asserted
+/// structurally rather than by inspection: a refresh would have to POST
+/// `platform.claude.com/v1/oauth/token`, and any request that isn't a `GET` to the usage or profile URL
+/// fails here. Its handler answers the usage URL; profile lookups get `profileHandler`, which by default
+/// fails the lookup so the stashed plan stays in force.
 final class UsageOnlyHTTPClient: HTTPClient, @unchecked Sendable {
     private let recorded = RecordedHTTPRequests()
     var requests: [HTTPRequest] { recorded.all }
     private let handler: @Sendable (HTTPRequest) async throws -> HTTPResponse
+    private let profileHandler: @Sendable (HTTPRequest) async throws -> HTTPResponse
 
-    init(_ handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse) {
+    init(
+        profile profileHandler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse = { _ in
+            HTTPResponse(statusCode: 503, headers: [:], body: Data())
+        },
+        _ handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse
+    ) {
         self.handler = handler
+        self.profileHandler = profileHandler
     }
+
+    var usageRequests: [HTTPRequest] { requests.filter { $0.url == ClaudeSwapOAuth.usageURL } }
+    var profileRequests: [HTTPRequest] { requests.filter { $0.url == ClaudeSwapOAuth.profileURL } }
 
     /// Refuses every request outright — for the paths that must not reach the network at all.
     static func refusingEverything() -> UsageOnlyHTTPClient {
@@ -105,11 +117,12 @@ final class UsageOnlyHTTPClient: HTTPClient, @unchecked Sendable {
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        if request.url != ClaudeSwapOAuth.usageURL || request.method != "GET" {
-            XCTFail("a claude-swap card may only GET the usage endpoint, got \(request.method) \(request.url)")
+        let readOnly = [ClaudeSwapOAuth.usageURL, ClaudeSwapOAuth.profileURL].contains(request.url)
+        if !readOnly || request.method != "GET" {
+            XCTFail("a claude-swap card may only GET the usage or profile endpoint, got \(request.method) \(request.url)")
         }
         recorded.append(request)
-        return try await handler(request)
+        return try await (request.url == ClaudeSwapOAuth.profileURL ? profileHandler : handler)(request)
     }
 }
 
@@ -302,13 +315,14 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         XCTAssertEqual(progress(snapshot.lines, "Extra usage spent")?.used, 5)
         XCTAssertEqual(progress(snapshot.lines, "Extra usage spent")?.limit, 10)
 
-        // Exactly one request, and it carries the stashed access token — never the refresh token.
-        XCTAssertEqual(http.requests.count, 1)
-        let request = try XCTUnwrap(http.requests.first)
-        XCTAssertEqual(request.method, "GET")
-        XCTAssertEqual(request.url, ClaudeSwapOAuth.usageURL)
-        XCTAssertEqual(request.headers["Authorization"], "Bearer sk-ant-oat01-stashed")
-        XCTAssertNil(request.body)
+        // Exactly one usage request, then the one-time profile lookup for the live plan. Both carry the
+        // stashed access token — never the refresh token — and neither has a body.
+        XCTAssertEqual(http.requests.map(\.url), [ClaudeSwapOAuth.usageURL, ClaudeSwapOAuth.profileURL])
+        for request in http.requests {
+            XCTAssertEqual(request.method, "GET")
+            XCTAssertEqual(request.headers["Authorization"], "Bearer sk-ant-oat01-stashed")
+            XCTAssertNil(request.body)
+        }
     }
 
     /// The plan labels sit in the same blob as the token and are labels, not credentials — reading them
@@ -320,6 +334,78 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         ).refresh()
 
         XCTAssertEqual(snapshot.plan, "Max 20x")
+    }
+
+    /// Upstream #1262 on a stashed card: claude-swap's blob keeps the plan Claude Code stamped at sign-in,
+    /// so an upgrade (or downgrade) only shows once the badge follows Anthropic's live profile — which is
+    /// asked once per access token, after the usage call proved the token, and never again for it.
+    func testTheLivePlanFollowsTheProfileAndIsFetchedOncePerToken() async {
+        let http = UsageOnlyHTTPClient(profile: { _ in Self.profileResponse(tier: "default_claude_max_5x") }) { _ in
+            ClaudeSwapLiveFixtures.usageResponse
+        }
+        let provider = provider(
+            keychain: SlotKeychain([ClaudeSwapLiveFixtures.accountLabel: freshBlob()]), http: http
+        )
+
+        let first = await provider.refresh()
+        let second = await provider.refresh()
+
+        XCTAssertEqual(first.plan, "Max 5x", "the stashed blob says Max 20x; the live profile wins")
+        XCTAssertEqual(second.plan, "Max 5x")
+        XCTAssertEqual(http.requests.map(\.url), [
+            ClaudeSwapOAuth.usageURL, ClaudeSwapOAuth.profileURL, ClaudeSwapOAuth.usageURL
+        ])
+    }
+
+    /// A failed lookup is a label problem, never a reason to lose the meters, and it is not retried for
+    /// the same token — only a token claude-swap has since rotated earns another lookup.
+    func testAFailedProfileLookupKeepsTheStashedPlanUntilTheTokenRotates() async {
+        let http = UsageOnlyHTTPClient { _ in ClaudeSwapLiveFixtures.usageResponse }
+        let keychain = SlotKeychain([ClaudeSwapLiveFixtures.accountLabel: freshBlob()])
+        let provider = provider(keychain: keychain, http: http)
+
+        let first = await provider.refresh()
+        let second = await provider.refresh()
+
+        XCTAssertEqual(first.plan, "Max 20x")
+        XCTAssertEqual(second.plan, "Max 20x")
+        XCTAssertEqual(progress(first.lines, "Session")?.used, 33)
+        XCTAssertNil(first.errorCategory)
+        XCTAssertEqual(http.profileRequests.count, 1)
+
+        keychain.values[ClaudeSwapLiveFixtures.accountLabel] = ClaudeSwapLiveFixtures.stashedBlob(
+            expiresAt: now.addingTimeInterval(3600), accessToken: "sk-ant-oat01-rotated"
+        )
+        _ = await provider.refresh()
+        XCTAssertEqual(http.profileRequests.count, 2, "a rotated token earns one fresh lookup")
+    }
+
+    /// The profile must answer for this slot's own account and organization. A stashed token that
+    /// belongs to someone else keeps the stashed plan rather than wearing another account's badge.
+    func testAProfileNamingAnotherAccountKeepsTheStashedPlan() async {
+        let organization = "0a6595d2-b78c-4f2a-a1a1-da26d8958537"
+        for (account, org) in [("acct-other", organization), ("acct-2", "ffffffff-ffff-ffff-ffff-ffffffffffff")] {
+            let http = UsageOnlyHTTPClient(profile: { _ in
+                Self.profileResponse(tier: "default_claude_max_5x", account: account, organization: org)
+            }) { _ in ClaudeSwapLiveFixtures.usageResponse }
+            let snapshot = await provider(
+                keychain: SlotKeychain([ClaudeSwapLiveFixtures.accountLabel: freshBlob()]), http: http
+            ).refresh()
+
+            XCTAssertEqual(snapshot.plan, "Max 20x", "\(account) / \(org)")
+            XCTAssertEqual(progress(snapshot.lines, "Session")?.used, 33)
+        }
+    }
+
+    nonisolated private static func profileResponse(
+        tier: String,
+        account: String = "acct-2",
+        organization: String = "0a6595d2-b78c-4f2a-a1a1-da26d8958537"
+    ) -> HTTPResponse {
+        HTTPResponse(statusCode: 200, headers: [:], body: Data("""
+            {"account":{"uuid":"\(account)"},"organization":{"uuid":"\(organization)",\
+            "organization_type":"claude_max","rate_limit_tier":"\(tier)"}}
+            """.utf8))
     }
 
     /// The cache tier carries no plan, so a card that fell back says nothing rather than guessing.
