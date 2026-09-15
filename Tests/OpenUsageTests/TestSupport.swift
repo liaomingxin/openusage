@@ -332,16 +332,31 @@ final class ServiceKeychain: KeychainAccessing, @unchecked Sendable {
 }
 
 final class FakeHTTPClient: HTTPClient, @unchecked Sendable {
-    var response: HTTPResponse
-    var requests: [HTTPRequest] = []
+    let response: HTTPResponse
+    /// Lock-guarded: a provider may send concurrent requests (Codex fetches reset credits and account
+    /// stats together), and an unsynchronized append from two tasks corrupts the array.
+    private let recorded = RecordedHTTPRequests()
+    var requests: [HTTPRequest] { recorded.all }
 
     init(response: HTTPResponse) {
         self.response = response
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
+        recorded.append(request)
         return response
+    }
+}
+
+/// The request log shared by the HTTP doubles, safe to append to from concurrent tasks.
+final class RecordedHTTPRequests: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requests: [HTTPRequest] = []
+
+    var all: [HTTPRequest] { lock.withLock { requests } }
+
+    func append(_ request: HTTPRequest) {
+        lock.withLock { requests.append(request) }
     }
 }
 
@@ -488,7 +503,9 @@ final class KeyValueSQLite: SQLiteAccessing, @unchecked Sendable {
 /// Routes each request through a handler and records every request — for multi-request flows like
 /// the 401 → token refresh → retry sequence, where a single canned response can't express the flow.
 final class RoutingHTTPClient: HTTPClient, @unchecked Sendable {
-    var requests: [HTTPRequest] = []
+    /// Lock-guarded for the same reason as `FakeHTTPClient`: concurrent sends are real.
+    private let recorded = RecordedHTTPRequests()
+    var requests: [HTTPRequest] { recorded.all }
     private let handler: @Sendable (HTTPRequest) async throws -> HTTPResponse
 
     init(handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse) {
@@ -496,7 +513,7 @@ final class RoutingHTTPClient: HTTPClient, @unchecked Sendable {
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
+        recorded.append(request)
         return try await handler(request)
     }
 }

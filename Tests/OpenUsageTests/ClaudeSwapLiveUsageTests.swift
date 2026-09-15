@@ -88,7 +88,8 @@ final class SlotKeychain: KeychainAccessing, @unchecked Sendable {
 /// than by inspection: a refresh would have to POST `platform.claude.com/v1/oauth/token`, and any
 /// request that isn't a `GET` to the usage URL fails here.
 final class UsageOnlyHTTPClient: HTTPClient, @unchecked Sendable {
-    private(set) var requests: [HTTPRequest] = []
+    private let recorded = RecordedHTTPRequests()
+    var requests: [HTTPRequest] { recorded.all }
     private let handler: @Sendable (HTTPRequest) async throws -> HTTPResponse
 
     init(_ handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse) {
@@ -107,7 +108,7 @@ final class UsageOnlyHTTPClient: HTTPClient, @unchecked Sendable {
         if request.url != ClaudeSwapOAuth.usageURL || request.method != "GET" {
             XCTFail("a claude-swap card may only GET the usage endpoint, got \(request.method) \(request.url)")
         }
-        requests.append(request)
+        recorded.append(request)
         return try await handler(request)
     }
 }
