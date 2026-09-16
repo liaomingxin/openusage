@@ -170,7 +170,7 @@ Local spend does not require a Claude OAuth login. If Claude Code uses an API-ke
 - **"claude-swap's stashed login was rejected"** (an amber warning on a claude-swap card) — Anthropic has
   turned that stashed login down, so the card is showing claude-swap's cached percentages. Run `cswap` and
   sign the account in again; the live meters and Extra Usage come back on the next refresh.
-- **Spend tiles show "No data"** — OpenUsage found no Claude Code logs in the last 30 days. If your logs live somewhere custom, set `CLAUDE_CONFIG_DIR` so both Claude Code and OpenUsage look in the same place.
+- **Spend tiles show "No data"** — OpenUsage found no Claude Code logs in the last 30 days. If your logs live somewhere custom, set `CLAUDE_CONFIG_DIR` so both Claude Code and OpenUsage look in the same place. If only the oldest days of the window are missing, Claude Code's own 30-day transcript cleanup is the usual reason — see [Usage history](../usage-history.md) for how to keep them longer.
 
 ## Under the hood
 

@@ -76,7 +76,7 @@ credits and local spend rows are unaffected.
 
 - **"Not logged in"** — run `codex` and sign in, then refresh.
 - **API-key-only setups** can't read subscription usage — sign in with your ChatGPT account instead.
-- **Spend tiles show "No data"** — OpenUsage found no qualifying Codex usage in Codex, pi, or OpenCode logs from the last 30 days. If your Codex home lives somewhere custom, set `CODEX_HOME` so both the Codex CLI and OpenUsage look in the same place.
+- **Spend tiles show "No data"** — OpenUsage found no qualifying Codex usage in Codex, pi, or OpenCode logs from the last 30 days. If your Codex home lives somewhere custom, set `CODEX_HOME` so both the Codex CLI and OpenUsage look in the same place. Codex doesn't clean up its session rollouts on its own, so days dropping out of the window is just the window rolling past them — see [Usage history](../usage-history.md).
 - **OpenCode usage is missing** — OpenCode must currently have an `openai` OAuth credential in its
   `auth.json`. An OpenAI API key is deliberately excluded from Codex subscription totals.
 

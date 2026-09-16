@@ -2,8 +2,9 @@ import SwiftUI
 
 /// The Usage Trend row: a compact, right-aligned day-by-day token sparkline that reads at a glance and
 /// keeps the card's row rhythm. Hovering reveals a larger, readable chart (`UsageTrendDetail`) with the
-/// peak, the date range, the source note, and per-bar highlight. The bars render already-priced per-day
-/// numbers (`MetricChartPoint`); this view never computes usage, only draws it.
+/// peak, the date range, the current and longest activity streaks, the source note, and per-bar
+/// highlight. The bars render already-priced per-day numbers (`MetricChartPoint`); this view never
+/// computes usage, only draws it.
 struct UsageSparkline: View {
     let data: WidgetData
     /// The row's per-day points (the producer already validated and capped them); held directly so the
