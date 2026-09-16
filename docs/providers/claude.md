@@ -132,8 +132,12 @@ session belongs to in September 2026, and a session driven remotely from another
 account driving it, so most local sessions would otherwise be dropped and the tiles would read **No
 data**.
 
+A session that names an account with no card here — one driven remotely from another device, or a login
+you have since removed — also lands on that card, for the same reason: it ran on this Mac and nothing
+else reports it. An account that does have its own card keeps its own sessions.
+
 Every other card keeps the strict rule: a Desktop organization card and a claude-swap card only count
-sessions that name that exact account and organization. So unowned usage is counted once, never twice.
+sessions that name that exact account and organization. So each session is counted once, never twice.
 One consequence to know about: after switching the active login (`cswap switch`), sessions that older
 Claude Code versions wrote without an account are credited to whichever login is active now.
 

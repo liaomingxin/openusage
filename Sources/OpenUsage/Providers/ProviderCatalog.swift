@@ -31,6 +31,9 @@ enum ProviderCatalog {
                 let scanner = ClaudeLogUsageScanner(
                     accountUUID: user, organizationUUID: card.organizationID,
                     allowsUnattributedSessions: countsMachineLocalUsage,
+                    organizationsClaimedByOtherCards: Set(
+                        claudeCards.filter { $0.id != card.id }.compactMap(\.organizationID)
+                    ),
                     additionalConfigDirectories: card.additionalLogDirectories
                 )
                 return ClaudeProvider(

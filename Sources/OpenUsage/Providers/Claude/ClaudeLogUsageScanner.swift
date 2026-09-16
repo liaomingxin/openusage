@@ -31,6 +31,11 @@ actor ClaudeLogUsageScanner {
     private let additionalConfigDirectories: [String]
     /// `nonisolated` so the catalog's wiring can be asserted without awaiting the actor.
     nonisolated let allowsUnattributedSessions: Bool
+    /// Organizations that another card already scans for (`ownerOrganizationUuid`, lowercased). Set
+    /// only on the machine-local card: a session stamped with an organization nobody else claims —
+    /// a remote/bridge session, or a login that has since been removed — is this Mac's spending and
+    /// belongs on its card, while an organization with its own card keeps its own sessions.
+    nonisolated let organizationsClaimedByOtherCards: Set<String>
     private var sessionOwnership: [String: (
         size: Int, mtime: Date, identity: ClaudeSessionIdentity
     )] = [:]
@@ -73,6 +78,7 @@ actor ClaudeLogUsageScanner {
         accountUUID: String? = nil,
         organizationUUID: String? = nil,
         allowsUnattributedSessions: Bool = false,
+        organizationsClaimedByOtherCards: Set<String> = [],
         additionalConfigDirectories: [String] = [],
         readOwnershipData: @escaping @Sendable (URL) throws -> Data = {
             try Data(contentsOf: $0, options: .mappedIfSafe)
@@ -87,6 +93,7 @@ actor ClaudeLogUsageScanner {
         self.accountID = accountUUID?.lowercased()
         self.additionalConfigDirectories = additionalConfigDirectories
         self.allowsUnattributedSessions = allowsUnattributedSessions
+        self.organizationsClaimedByOtherCards = Set(organizationsClaimedByOtherCards.map { $0.lowercased() })
         self.readOwnershipData = readOwnershipData
     }
 
@@ -305,6 +312,9 @@ actor ClaudeLogUsageScanner {
             if case .conflicted = ownership { continue }
             if case let .owned(owner, ownerAccount) = ownership {
                 if owner == organizationID, accountID == nil || ownerAccount == accountID {
+                    ownedFiles.append(file)
+                } else if allowsUnattributedSessions, !organizationsClaimedByOtherCards.contains(owner) {
+                    // Machine-local card: nobody else reports this session, and it did run on this Mac.
                     ownedFiles.append(file)
                 }
             } else if allowsUnattributedSessions {

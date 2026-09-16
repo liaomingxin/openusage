@@ -486,14 +486,28 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
             XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, expectedCost, accuracy: 1e-9, organizationID)
         }
 
-        let singleAccountScanner = ClaudeLogUsageScanner(
+        // Fork: the machine-local card reports what this Mac spent. It takes the unowned sessions and
+        // every session whose organization has no card of its own — here org-b and the same-org session
+        // belonging to another user. The ambiguous session stays out: conflicting ownership is never
+        // guessed at. See ClaudeMachineLocalSpendTests and FORK.md.
+        let machineLocalScanner = ClaudeLogUsageScanner(
             environment: FakeEnvironment([:]), homeDirectory: { home }, incrementalScanner: sharedCache,
             accountUUID: "user-a", organizationUUID: "org-a", allowsUnattributedSessions: true
         )
-        let singleAccountResult = await singleAccountScanner.scan(now: now, pricing: pricing)
-        let singleAccountScan = try XCTUnwrap(singleAccountResult)
-        XCTAssertEqual(singleAccountScan.series.daily.first?.totalTokens, 1680)
-        XCTAssertEqual(singleAccountScan.series.daily.first?.costUSD ?? 0, 9.35, accuracy: 1e-9)
+        let machineLocalResult = await machineLocalScanner.scan(now: now, pricing: pricing)
+        let machineLocalScan = try XCTUnwrap(machineLocalResult)
+        XCTAssertEqual(machineLocalScan.series.daily.first?.totalTokens, 5422)
+        XCTAssertEqual(machineLocalScan.series.daily.first?.costUSD ?? 0, 20.81, accuracy: 1e-9)
+
+        // …unless org-b has its own card, which reports those sessions itself.
+        let alongsideOrgBCard = ClaudeLogUsageScanner(
+            environment: FakeEnvironment([:]), homeDirectory: { home }, incrementalScanner: sharedCache,
+            accountUUID: "user-a", organizationUUID: "org-a", allowsUnattributedSessions: true,
+            organizationsClaimedByOtherCards: ["org-b"]
+        )
+        let alongsideResult = await alongsideOrgBCard.scan(now: now, pricing: pricing)
+        let alongsideScan = try XCTUnwrap(alongsideResult)
+        XCTAssertEqual(alongsideScan.series.daily.first?.totalTokens, 5422 - 242)
     }
 
     func testOrganizationScanRefreshesChangedSessionOwnership() async throws {

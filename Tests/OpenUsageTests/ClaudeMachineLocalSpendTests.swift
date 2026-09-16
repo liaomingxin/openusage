@@ -75,6 +75,71 @@ final class ClaudeMachineLocalSpendTests: XCTestCase {
         }
     }
 
+    /// A session stamped with an organization that has no card here — a remote/bridge session driven
+    /// from another device, or a login since removed — is still this Mac's spending, so the machine-local
+    /// card takes it. An organization that does have a card keeps its own sessions.
+    func testMachineLocalCardTakesSessionsNoOtherCardClaims() async throws {
+        let now = Date()
+        let timestamp = OpenUsageISO8601.string(from: now)
+        func session(owner: String, account: String, id: String) -> String {
+            #"{"ownerOrganizationUuid":"\#(owner)","ownerAccountUuid":"\#(account)"}"# + "\n"
+                + ClaudeLogFixture.usageLine(
+                    timestamp: timestamp, input: 1000, output: 0, costUSD: 1,
+                    messageID: id, requestID: id
+                )
+        }
+        let home = try ClaudeLogFixture.makeUserHome(claudeFiles: [
+            "workspace/mine.jsonl": session(owner: "org-1", account: "acct-1", id: "mine"),
+            "workspace/bridge.jsonl": session(owner: "org-remote", account: "acct-remote", id: "bridge"),
+            "workspace/other-card.jsonl": session(owner: "org-9", account: "acct-9", id: "other")
+        ])
+
+        let machineLocal = ClaudeLogUsageScanner(
+            environment: FakeEnvironment([:]), homeDirectory: { home },
+            incrementalScanner: IncrementalJSONLScanner<ClaudeLogUsageScanner.Entry>(),
+            accountUUID: "acct-1", organizationUUID: "org-1",
+            allowsUnattributedSessions: true, organizationsClaimedByOtherCards: ["org-9"]
+        )
+        let machineResult = await machineLocal.scan(now: now, pricing: TestPricing.bundled)
+        let scan = try XCTUnwrap(machineResult)
+        // Its own session plus the unclaimed remote one; never org-9's, which has its own card.
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 2000)
+
+        let otherCard = ClaudeLogUsageScanner(
+            environment: FakeEnvironment([:]), homeDirectory: { home },
+            incrementalScanner: IncrementalJSONLScanner<ClaudeLogUsageScanner.Entry>(),
+            accountUUID: "acct-9", organizationUUID: "org-9"
+        )
+        let otherResult = await otherCard.scan(now: now, pricing: TestPricing.bundled)
+        let otherScan = try XCTUnwrap(otherResult)
+        XCTAssertEqual(otherScan.series.daily.first?.totalTokens, 1000, "org-9 keeps its own session")
+    }
+
+    /// The catalog tells each card which organizations the others already scan, so one session is
+    /// never counted on two cards.
+    func testCatalogTellsEachCardWhichOrganizationsOthersClaim() throws {
+        let cards = [
+            ClaudeAccountCard(
+                id: "claude", identityKey: "acct-1|org-1", organizationID: "org-1",
+                accountLabel: "Personal", usesDesktopCredentials: false,
+                allowsUnattributedPiUsage: false, ownsDefaultHome: true
+            ),
+            ClaudeAccountCard(
+                id: "claude@desktop", identityKey: "acct-9|org-9", organizationID: "org-9",
+                accountLabel: "Work", usesDesktopCredentials: true, allowsUnattributedPiUsage: false
+            )
+        ]
+
+        let claimed = ProviderCatalog.make(
+            claudeCards: cards,
+            claudeIdentityKeys: ["claude": "acct-1|org-1", "claude@desktop": "acct-9|org-9"]
+        ).compactMap { $0 as? ClaudeProvider }.reduce(into: [String: Set<String>]()) {
+            $0[$1.provider.id] = $1.logUsageScanner.organizationsClaimedByOtherCards
+        }
+
+        XCTAssertEqual(claimed, ["claude": ["org-9"], "claude@desktop": ["org-1"]])
+    }
+
     /// Only the `~/.claude` login gets the machine-wide reading: a Desktop organization card keeps the
     /// strict rule, or two cards would each claim the same unowned sessions.
     func testDesktopOrganizationCardKeepsTheStrictOwnershipRule() throws {
