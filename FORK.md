@@ -160,6 +160,11 @@ git push origin main
 - **Provider SVG 图标**：解析器只支持 `M/L/H/V/C/S/Q/T/Z`，**不支持圆弧 `A/a`**——新图标用贝塞尔写
 - **本地 API 端口**：`127.0.0.1:6736` 只有一个实例能绑；dev 和正式版同时跑时，curl 打到的可能是旧实例
 - **正式版 app 与 dev 版**：同机共存没问题（bundle id 不同），但装了正式版时注意别 curl 到旧实例
+- **版本号怎么来的**（2026-09-17 改）：`build_and_run.sh` 读 `OPENUSAGE_VERSION`——CI 发布时传 tag（去掉 `v`），
+  本地 dev 构建没有这个变量，就用 `git describe` 拼成 `<最近的 tag>+dev.<短哈希>[.dirty]`，
+  比如 `0.7.12-beta.2-kimi.1+dev.9bc65d9.dirty`。以前所有 dev 构建都硬编码 `0.7.0-dev`，
+  页脚看不出跑的是哪次构建，只能比二进制 mtime。`personal-release.yml` 因此不再 `sed` 改脚本，
+  改脚本里这段时记得同步看 workflow
 - **claude-swap 卡的钥匙串授权可能每次升级都要重点一次**：`personal-release.yml` 出的 DMG 是
   ad-hoc 签名，每次构建的签名标识都不一样，所以 macOS 对 `claude-swap` 这个钥匙串条目的
   「始终允许」授权**不一定能跨版本延续**——升到新的 `kimi.N` 后可能再弹一次授权框（点一次

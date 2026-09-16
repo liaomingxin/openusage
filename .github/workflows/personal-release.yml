@@ -49,10 +49,9 @@ jobs:
           BUNDLE_ID: com.robinebers.openusage
         run: |
           # build_and_run.sh builds (release config), stages dist/OpenUsage.app, signs; MODE=build
-          # stops before launch. APP_VERSION is hardcoded in the script — inject the tag version
-          # and the real (non-dev) CFBundleShortVersionString via sed.
-          sed -i '' "s/^APP_VERSION=\"0.7.0\"/APP_VERSION=\"$OPENUSAGE_VERSION\"/" script/build_and_run.sh
-          sed -i '' 's|<string>$APP_VERSION-dev</string>|<string>$APP_VERSION</string>|' script/build_and_run.sh
+          # stops before launch. It reads OPENUSAGE_VERSION for the bundle's version, so a release
+          # carries the tag verbatim while a dev build derives "<tag>+dev.<sha>" from git.
+          [ -n "$OPENUSAGE_VERSION" ] || { echo "OPENUSAGE_VERSION is empty" >&2; exit 1; }
           ./script/build_and_run.sh build
 
       - name: Wrap in DMG

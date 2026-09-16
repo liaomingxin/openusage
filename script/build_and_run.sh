@@ -25,10 +25,23 @@ APP_DISPLAY="OpenUsage"                 # user-facing app name
 BUNDLE_ID="${BUNDLE_ID:-com.robinebers.openusage.dev}"
 ICLOUD_CONTAINER_ID="iCloud.com.robinebers.openusage.dev"
 MIN_SYSTEM_VERSION="15.0"
-APP_VERSION="0.7.0"
 APP_BUILD="0.7.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# The version the app shows in its footer and About tab. A release build passes the tag through
+# OPENUSAGE_VERSION (personal-release.yml). A dev build derives one from git, because every dev
+# bundle used to report the same "0.7.0-dev" — two of them were indistinguishable in the UI, and
+# telling a fresh build from a months-old copy in /Applications meant comparing binary mtimes.
+if [ -n "${OPENUSAGE_VERSION:-}" ]; then
+  APP_VERSION="$OPENUSAGE_VERSION"
+else
+  DEV_TAG="$(git -C "$ROOT_DIR" describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+  DEV_SHA="$(git -C "$ROOT_DIR" rev-parse --short=7 HEAD 2>/dev/null || true)"
+  git -C "$ROOT_DIR" diff --quiet HEAD -- 2>/dev/null || DEV_SHA="${DEV_SHA:-unknown}.dirty"
+  APP_VERSION="${DEV_TAG:-v0.7.0}"
+  APP_VERSION="${APP_VERSION#v}+dev.${DEV_SHA:-unknown}"
+fi
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_DISPLAY.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
@@ -133,7 +146,7 @@ cat >"$INFO_PLIST" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>$APP_VERSION-dev</string>
+  <string>$APP_VERSION</string>
   <key>CFBundleVersion</key>
   <string>$APP_BUILD</string>
   <key>LSMinimumSystemVersion</key>
