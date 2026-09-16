@@ -125,7 +125,7 @@ actor ModelPricingStore {
         let stamp = CustomPricingFile.stamp(at: customPricingURL)
         guard stamp != customFileStamp else { return }
         customFileStamp = stamp
-        guard let stamp else {
+        guard stamp != nil else {
             applyCustomPricing(.empty, problem: nil)
             return
         }
