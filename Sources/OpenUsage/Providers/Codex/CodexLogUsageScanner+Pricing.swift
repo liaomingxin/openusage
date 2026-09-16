@@ -60,19 +60,25 @@ extension CodexLogUsageScanner {
                 usedFallback = fallbackModel
             }
             guard let rates = resolvedRates else { continue }
-            let eventCost = cost(rates: rates, event: event, model: rateModel, fastTier: appliesCodexFastTier)
-            accumulator.add(
-                day: day, tokens: event.total, cost: eventCost, model: model,
-                fallbackPricingModel: usedFallback
-            )
+            // Rates can still fail to cover the event (a custom-pricing entry omitting a field the
+            // event bills at) — that stays unpriced and warned about, exactly like an unknown model.
+            if let eventCost = cost(rates: rates, event: event, model: rateModel, fastTier: appliesCodexFastTier) {
+                accumulator.add(
+                    day: day, tokens: event.total, cost: eventCost, model: model,
+                    fallbackPricingModel: usedFallback
+                )
+            } else if event.total > 0 {
+                accumulator.addUnknownModel(day: day, model: model)
+            }
         }
 
         return accumulator.build()
     }
 
     /// Native rollout events count cached tokens inside `input`; the shared estimator takes disjoint
-    /// buckets, so the cached portion is subtracted here rather than in `CodexUsagePricing`.
-    static func cost(rates: ModelRates, event: Event, model: String, fastTier: Bool) -> Double {
+    /// buckets, so the cached portion is subtracted here rather than in `CodexUsagePricing`. Nil when
+    /// the rates don't cover one of the event's billed buckets.
+    static func cost(rates: ModelRates, event: Event, model: String, fastTier: Bool) -> Double? {
         CodexUsagePricing.cost(
             rates: rates,
             tokens: TokenBreakdown(

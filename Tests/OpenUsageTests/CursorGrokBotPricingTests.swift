@@ -45,7 +45,7 @@ final class CursorGrokBotPricingTests: XCTestCase {
                     MetricValue(number: dollars, kind: .dollars, estimated: true),
                     MetricValue(number: Double(20_000 * scale * days), kind: .count, label: "tokens")
                 ], label)
-                XCTAssertEqual(unknownModels, ["grok-bot-cua"], label)
+                XCTAssertEqual(unknownModels, ["grok-bot-cua (no known price)"], label)
             }
         }
     }

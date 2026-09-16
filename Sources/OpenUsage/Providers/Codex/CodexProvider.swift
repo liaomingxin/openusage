@@ -225,7 +225,8 @@ final class CodexProvider: ProviderRuntime {
                 unknownModelsByDay: scan.unknownModelsByDay,
                 modelUsage: scan.modelUsage,
                 modelSourceNote: baseNote,
-                fallbackPricingModelsByDay: scan.fallbackPricingModelsByDay
+                fallbackPricingModelsByDay: scan.fallbackPricingModelsByDay,
+                pricing: pricing
             )
             SpendTileMapper.appendUsageTrend(
                 scan.series, to: &mapped.lines, now: now(), note: baseNote,

@@ -4,17 +4,36 @@ How OpenUsage turns token counts into the estimated dollars on the Claude, Codex
 
 ## Where prices come from
 
-Prices are layered from three sources; when the same model appears in more than one, the higher layer wins:
+Prices are layered from four sources; when the same model appears in more than one, the higher layer wins:
 
-1. **OpenUsage pricing supplement** — a small JSON file maintained in this repo and published to GitHub Pages. It covers models no public catalog carries (Cursor-native models like `auto` and `composer-*`), fast-variant multipliers, and alias rules that map provider log/CSV slugs to catalog keys.
-2. **LiteLLM** — the community-maintained `model_prices_and_context_window.json`, covering the vast majority of API-priced models.
-3. **models.dev** — a gap-filler for models LiteLLM misses (e.g. some brand-new or niche models).
+1. **Your custom pricing file** — `~/.config/openusage/custom-pricing.json`, edited by you (see [Setting your own prices](#setting-your-own-prices)). It wins over everything else, so a model no catalog prices yet can be priced immediately instead of waiting for a repo update.
+2. **OpenUsage pricing supplement** — a small JSON file maintained in this repo and published to GitHub Pages. It covers models no public catalog carries (Cursor-native models like `auto` and `composer-*`), fast-variant multipliers, and alias rules that map provider log/CSV slugs to catalog keys.
+3. **LiteLLM** — the community-maintained `model_prices_and_context_window.json`, covering the vast majority of API-priced models.
+4. **models.dev** — a gap-filler for models LiteLLM misses (e.g. some brand-new or niche models).
 
 The app ships with bundled snapshots of all three, so pricing works offline and on first launch. At runtime each source is refetched about once an hour (with ETag revalidation) and cached in `~/Library/Application Support/OpenUsage/pricing/`. A refresh never blocks a usage scan — scans always price against the freshest data already on hand.
 
 Because the supplement is published to GitHub Pages on merge, a pricing correction reaches installed apps within about an hour — no app update needed.
 
 Updating the app also works. The supplement carries an ISO-8601 `updated_at` timestamp, and the app uses whichever of the cached and bundled copies is newer, so a build shipping fresher rates applies them straight away instead of waiting on the cache to expire. Timestamp precision matters because multiple pricing changes can land on the same day. Older date-only values remain supported. This matters most offline: without it, an old cache would shadow the shipped rates for as long as the feed stayed unreachable.
+
+## Setting your own prices
+
+When a spend tile shows the warning triangle and you can't wait for a catalog update, add the model's rates yourself in `~/.config/openusage/custom-pricing.json`:
+
+```json
+{"models": {"grok-bot-cua": {"input_cost_per_million_tokens": 0.6,
+                             "output_cost_per_million_tokens": 2.2,
+                             "cache_read_cost_per_million_tokens": 0.06,
+                             "cache_write_cost_per_million_tokens": 0.75}}}
+```
+
+Rates are USD per million tokens, and each field is optional:
+
+- **An explicit `0` means free** — a real price, billed at $0.
+- **An omitted field means unknown** — never free. A request whose usage falls in an omitted bucket stays unpriced and warned about, while requests that touch only the fields you set price normally.
+
+The model id can be the raw slug from the log/CSV (the name the warning triangle lists) or its canonical catalog key — the raw slug is checked first. Entries here win over the supplement and both catalogs. The file is re-read only when it changes on disk, so edits apply on the next usage refresh, and removing the file returns pricing to the catalog layers. A file that exists but can't be parsed (bad JSON, wrong types) is reported: the spend tiles' warning triangle lists the problem alongside any unknown models, and the app keeps pricing from the other sources meanwhile — nothing is silently ignored.
 
 ## How a model name resolves
 
@@ -26,7 +45,7 @@ Gemini 3.8 Flash includes Cursor effort variants such as `gemini-3.8-flash-high`
 
 Muse Spark 1.3 uses the same rates at every Cursor effort level: Minimal, Low, Medium, High, Extra High (`xhigh` or `extra-high`), and Max. The bundled rates match [Cursor's pricing](https://cursor.com/docs/models-and-pricing.md): $1.25 input and cache writes, $0.15 cache reads, and $4.25 output per million tokens, with no long-context surcharge. All efforts count toward spend and group under `muse-spark-1.3` in the model breakdown, even before the first pricing refresh. Contributor variants have separate pricing and are not included in these aliases.
 
-A model no source can price is left out of the spend figures unless its session already records the actual cost. Otherwise, its tokens don't count toward the day's tile, the Usage Trend, or the model breakdown, because a token count next to a dollar figure that ignores part of it would be misleading. A warning triangle on the affected tiles lists the unpriced models, and a day where nothing could be priced reads "No data".
+A model no source can price is left out of the spend figures unless its session already records the actual cost. Otherwise, its tokens don't count toward the day's tile, the Usage Trend, or the model breakdown, because a token count next to a dollar figure that ignores part of it would be misleading. A warning triangle on the affected tiles lists the unpriced models — each with its reason, so a model no source knows reads differently from a custom-pricing entry that omits rate fields — and points at the custom pricing file as the place to add rates yourself. A day where nothing could be priced reads "No data".
 
 Codex offers an optional **Fallback Model** under **Customize → Codex → Cost Estimates**. It defaults to **None**, which keeps the behavior above. Choosing a model estimates otherwise-unpriced local usage at that model's rates, including cached input, long-context requests, and the session's speed tier. Known prices still win. The unknown-model warning triangle and its tooltip stay visible: a fallback estimates the cost but does not establish the model's own price. Changing the choice recalculates the local history, including earlier days; it does not change the model used by Codex. Choosing **None** excludes unpriced usage again. The model breakdown and trend source note identify fallback estimates only for the days shown. Estimates outside the history window do not affect these notes. Synced history keeps the estimates made on each source Mac; this preference does not reprice another Mac's history.
 

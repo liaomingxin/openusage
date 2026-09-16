@@ -16,7 +16,9 @@ enum SpendTileMapper {
     /// `unknownModelsByDay` maps a `yyyy-MM-dd` day key to the set of model names used that day that no
     /// pricing source can price. Today / Yesterday pick up their own day's set; Last 30 Days carries the
     /// union across the whole window. Empty (the default) for sources without unknown-model detection, so
-    /// their tiles never carry unknown-model warnings.
+    /// their tiles never carry unknown-model warnings. `pricing`, when the caller shares its scan's
+    /// snapshot, annotates each name with *why* it's unpriced — no source knows the id, or a
+    /// custom-pricing entry omits rates — so the warning tooltip is actionable instead of just a name.
     static func appendTokenUsage(
         _ usage: DailyUsageSeries,
         to lines: inout [MetricLine],
@@ -25,14 +27,15 @@ enum SpendTileMapper {
         unknownModelsByDay: [String: Set<String>] = [:],
         modelUsage: ModelUsageSeries? = nil,
         modelSourceNote: String? = nil,
-        fallbackPricingModelsByDay: [String: Set<String>]? = nil
+        fallbackPricingModelsByDay: [String: Set<String>]? = nil,
+        pricing: ModelPricing? = nil
     ) {
         let today = dayKey(from: now)
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now).map(dayKey(from:))
 
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == today }), hasUsage(entry) {
             lines.append(dayUsageLine(label: "Today", entry: entry, estimated: estimated,
-                                      unknownModels: sortedModels(unknownModelsByDay[today]),
+                                      unknownModels: unknownModelEntries(unknownModelsByDay[today], pricing: pricing),
                                       modelBreakdown: modelBreakdown(
                                         modelUsage,
                                         days: [today],
@@ -44,7 +47,7 @@ enum SpendTileMapper {
         }
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == yesterday }), hasUsage(entry) {
             lines.append(dayUsageLine(label: "Yesterday", entry: entry, estimated: estimated,
-                                      unknownModels: sortedModels(yesterday.flatMap { unknownModelsByDay[$0] }),
+                                      unknownModels: unknownModelEntries(yesterday.flatMap { unknownModelsByDay[$0] }, pricing: pricing),
                                       modelBreakdown: modelBreakdown(
                                         modelUsage,
                                         days: Set([yesterday].compactMap { $0 }),
@@ -62,7 +65,7 @@ enum SpendTileMapper {
             let allUnknown = unknownModelsByDay.values.reduce(into: Set<String>()) { $0.formUnion($1) }
             lines.append(.values(label: "Last 30 Days",
                                  values: spendValues(tokens: totalTokens, costUSD: totalCost, estimated: estimated),
-                                 unknownModels: sortedModels(allUnknown),
+                                 unknownModels: unknownModelEntries(allUnknown, pricing: pricing),
                                  modelBreakdown: modelBreakdown(
                                     modelUsage,
                                     days: Set(usage.daily.compactMap { dayKey(fromUsageDate: $0.date) }),
@@ -174,9 +177,28 @@ enum SpendTileMapper {
                 unknownModels: unknownModels, modelBreakdown: modelBreakdown)
     }
 
-    /// Stable, de-duplicated display order for a period's unknown-model names (the set is unordered).
-    private static func sortedModels(_ models: Set<String>?) -> [String] {
-        (models ?? []).sorted()
+    /// A period's unknown-model tooltip entries: each name plus — when the pricing snapshot is at
+    /// hand — the reason it has no price, so the user can tell a model no source recognizes from a
+    /// custom-pricing entry that omits rate fields (and fix the latter). Names stay plain when no
+    /// snapshot is provided (the caller's scan priced without one available) or when the snapshot
+    /// has since learned the model. A custom-pricing file that failed to load appends its own line,
+    /// so the warning triangle appears even when every catalog price is otherwise fine.
+    private static func unknownModelEntries(_ models: Set<String>?, pricing: ModelPricing?) -> [String] {
+        var entries = (models ?? []).map { model -> String in
+            guard let pricing else { return model }
+            switch pricing.unpricedReason(for: model) {
+            case .incompleteCustomRates(let missing):
+                return "\(model) (custom price omits \(missing.joined(separator: ", ")) rates)"
+            case .unknownModel:
+                return "\(model) (no known price)"
+            case nil:
+                return model
+            }
+        }.sorted()
+        if let problem = pricing?.customPricingProblem {
+            entries.append(problem)
+        }
+        return entries
     }
 
     /// One period's spend as raw values: the estimated dollars followed by the measured token count,

@@ -378,7 +378,8 @@ enum CursorUsageMapper {
         SpendTileMapper.appendTokenUsage(series, to: &lines, now: now, estimated: true,
                                          unknownModelsByDay: unknownModelsByDay,
                                          modelUsage: modelUsage,
-                                         modelSourceNote: "From your Cursor usage export")
+                                         modelSourceNote: "From your Cursor usage export",
+                                         pricing: pricing)
         // Cursor's tokens come from the server-exported usage CSV, not a local CLI log, so the trend
         // note names that source rather than the "estimated from local logs" line the log-scanning
         // providers use. Tokens are measured either way.

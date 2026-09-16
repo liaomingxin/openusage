@@ -6,17 +6,25 @@ import os
 /// synchronously for a whole parse pass.
 ///
 /// Resolution for a model name:
-/// 1. Supplement alias rules rewrite the slug to a canonical key (raw name kept as fallback).
-/// 2. Supplement pricing (exact) — Cursor-native models live here.
-/// 3. LiteLLM exact.
-/// 4. `-fast` suffix: price the base model and scale by its fast multiplier; if no multiplier or
+/// 1. The user's custom pricing file (`~/.config/openusage/custom-pricing.json`), by exact id or
+///    alias-canonical key — the user is explicitly overriding, so it wins over every other source.
+/// 2. Supplement alias rules rewrite the slug to a canonical key (raw name kept as fallback).
+/// 3. Supplement pricing (exact) — Cursor-native models live here.
+/// 4. LiteLLM exact.
+/// 5. `-fast` suffix: price the base model and scale by its fast multiplier; if no multiplier or
 ///    exact fast entry exists, leave it unpriced instead of silently using standard-speed rates.
-/// 5. LiteLLM fuzzy (boundary-aware substring matching, for non-fast slugs only).
-/// 6. models.dev exact — id-level gap-filler only. models.dev aggregates resellers under near-
+/// 6. LiteLLM fuzzy (boundary-aware substring matching, for non-fast slugs only).
+/// 7. models.dev exact — id-level gap-filler only. models.dev aggregates resellers under near-
 ///    identical bare ids (`glm-5-2` vs `glm-5.2`) with diverging rates, so fuzzy matching against
 ///    it risks wrong dollars; unknown slug variants stay unpriced (and visibly flagged) instead.
 final class ModelPricing: Sendable {
     let supplement: PricingSupplement
+    /// The user's own overrides — highest-precedence source (see the type doc for the layer order).
+    let custom: CustomPricing
+    /// A friendly reason the custom file's overrides are currently ignored (unreadable file), shown
+    /// on the spend tiles' warning tooltip. Nil when the file is absent or loaded fine — an absent
+    /// file is normal, not an error.
+    let customPricingProblem: String?
     /// LiteLLM `model_prices_and_context_window.json` (bundled snapshot merged with fetched data).
     let primary: PricingCatalog
     /// models.dev `api.json` — gap-filler for models LiteLLM misses (e.g. `grok-build-0.1`).
@@ -28,8 +36,16 @@ final class ModelPricing: Sendable {
     /// The alias scan walks every rule, and breakdown naming asks for the same slugs row after row.
     private let canonicalMemo = OSAllocatedUnfairLock<[String: String]>(initialState: [:])
 
-    init(supplement: PricingSupplement, primary: PricingCatalog, secondary: PricingCatalog) {
+    init(
+        supplement: PricingSupplement,
+        custom: CustomPricing = .empty,
+        customPricingProblem: String? = nil,
+        primary: PricingCatalog,
+        secondary: PricingCatalog
+    ) {
         self.supplement = supplement
+        self.custom = custom
+        self.customPricingProblem = customPricingProblem
         self.primary = primary
         self.secondary = secondary
     }
@@ -69,7 +85,8 @@ final class ModelPricing: Sendable {
         return canonical
     }
 
-    /// Dollar cost of `tokens` for `model`, or nil when the model can't be priced. Aggregated sources
+    /// Dollar cost of `tokens` for `model`, or nil when the model can't be priced — including when a
+    /// custom-pricing entry omits one of the rates this request would bill at. Aggregated sources
     /// can disable long-context tiers when they do not preserve individual request boundaries.
     func estimatedCostDollars(
         model: String,
@@ -80,11 +97,37 @@ final class ModelPricing: Sendable {
         return rates.costDollars(for: tokens, applyLongContextRates: applyLongContextRates)
     }
 
+    /// Why a model the spend tiles flagged as unpriced has no price, so the warning can tell the
+    /// user what to do instead of just naming the model. Nil when every source prices it fine.
+    enum UnpricedModelReason: Equatable, Sendable {
+        /// No source — custom file, supplement, or either catalog — recognizes the model id.
+        case unknownModel
+        /// The custom file has an entry, but it omits rates; the missing fields' display names ride
+        /// along so the tooltip can say exactly which lines to add.
+        case incompleteCustomRates(missingFields: [String])
+    }
+
+    /// Classifies one flagged model name (the raw slug the scanner reported). A model whose custom
+    /// entry is complete but whose *usage* touches an omitted bucket still resolves to rates, so
+    /// this consults the custom entry's missing fields directly rather than `resolve`'s result.
+    func unpricedReason(for model: String) -> UnpricedModelReason? {
+        let missing = custom.missingFieldNames(for: model)
+        if !missing.isEmpty { return .incompleteCustomRates(missingFields: missing) }
+        let canonical = canonicalName(for: model)
+        if canonical != model {
+            let canonicalMissing = custom.missingFieldNames(for: canonical)
+            if !canonicalMissing.isEmpty { return .incompleteCustomRates(missingFields: canonicalMissing) }
+        }
+        guard resolve(model: model) == nil else { return nil }
+        return .unknownModel
+    }
+
     private func resolveUncached(model: String) -> ModelRates? {
         if let canonical = supplement.canonicalName(for: model), canonical != model {
-            return lookup(canonical) ?? lookup(model)
+            return (custom.rates(for: model) ?? custom.rates(for: canonical))
+                ?? (lookup(canonical) ?? lookup(model))
         }
-        return lookup(model)
+        return custom.rates(for: model) ?? lookup(model)
     }
 
     /// The secondary catalog is consulted only after the whole primary lookup misses, like ccusage —

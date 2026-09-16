@@ -365,7 +365,8 @@ final class WidgetDataStore {
                 history: history,
                 descriptor: descriptor,
                 now: now(),
-                combined: false
+                combined: false,
+                pricing: await ModelPricingStore.shared.current()
             )
             AppLog.debug(.refresh, "preserved last-good history for \(providerID) after scan miss")
         }
