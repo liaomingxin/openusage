@@ -20,13 +20,25 @@ final class ClaudeSessionIdentityTests: XCTestCase {
 
     func testConflictsAndUnattributedAreDistinct() {
         let first = #"{"ownerOrganizationUuid":"org-a","ownerAccountUuid":"user-a"}"#
-        for second in [
-            #"{"ownerOrganizationUuid":"org-b","ownerAccountUuid":"user-a"}"#,
-            #"{"ownerOrganizationUuid":"org-a","ownerAccountUuid":"user-b"}"#
-        ] {
-            XCTAssertEqual(ClaudeSessionIdentity.parse(Data((first + "\n" + second).utf8)), .conflicted)
-        }
+        // An even split between two organizations is a genuine tie: nobody may claim the session.
+        let tie = #"{"ownerOrganizationUuid":"org-b","ownerAccountUuid":"user-a"}"#
+        XCTAssertEqual(ClaudeSessionIdentity.parse(Data((first + "\n" + tie).utf8)), .conflicted)
+        // One organization, two users, evenly split: the organization still owns it, the user is unknown.
+        let sameOrganization = #"{"ownerOrganizationUuid":"org-a","ownerAccountUuid":"user-b"}"#
+        XCTAssertEqual(ClaudeSessionIdentity.parse(Data((first + "\n" + sameOrganization).utf8)),
+                       .owned(organizationID: "org-a", accountID: nil))
         XCTAssertEqual(ClaudeSessionIdentity.parse(Data("{}\n".utf8)), .unattributed)
+    }
+
+    /// Fork: a remote/bridge attachment stamps the account driving it, so a long session can carry a
+    /// few foreign ownership records. The organization owning most of them owns the session.
+    func testMajorityOwnerWinsOverStrayRecords() {
+        let mine = #"{"ownerOrganizationUuid":"org-a","ownerAccountUuid":"user-a"}"#
+        let bridge = #"{"ownerOrganizationUuid":"org-remote","ownerAccountUuid":"user-remote"}"#
+        let session = ([bridge] + Array(repeating: mine, count: 3)).joined(separator: "\n")
+
+        XCTAssertEqual(ClaudeSessionIdentity.parse(Data(session.utf8)),
+                       .owned(organizationID: "org-a", accountID: "user-a"))
     }
 
     func testCancellationInsideHugeRecord() {

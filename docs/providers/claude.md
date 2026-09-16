@@ -142,7 +142,9 @@ One consequence to know about: after switching the active login (`cswap switch`)
 Claude Code versions wrote without an account are credited to whichever login is active now.
 
 Subagent logs inherit their parent session's ownership, even when that parent is older than the
-spend window. Sessions with conflicting account or organization records are excluded. OpenUsage
+spend window. A session that carries records from more than one account belongs to whichever account
+owns most of them — following it from another device writes a few records naming the account driving
+it, and those must not cost the session its place in the tiles. Only an even split is excluded. OpenUsage
 checks each parent once per refresh and reuses unchanged ownership results, including conflicts,
 across refreshes. Failed reads are retried on the next refresh, and large ownership scans stop
 when the refresh is cancelled.

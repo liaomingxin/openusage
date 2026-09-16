@@ -1,6 +1,11 @@
 import Foundation
 
-/// Conflicting ownership must never be treated as an unattributed session.
+/// Who a session belongs to. Conflicting ownership must never be treated as an unattributed session.
+///
+/// Fork: a session can carry a stray ownership record from somewhere else — a remote/bridge attachment
+/// stamps the account driving it, a handful of lines among hundreds — so ownership follows the
+/// organization that owns most of the session's records. Only a genuine tie is `conflicted`, and a tie
+/// is still excluded everywhere: that is a guess, not a gap. See FORK.md.
 enum ClaudeSessionIdentity: Equatable, Sendable {
     case owned(organizationID: String, accountID: String?)
     case unattributed
@@ -14,8 +19,9 @@ enum ClaudeSessionIdentity: Equatable, Sendable {
     ) -> Self? {
         let newline = Data([UInt8(ascii: "\n")])
         let marker = Data(#""ownerOrganizationUuid""#.utf8)
-        var owner: String?
-        var account: String?
+        // Records per organization, and per account within it: the majority owner wins.
+        var organizationCounts: [String: Int] = [:]
+        var accountCounts: [String: [String: Int]] = [:]
         var lineStart = data.startIndex
         var cursor = lineStart
         while cursor < data.endIndex {
@@ -32,17 +38,24 @@ enum ClaudeSessionIdentity: Equatable, Sendable {
                       let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
                       let value = object["ownerOrganizationUuid"] as? String, !value.isEmpty
                 else { continue }
-                let candidate = value.lowercased()
-                if let owner, owner != candidate { return .conflicted }
-                owner = candidate
-                if let value = object["ownerAccountUuid"] as? String, !value.isEmpty {
-                    let candidate = value.lowercased()
-                    if let account, account != candidate { return .conflicted }
-                    account = candidate
+                let organization = value.lowercased()
+                organizationCounts[organization, default: 0] += 1
+                if let account = object["ownerAccountUuid"] as? String, !account.isEmpty {
+                    accountCounts[organization, default: [:]][account.lowercased(), default: 0] += 1
                 }
             }
         }
         guard !isCancelled() else { return nil }
-        return owner.map { .owned(organizationID: $0, accountID: account) } ?? .unattributed
+        guard let organization = majority(of: organizationCounts) else {
+            return organizationCounts.isEmpty ? .unattributed : .conflicted
+        }
+        return .owned(organizationID: organization, accountID: majority(of: accountCounts[organization] ?? [:]))
+    }
+
+    /// The key holding strictly more records than any other; `nil` for an empty tally or a tie.
+    private static func majority(of counts: [String: Int]) -> String? {
+        guard let best = counts.max(by: { $0.value < $1.value }) else { return nil }
+        guard counts.filter({ $0.value == best.value }).count == 1 else { return nil }
+        return best.key
     }
 }
