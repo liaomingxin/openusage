@@ -103,7 +103,8 @@ final class GrokProvider: ProviderRuntime {
         // Local spend tiles from completed session turns. Recorded Grok costs win when available;
         // older turns without a carried cost use the shared pricing store.
         var usageHistory: ProviderUsageHistory?
-        if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: await pricing()) {
+        let scanPricing = await pricing()
+        if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: scanPricing) {
             usageHistory = ProviderUsageHistory(
                 series: scan.series,
                 modelUsage: scan.modelUsage,
@@ -115,7 +116,8 @@ final class GrokProvider: ProviderRuntime {
                 now: now(),
                 unknownModelsByDay: scan.unknownModelsByDay,
                 modelUsage: scan.modelUsage,
-                modelSourceNote: "From your Grok logs (estimated)"
+                modelSourceNote: "From your Grok logs (estimated)",
+                pricing: scanPricing
             )
             SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(),
                                              note: "From your Grok logs (estimated)")

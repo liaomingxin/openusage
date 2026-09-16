@@ -56,7 +56,10 @@ duplicate parsing across cards; the disk store provides the reuse across process
 source-file records as their modification dates leave the requested history window, while aggregation and
 pricing still run on every refresh from the cached events. Files are read in small bounded batches;
 unusually large individual records are skipped and logged so media-heavy or malformed histories cannot
-exhaust memory.
+exhaust memory. A file that is suddenly smaller than its cached parse — a client rewriting its transcript
+in place, such as on resume or compaction — is only observed: each scan writes one aggregated warning
+about how much disappeared instead of restoring the dropped turns, so affected history stays undercounted
+until enough real-world data justifies building that repair.
 
 ## Stores
 

@@ -90,10 +90,18 @@ struct OpenCodeCodexUsageScanner: Sendable {
                 }
                 continue
             }
+            // Rates that don't cover a billed bucket (a custom-pricing entry omitting a field) keep
+            // the row unpriced and warned about, like an unresolved model.
+            guard let cost = CodexUsagePricing.cost(prepared: prepared, tokens: row.tokens) else {
+                if row.reportedTotalTokens > 0 {
+                    accumulator.addUnknownModel(day: day, model: model)
+                }
+                continue
+            }
             accumulator.add(
                 day: day,
                 tokens: row.reportedTotalTokens,
-                cost: CodexUsagePricing.cost(prepared: prepared, tokens: row.tokens),
+                cost: cost,
                 model: model
             )
         }

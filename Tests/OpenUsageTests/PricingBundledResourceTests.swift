@@ -186,7 +186,8 @@ final class PricingBundledResourceTests: XCTestCase {
         let tokens = TokenBreakdown(input: 1_000_000, cacheWrite5m: 1_000_000, cacheRead: 1_000_000, output: 1_000_000)
         var fastTokens = tokens
         fastTokens.isFast = true
-        XCTAssertEqual(opus5.costDollars(for: fastTokens), opus5.costDollars(for: tokens) * 2, accuracy: 0.000_001)
+        XCTAssertEqual(try XCTUnwrap(opus5.costDollars(for: fastTokens)),
+                       try XCTUnwrap(opus5.costDollars(for: tokens)) * 2, accuracy: 0.000_001)
     }
 
     /// Kimi K3: Cursor's published rates. Cursor lists no separate cache-write fee, so cache writes

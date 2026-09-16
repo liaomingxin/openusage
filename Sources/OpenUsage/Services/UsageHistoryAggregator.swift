@@ -182,7 +182,8 @@ enum UsageHistorySnapshotRenderer {
         history: ProviderUsageHistory,
         descriptor: UsageHistoryDescriptor,
         now: Date = Date(),
-        combined: Bool = true
+        combined: Bool = true,
+        pricing: ModelPricing? = nil
     ) -> ProviderSnapshot {
         var result = snapshot
         result.lines.removeAll { historyLabels.contains($0.label) }
@@ -195,7 +196,8 @@ enum UsageHistorySnapshotRenderer {
             unknownModelsByDay: history.unknownModelsByDay,
             modelUsage: history.modelUsage,
             modelSourceNote: baseNote,
-            fallbackPricingModelsByDay: history.fallbackPricingModelsByDay
+            fallbackPricingModelsByDay: history.fallbackPricingModelsByDay,
+            pricing: pricing
         )
         SpendTileMapper.appendUsageTrend(
             history.series,

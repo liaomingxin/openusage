@@ -33,6 +33,12 @@ If a local usage log exists but cannot be read, OpenUsage writes one warning and
 refresh. It does not repeat the warning every five minutes; it warns again only if the file recovers
 and later becomes unreadable again.
 
+If a local usage log becomes smaller than the version OpenUsage already parsed — the client rewrote
+its transcript in place — one aggregated Warning per scan reports how many files shrank and how many
+bytes and parsed records disappeared. This only measures the problem for now; the dropped turns are
+not restored, so the spend shown for those files can stay lower than what was actually used. File
+names, never full paths, appear in the line.
+
 Any provider refresh that takes 10 seconds or longer writes a Warning-level `[refresh]` line with the
 provider ID, elapsed milliseconds, and threshold. This is visible at the default Info setting, so a
 slow local-log scan or network call can be identified from a normal support log without reproducing it

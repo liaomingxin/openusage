@@ -190,9 +190,9 @@ final class CursorSpendRangeTests: XCTestCase {
 
         // Today carries its own unknown model; a fully-priced Yesterday stays clean; Last 30 Days carries
         // the de-duplicated, sorted union across the whole window.
-        XCTAssertEqual(unknown(lines, "Today"), ["totally-unknown-model-xyz"])
+        XCTAssertEqual(unknown(lines, "Today"), ["totally-unknown-model-xyz (no known price)"])
         XCTAssertEqual(unknown(lines, "Yesterday"), [])
-        XCTAssertEqual(unknown(lines, "Last 30 Days"), ["another-unknown-abc", "totally-unknown-model-xyz"])
+        XCTAssertEqual(unknown(lines, "Last 30 Days"), ["another-unknown-abc (no known price)", "totally-unknown-model-xyz (no known price)"])
     }
 
     func testUnknownModelWithZeroTokensIsNotFlagged() {
@@ -228,7 +228,7 @@ final class CursorSpendRangeTests: XCTestCase {
         // only through the unknown-model warning.
         XCTAssertEqual(values(lines, "Today"),
                        [MetricValue(number: 3.01, kind: .dollars, estimated: true), MetricValue(number: 300, kind: .count, label: "tokens")])
-        XCTAssertEqual(unknown(lines, "Today"), ["unpriced-cursor-model"])
+        XCTAssertEqual(unknown(lines, "Today"), ["unpriced-cursor-model (no known price)"])
         let breakdown = try XCTUnwrap(modelBreakdown(lines, "Today"))
         XCTAssertEqual(breakdown.sourceNote, "From your Cursor usage export")
         XCTAssertEqual(breakdown.models.map(\.model), ["gpt-5.5", "composer-1"])
@@ -378,9 +378,9 @@ final class CursorSpendProviderTests: XCTestCase {
         }
 
         // The unknown model rode onto Today (and the Last 30 Days union); a fully-priced Yesterday stays clean.
-        XCTAssertEqual(unknownModels(snapshot.lines, "Today"), ["totally-unknown-model-xyz"])
+        XCTAssertEqual(unknownModels(snapshot.lines, "Today"), ["totally-unknown-model-xyz (no known price)"])
         XCTAssertEqual(unknownModels(snapshot.lines, "Yesterday"), [])
-        XCTAssertEqual(unknownModels(snapshot.lines, "Last 30 Days"), ["totally-unknown-model-xyz"])
+        XCTAssertEqual(unknownModels(snapshot.lines, "Last 30 Days"), ["totally-unknown-model-xyz (no known price)"])
     }
 
     private func unknownModels(_ lines: [MetricLine], _ label: String) -> [String]? {

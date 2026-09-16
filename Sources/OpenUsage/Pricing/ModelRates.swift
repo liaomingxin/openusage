@@ -29,6 +29,12 @@ struct ModelRates: Sendable, Equatable {
     /// Rate multiplier for the model's "fast" variant (1 when the model has none).
     var fastMultiplier: Double = 1
 
+    /// Buckets this entry does not price — only user custom-pricing entries can omit fields; every
+    /// catalog fills all four (with synthesized fallbacks). An omitted field means *unknown*, never
+    /// free, so `costDollars` returns nil for a request that touches one of these buckets with
+    /// tokens instead of silently charging $0 for it.
+    var unpricedBuckets: UnpricedTokenBuckets = []
+
     /// The same rates with every dollar figure scaled — used to price `-fast` model slugs off their
     /// base entry.
     func scaled(by factor: Double) -> ModelRates {
@@ -43,9 +49,20 @@ struct ModelRates: Sendable, Equatable {
             cacheReadAbove200kPerMillion: cacheReadAbove200kPerMillion.map { $0 * factor },
             cacheReadIsExplicit: cacheReadIsExplicit,
             longContextThresholdTokens: longContextThresholdTokens,
-            fastMultiplier: 1
+            fastMultiplier: 1,
+            unpricedBuckets: unpricedBuckets
         )
     }
+}
+
+/// The four token buckets a `ModelRates` entry can fail to cover (see `ModelRates.unpricedBuckets`).
+struct UnpricedTokenBuckets: OptionSet, Sendable, Hashable {
+    let rawValue: Int
+
+    static let input = UnpricedTokenBuckets(rawValue: 1 << 0)
+    static let output = UnpricedTokenBuckets(rawValue: 1 << 1)
+    static let cacheWrite = UnpricedTokenBuckets(rawValue: 1 << 2)
+    static let cacheRead = UnpricedTokenBuckets(rawValue: 1 << 3)
 }
 
 /// Token counts split into the buckets that price differently. Every scanner normalizes into this.
@@ -73,8 +90,14 @@ extension ModelRates {
     private static let cacheWrite1hInputMultiplier = 2.0
 
     /// Dollar cost of one request at these rates, applying the request-wide long-context tier and
-    /// fast multiplier. Aggregated sources can opt out when their totals do not preserve request boundaries.
-    func costDollars(for tokens: TokenBreakdown, applyLongContextRates: Bool = true) -> Double {
+    /// fast multiplier. Aggregated sources can opt out when their totals do not preserve request
+    /// boundaries. Returns nil when an unpriced bucket (an omitted custom-pricing field) carries
+    /// tokens — an unknown rate must keep the request unpriced, not cost it at $0.
+    func costDollars(for tokens: TokenBreakdown, applyLongContextRates: Bool = true) -> Double? {
+        if unpricedBuckets.contains(.input), tokens.input > 0 || tokens.cacheWrite1h > 0 { return nil }
+        if unpricedBuckets.contains(.output), tokens.output > 0 { return nil }
+        if unpricedBuckets.contains(.cacheWrite), tokens.cacheWrite5m > 0 { return nil }
+        if unpricedBuckets.contains(.cacheRead), tokens.cacheRead > 0 { return nil }
         let multiplier = tokens.isFast ? fastMultiplier : 1
         let useLongContextRates = applyLongContextRates && tokens.promptTokens > longContextThresholdTokens
         let inputRate = selectedRate(base: inputPerMillion, longContext: inputAbove200kPerMillion,

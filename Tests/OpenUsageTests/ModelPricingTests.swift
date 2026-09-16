@@ -374,8 +374,8 @@ final class ModelPricingTests: XCTestCase {
         let atThreshold = TokenBreakdown(input: 200_000, cacheRead: 72_000, output: 1_000)
         let overThreshold = TokenBreakdown(input: 200_001, cacheRead: 72_000, output: 1_000)
 
-        XCTAssertEqual(entry.costDollars(for: atThreshold), 1.066, accuracy: 0.000_001)
-        XCTAssertEqual(entry.costDollars(for: overThreshold), 2.117_01, accuracy: 0.000_001)
+        XCTAssertEqual(try XCTUnwrap(entry.costDollars(for: atThreshold)), 1.066, accuracy: 0.000_001)
+        XCTAssertEqual(try XCTUnwrap(entry.costDollars(for: overThreshold)), 2.117_01, accuracy: 0.000_001)
     }
 
     func testCostWithoutTierRatesUsesBaseRateThroughout() throws {

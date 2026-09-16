@@ -71,7 +71,7 @@ final class CodexFallbackPricingTests: XCTestCase {
             tile.hasData = true
             tile.unknownModels = unknownModels
             XCTAssertTrue(tile.hasUnknownModels)
-            XCTAssertEqual(tile.unknownModelTooltip, "Unknown model found\n- unlisted-model-a")
+            XCTAssertEqual(tile.unknownModelTooltip, "Unknown model found\n- unlisted-model-a\nAdd prices in ~/.config/openusage/custom-pricing.json.")
         }
     }
 

@@ -52,13 +52,15 @@ enum CodexUsagePricing {
     }
 
     /// Prices an already normalized request. Unlike native Codex rollout events, `tokens.input` here
-    /// is non-cached input; cache reads/writes are disjoint buckets in `TokenBreakdown`.
+    /// is non-cached input; cache reads/writes are disjoint buckets in `TokenBreakdown`. Nil when
+    /// the resolved rates don't cover a bucket this request bills at (a custom-pricing entry that
+    /// omits a field — unknown means unpriced, not free).
     static func estimatedCost(pricing: ModelPricing, model: String, tokens: TokenBreakdown) -> Double? {
         guard let prepared = prepare(pricing: pricing, model: model) else { return nil }
         return cost(prepared: prepared, tokens: tokens)
     }
 
-    static func cost(prepared: Prepared, tokens: TokenBreakdown) -> Double {
+    static func cost(prepared: Prepared, tokens: TokenBreakdown) -> Double? {
         var pricedTokens = tokens
         pricedTokens.isFast = prepared.fastTier
         return prepared.rates.costDollars(for: pricedTokens)
@@ -66,7 +68,7 @@ enum CodexUsagePricing {
 
     /// Lower-level entry point for the native scanner, which resolves its own rates so it can swap in
     /// the user's selected fallback model and carry the per-event priority flag.
-    static func cost(rates: ModelRates, tokens: TokenBreakdown, model: String, fastTier: Bool) -> Double {
+    static func cost(rates: ModelRates, tokens: TokenBreakdown, model: String, fastTier: Bool) -> Double? {
         cost(prepared: Prepared(rates: adjusted(rates, model: model), fastTier: fastTier), tokens: tokens)
     }
 

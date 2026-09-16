@@ -410,12 +410,15 @@ struct WidgetData: Hashable {
     }
 
     /// Hover copy for the unknown-model warning triangle: a header naming the problem, then each unpriced
-    /// model on its own line. Singular/plural header to read naturally. `nil` when every model has
-    /// known pricing, so the triangle and its tooltip stay off.
+    /// model on its own line — annotated with *why* it's unpriced when the scan shared its pricing
+    /// snapshot ("no known price" vs a custom-pricing entry omitting fields) — and finally the remedy,
+    /// pointing at the file where the user can add prices themselves. Singular/plural header to read
+    /// naturally. `nil` when every model has known pricing, so the triangle and its tooltip stay off.
     var unknownModelTooltip: String? {
         guard hasUnknownModels else { return nil }
         let header = unknownModels.count == 1 ? "Unknown model found" : "Unknown models found"
-        return ([header] + unknownModels.map { "- \($0)" }).joined(separator: "\n")
+        let remedy = "Add prices in ~/.config/openusage/custom-pricing.json."
+        return ([header] + unknownModels.map { "- \($0)" } + [remedy]).joined(separator: "\n")
     }
 
     /// Secondary line under an unbounded row's detail (e.g. "on-device estimate"); nil with no real data.

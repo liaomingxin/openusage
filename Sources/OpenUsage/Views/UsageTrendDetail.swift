@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The detail-on-demand popover for a Usage Trend row: a larger, readable bar chart with the peak (or
-/// the hovered day) called out, the window's date range, and the source note. Hovering a bar highlights
-/// it and swaps the readout to that exact day — the same detail-on-demand the original app shows.
+/// the hovered day) called out, the window's date range, the current and longest activity streaks,
+/// and the source note. Hovering a bar highlights it and swaps the readout to that exact day — the
+/// same detail-on-demand the original app shows.
 struct UsageTrendDetail: View {
     let title: String
     let points: [MetricChartPoint]
@@ -21,6 +22,7 @@ struct UsageTrendDetail: View {
             header
             chart
             axis
+            streaks
             if let note, !note.isEmpty {
                 PopoverSourceNote(text: note)
             }
@@ -89,6 +91,35 @@ struct UsageTrendDetail: View {
         .font(.system(size: 10))
         .monospacedDigit()
         .foregroundStyle(.secondary)
+    }
+
+    /// The two zero-cost figures the per-day bars already imply: consecutive active days now, and
+    /// the best run in the window. A run that spans the whole window may continue past its oldest
+    /// bar, so a saturating count reads "N+" rather than a confident exact figure.
+    private var streaks: some View {
+        let streak = UsageStreakCalculator.streaks(activityWindow: points.map { $0.value > 0 })
+        return VStack(spacing: 2) {
+            streakRow(label: "Current Streak", value: streakLabel(streak.currentDays))
+            streakRow(label: "Longest Streak", value: streakLabel(streak.longestDays))
+        }
+    }
+
+    private func streakRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 8)
+            Text(value)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .font(.system(size: 11))
+    }
+
+    private func streakLabel(_ days: Int) -> String {
+        let noun = days == 1 ? "Day" : "Days"
+        let saturatesWindow = days > 0 && days >= points.count
+        return saturatesWindow ? "\(days)+ \(noun)" : "\(days) \(noun)"
     }
 
     private var peakIndex: Int? { points.indices.max { points[$0].value < points[$1].value } }

@@ -26,6 +26,7 @@ actor ModelPricingStore {
 
     private let http: any HTTPClient
     private let cacheDirectory: URL
+    private let customPricingURL: URL
     private let now: @Sendable () -> Date
     private let sourceURLs: [SourceID: URL]
     private let bundledData: @Sendable (String) -> Data?
@@ -34,16 +35,23 @@ actor ModelPricingStore {
     private var pricing: ModelPricing = .empty
     private var sourceStates: [SourceID: SourceState] = [:]
     private var refreshTask: Task<Void, Never>?
+    /// The custom-pricing file's identity the last time it was parsed (nil = never checked). The
+    /// file is re-read only when this changes, so a pricing pass never re-parses it needlessly.
+    private var customFileStamp: CustomPricingFile.Stamp?
+    private var customPricing: CustomPricing = .empty
+    private var customPricingProblem: String?
 
     init(
         http: any HTTPClient = URLSessionHTTPClient(),
         cacheDirectory: URL? = nil,
+        customPricingURL: URL = CustomPricing.defaultURL,
         now: @escaping @Sendable () -> Date = Date.init,
         sourceURLs: [SourceID: URL] = ModelPricingStore.defaultSourceURLs,
         bundledData: @escaping @Sendable (String) -> Data? = ModelPricingStore.bundledResourceData
     ) {
         self.http = http
         self.cacheDirectory = cacheDirectory ?? Self.defaultCacheDirectory
+        self.customPricingURL = customPricingURL
         self.now = now
         self.sourceURLs = sourceURLs
         self.bundledData = bundledData
@@ -68,9 +76,11 @@ actor ModelPricingStore {
     }
 
     /// The pricing snapshot to use for a scan/parse pass. Kicks a background refresh when any
-    /// source is due; the refreshed data is picked up by the next call.
+    /// source is due; the refreshed data is picked up by the next call. Also re-stats the user's
+    /// custom pricing file and re-parses it only when its mtime/size changed.
     func current() -> ModelPricing {
         loadIfNeeded()
+        reloadCustomPricingIfChanged()
         if refreshTask == nil, SourceID.allCases.contains(where: isDue) {
             refreshTask = Task { await self.refreshDueSources() }
         }
@@ -98,9 +108,45 @@ actor ModelPricingStore {
     private func rebuildPricing() {
         pricing = ModelPricing(
             supplement: loadSupplement(),
+            custom: customPricing,
+            customPricingProblem: customPricingProblem,
             primary: loadCatalog(.litellm, parse: PricingCatalogCodecs.catalogFromCompact),
             secondary: loadCatalog(.modelsDev, parse: PricingCatalogCodecs.catalogFromCompact)
         )
+    }
+
+    // MARK: - Custom pricing file (~/.config/openusage/custom-pricing.json)
+
+    /// Re-parses the custom pricing file only when its mtime or size changed — a stat per pricing
+    /// pass, not a read. A missing file is normal (no overrides, no error). An unreadable or
+    /// malformed one fails loudly — logged and carried on the snapshot so the spend tiles can warn —
+    /// while the bundled/fetched sources keep pricing as if no file existed.
+    private func reloadCustomPricingIfChanged() {
+        let stamp = CustomPricingFile.stamp(at: customPricingURL)
+        guard stamp != customFileStamp else { return }
+        customFileStamp = stamp
+        guard let stamp else {
+            applyCustomPricing(.empty, problem: nil)
+            return
+        }
+        do {
+            let data = try Data(contentsOf: customPricingURL)
+            applyCustomPricing(try CustomPricing.decode(from: data), problem: nil)
+        } catch {
+            let reason = (error as? CustomPricingError)?.errorDescription ?? error.localizedDescription
+            let problem = "Couldn't read the custom pricing file: \(reason)."
+            AppLog.error("pricing", "\(problem) Overriding is disabled until the file is fixed or removed.")
+            applyCustomPricing(.empty, problem: problem)
+        }
+    }
+
+    /// Swaps the loaded overrides in and rebuilds the snapshot only when they actually changed, so
+    /// an unchanged stat check never pays for a rebuild.
+    private func applyCustomPricing(_ custom: CustomPricing, problem: String?) {
+        guard custom != customPricing || problem != customPricingProblem else { return }
+        customPricing = custom
+        customPricingProblem = problem
+        rebuildPricing()
     }
 
     /// Whichever of the fetched cache and the bundled resource carries the newer `updated_at`. The

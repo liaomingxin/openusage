@@ -77,12 +77,16 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
     private let logTag: String
     private let parsePermitPool: JSONLParsePermitPool
     private let readFailureReporter: UsageLogReadFailureReporter
+    private let shrinkWarning: JSONLShrinkObservation.Warning
+    // Observation-only shrink telemetry; see `JSONLShrinkObservation` for why it does not repair.
+    private var shrinkObserver = JSONLShrinkObserver()
     private let persistence: JSONLScanCachePersistence?
 
     init(
         maxConcurrentParses: Int = 8,
         logTag: String = LogTag.refresh.rawValue,
         readFailureWarning: UsageLogReadFailureReporter.Warning? = nil,
+        shrinkWarning: JSONLShrinkObservation.Warning? = nil,
         persistence: JSONLScanCachePersistence? = nil
     ) {
         precondition(maxConcurrentParses > 0)
@@ -90,6 +94,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         self.logTag = logTag
         self.parsePermitPool = JSONLParsePermitPool(limit: maxConcurrentParses)
         self.readFailureReporter = UsageLogReadFailureReporter(logTag: logTag, warning: readFailureWarning)
+        self.shrinkWarning = shrinkWarning ?? JSONLShrinkObservation.warning(logTag: logTag)
         self.persistence = persistence
         if let persistence {
             let cutoff = Date().addingTimeInterval(-JSONLScanCachePaths.staleIdentityRetention)
@@ -195,6 +200,18 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         {
             scheduleWrite(identity: cacheIdentity)
         }
+
+        // Observation-only: report files smaller than their cached parse (in-place transcript
+        // rewrites). Runs after the cache update so the lost-record count is known; the results
+        // returned below are untouched either way.
+        shrinkObserver.observe(
+            identity: cacheIdentity,
+            since: since,
+            files: files,
+            previousCache: currentCache,
+            reparsedItemCount: { nextCache[$0]?.items.count },
+            warning: shrinkWarning
+        )
 
         var items: [Item] = []
         for file in files {
