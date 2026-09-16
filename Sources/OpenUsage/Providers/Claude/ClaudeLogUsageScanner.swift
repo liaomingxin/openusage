@@ -350,8 +350,11 @@ actor ClaudeLogUsageScanner {
                   let handle = try? FileHandle(forReadingFrom: file)
             else { return nil }
             defer { try? handle.close() }
+            // Lossy on purpose: 512 bytes is a prefix of a JSON document, never a whole one, so the cut
+            // routinely lands inside a multi-byte character (a CJK path, an emoji in a title). Strict
+            // decoding returns nil for the whole file, and the session silently loses its account.
             guard let prefix = try? handle.read(upToCount: 512),
-                  let header = String(data: prefix, encoding: .utf8),
+                  case let header = String(decoding: prefix, as: UTF8.self),
                   let field = header.range(of: #""cliSessionId"\s*:\s*""#, options: .regularExpression),
                   let end = header[field.upperBound...].firstIndex(of: "\""),
                   let sessionID = UUID(uuidString: String(header[field.upperBound..<end]))
