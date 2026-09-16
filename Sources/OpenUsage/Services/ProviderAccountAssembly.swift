@@ -47,6 +47,11 @@ struct ClaudeAccountCard: Equatable, Sendable {
     let accountLabel: String
     let usesDesktopCredentials: Bool
     let allowsUnattributedPiUsage: Bool
+    /// The card backed by the login in `~/.claude` (never a Desktop organization or a stashed slot).
+    /// Fork behavior: that card counts this Mac's local Claude Code and pi sessions even when several
+    /// accounts are known, including sessions whose logs carry no ownership at all — local spend is a
+    /// machine-level number here. Upstream drops unowned sessions instead; see FORK.md.
+    var ownsDefaultHome: Bool = false
     var swapAccount: ClaudeSwapAccount? = nil
     var additionalLogDirectories: [String] = []
     var organizationName: String? = nil
@@ -285,7 +290,8 @@ struct ProviderAccountAssembly {
             cards.append(ClaudeAccountCard(
                 id: record.id, identityKey: defaultIdentity, organizationID: String(organization),
                 accountLabel: label, usesDesktopCredentials: false,
-                allowsUnattributedPiUsage: allowsUnattributedPiUsage, organizationName: label
+                allowsUnattributedPiUsage: allowsUnattributedPiUsage, ownsDefaultHome: true,
+                organizationName: label
             ))
             identityKeys.removeValue(forKey: "claude")
             identityKeys[record.id] = defaultIdentity

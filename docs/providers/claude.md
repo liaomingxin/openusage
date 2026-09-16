@@ -125,8 +125,17 @@ each account's own numbers, so nothing is double-counted in the meantime.
 Today / Yesterday / Last 30 Days are computed **locally**: OpenUsage reads the Claude Code session logs under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR`) itself — no external tools needed. Symlinks are followed, so a projects folder linked into a synced location (say, a Dropbox folder) is read all the same. With one known account, Claude usage from the [pi](https://github.com/earendil-works/pi) coding agent counts too: OpenUsage reads pi's session logs under `~/.pi/agent/sessions/` (or `$PI_CODING_AGENT_SESSION_DIR`) and folds any Claude usage there into the same tiles and trend, so a Claude sub driven through pi still shows up here. pi records its own per-message cost, so those dollars come straight from pi rather than being re-estimated. Cowork (the Claude desktop app's agent mode) counts too: it writes the same logs into per-session folders under `~/Library/Application Support/Claude/local-agent-mode-sessions/`, and OpenUsage scans those as well, so desktop agent sessions show up in the tiles alongside terminal ones. Persisted `claude -p` runs count as well. Runs made with `--no-session-persistence` cannot appear because Claude deliberately writes no session log for OpenUsage to read. Advisor work recorded inside a message is counted once under the advisor's own model; the parent's main-model totals are kept separate, and ordinary iteration details are not counted again. A log's recorded fast or standard speed controls its price; OpenUsage does not infer speed from the event date. Days are grouped in your Mac's local time zone, so they line up with your own calendar. Each period is one tile showing cost and tokens together (`$4.08 · 1.2M tokens`); a day with no usage reads **No data** rather than a misleading `$0.00 · 0 tokens` — the same as every other spend-tracking provider. The live Session and Weekly meters are unaffected. The dollars are estimated from token counts at API rates (that's the ⓘ) using the shared [model pricing](../pricing.md); the token counts themselves are measured. No log data leaves your Mac.
 
 Sessions that do not identify their account, including usage from pi and third-party tools such as
-Conductor, count as long as OpenUsage has never seen more than one Claude account. Once multiple
-accounts are discovered, unattributed usage is left out instead of being assigned to the wrong card.
+Conductor, are counted on the card for the login in `~/.claude` — this Mac's own login — whether or not
+other Claude accounts are known. Local spend on that card is a machine-level number: what this Mac
+spent, not what one account spent. It matters because Claude Code only began recording which account a
+session belongs to in September 2026, and a session driven remotely from another device records the
+account driving it, so most local sessions would otherwise be dropped and the tiles would read **No
+data**.
+
+Every other card keeps the strict rule: a Desktop organization card and a claude-swap card only count
+sessions that name that exact account and organization. So unowned usage is counted once, never twice.
+One consequence to know about: after switching the active login (`cswap switch`), sessions that older
+Claude Code versions wrote without an account are credited to whichever login is active now.
 
 Subagent logs inherit their parent session's ownership, even when that parent is older than the
 spend window. Sessions with conflicting account or organization records are excluded. OpenUsage

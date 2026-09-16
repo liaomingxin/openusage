@@ -22,9 +22,15 @@ enum ProviderCatalog {
             providers = claudeCards.map { card in
                 let identity = claudeIdentityKeys[card.id] ?? card.identityKey
                 let user = identity.split(separator: "|").first.map(String.init)
+                // Fork: the card that owns `~/.claude` keeps this Mac's local spend whole. Claude Code
+                // only began stamping session ownership in September 2026, and a bridge/remote session
+                // stamps the account driving it — so with a second account known, upstream's rule would
+                // drop most of the machine's own sessions and the spend tiles would read "No data"
+                // (see FORK.md). Desktop organization cards and stashed slots keep the strict rule.
+                let countsMachineLocalUsage = card.allowsUnattributedPiUsage || card.ownsDefaultHome
                 let scanner = ClaudeLogUsageScanner(
                     accountUUID: user, organizationUUID: card.organizationID,
-                    allowsUnattributedSessions: card.allowsUnattributedPiUsage,
+                    allowsUnattributedSessions: countsMachineLocalUsage,
                     additionalConfigDirectories: card.additionalLogDirectories
                 )
                 return ClaudeProvider(
@@ -42,7 +48,7 @@ enum ProviderCatalog {
                             && card.organizationID != nil && !card.usesDesktopCredentials
                     ),
                     logUsageScanner: scanner,
-                    allowsUnattributedPiUsage: card.allowsUnattributedPiUsage
+                    allowsUnattributedPiUsage: countsMachineLocalUsage
                 )
             }
         }

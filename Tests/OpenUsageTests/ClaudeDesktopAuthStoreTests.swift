@@ -194,7 +194,9 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         XCTAssertEqual(providers.map { $0.provider.displayName }, ["Claude — SUNSTORY", "Claude — Personal"])
         XCTAssertEqual(providers.map { $0.authStore.desktopOnly }, [false, true])
         XCTAssertEqual(providers.map { $0.authStore.preferOrganizationScopedDesktop }, [true, false])
-        XCTAssertFalse(providers.contains { $0.allowsUnattributedPiUsage })
+        // Fork: the `~/.claude` login (the first card here) keeps this Mac's unowned sessions and pi
+        // usage; the Desktop organization card keeps upstream's strict rule. See ClaudeMachineLocalSpendTests.
+        XCTAssertEqual(providers.map(\.allowsUnattributedPiUsage), [true, false])
 
         let withoutDesktop = ProviderAccountAssembly.make(
             observer: observer, accountsStore: ProviderAccountsStore(defaults: defaults), families: ["claude"],

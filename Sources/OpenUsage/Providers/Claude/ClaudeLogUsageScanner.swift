@@ -29,7 +29,8 @@ actor ClaudeLogUsageScanner {
     private let organizationID: String?
     private let accountID: String?
     private let additionalConfigDirectories: [String]
-    private let allowsUnattributedSessions: Bool
+    /// `nonisolated` so the catalog's wiring can be asserted without awaiting the actor.
+    nonisolated let allowsUnattributedSessions: Bool
     private var sessionOwnership: [String: (
         size: Int, mtime: Date, identity: ClaudeSessionIdentity
     )] = [:]
