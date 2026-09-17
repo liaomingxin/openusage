@@ -12,58 +12,40 @@ struct CodexPricingSection: View {
     @State private var needsRecalculation = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            Text("Cost Estimates")
-                .font(.system(size: density.captionPointSize, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, Theme.sectionHeaderInset)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
-                    Text("Fallback Model")
-                        .font(.system(size: density.bodyPointSize))
-                    Spacer(minLength: 8)
-                    Picker("Fallback Model", selection: $selectedModel) {
-                        Text("None").tag(CodexFallbackModelSetting.none)
-                        if selectionUnavailable {
-                            Text("Unavailable Model").tag(selectedModel)
-                        }
-                        ForEach(options) { option in
-                            Text(option.title).tag(option.id)
-                        }
+        SectionCard("Cost Estimates") {
+            ControlRow("Fallback Model") {
+                Picker("Fallback Model", selection: $selectedModel) {
+                    Text("None").tag(CodexFallbackModelSetting.none)
+                    if selectionUnavailable {
+                        Text("Unavailable Model").tag(selectedModel)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .disabled(activityLabel != nil)
-                }
-                .padding(.horizontal, Theme.cardRowInset)
-                .padding(.vertical, density.controlRowPadding)
-                if let activityLabel {
-                    HStack(spacing: 6) {
-                        MotionAwareProgressView(controlSize: .mini)
-                            .accessibilityHidden(true)
-                        Text(activityLabel)
+                    ForEach(options) { option in
+                        Text(option.title).tag(option.id)
                     }
-                    .font(captionFont)
-                    .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .combine)
-                    .padding(.horizontal, Theme.cardRowInset)
-                    .padding(.bottom, 8)
                 }
-                Text("Estimate costs for models that don't have known pricing.")
-                    .font(captionFont)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, Theme.cardRowInset)
-                    .padding(.bottom, 10)
-                if selectionUnavailable && !isLoading {
-                    Text("This model's pricing is unavailable. Choose another model or None.")
-                        .font(captionFont)
-                        .foregroundStyle(Theme.notice)
-                        .padding(.horizontal, Theme.cardRowInset)
-                        .padding(.bottom, 10)
-                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .disabled(activityLabel != nil)
             }
-            .cardSurface()
+            if let activityLabel {
+                HStack(spacing: 6) {
+                    MotionAwareProgressView(controlSize: .mini)
+                        .accessibilityHidden(true)
+                    Text(activityLabel)
+                }
+                .font(.system(size: density.captionPointSize))
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+                .padding(.horizontal, Theme.cardRowInset)
+                .padding(.bottom, 8)
+            }
+            CardCaption(text: "Estimate costs for models that don't have known pricing.")
+            if selectionUnavailable && !isLoading {
+                CardCaption(
+                    text: "This model's pricing is unavailable. Choose another model or None.",
+                    tint: Theme.notice
+                )
+            }
         }
         .task {
             options = await ModelPricingStore.shared.current().fallbackOptions(for: "codex")
@@ -80,8 +62,6 @@ struct CodexPricingSection: View {
             recalculateIfNeeded()
         }
     }
-
-    private var captionFont: Font { .system(size: density.captionPointSize) }
 
     private func recalculateIfNeeded() {
         guard refreshState.update(model: selectedModel, options: options) else { return }

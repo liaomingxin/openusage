@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Hover detail for a ranked breakdown: a flat list of entries, each two text lines (name/cost,
-/// share percent/amount) over a proportional share bar. The amount's unit comes from the breakdown
+/// Hover detail for a ranked breakdown: a flat list of `ModelShareRow`s (name/cost over share
+/// percent/amount, with a proportional share bar). The amount's unit comes from the breakdown
 /// itself ("tokens" for a spend period, "calls" for Z.ai's named MCP tool list), so one panel serves
 /// both. Rows carry no tooltips — everything shown is already on the row. The header carries only the
 /// row name — the hovered row right below already shows the total, so repeating it here would
@@ -23,7 +23,12 @@ struct ModelUsageDetail: View {
             header
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(breakdown.models.indices, id: \.self) { index in
-                    modelRow(breakdown.models[index], share: shares[index], percent: percents[index])
+                    ModelShareRow(
+                        entry: breakdown.models[index],
+                        share: shares[index],
+                        percent: percents[index],
+                        unit: breakdown.unit
+                    )
                 }
             }
             PopoverSourceNote(text: breakdown.sourceNote)
@@ -44,56 +49,6 @@ struct ModelUsageDetail: View {
         Text(title)
             .font(.system(size: density.headerPointSize, weight: .semibold))
             .foregroundStyle(.primary)
-    }
-
-    /// Two text lines and the bar: entry name / cost on top, share percent / amount beneath. The name
-    /// only competes with the short cost figure, so it almost never truncates; the percent line answers
-    /// what the bar can't say precisely.
-    private func modelRow(_ model: ModelUsageEntry, share: Double, percent: Int) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(model.model)
-                    .font(.system(size: density.supportingPointSize, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if let cost = model.costUSD {
-                    Text(MetricFormatter.number(cost, kind: .dollars, style: .row))
-                        .foregroundStyle(.primary)
-                        .monospacedDigit()
-                } else {
-                    Text("\u{2014}")
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .font(.system(size: density.supportingPointSize))
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(percent)%")
-                    .monospacedDigit()
-                Spacer(minLength: 8)
-                Text(MetricFormatter.string(
-                    for: MetricValue(number: Double(model.totalTokens), kind: .count, label: breakdown.unit),
-                    style: .row
-                ))
-                .monospacedDigit()
-            }
-            .font(.system(size: density.supportingPointSize))
-            .foregroundStyle(.secondary)
-
-            GeometryReader { proxy in
-                Capsule()
-                    .fill(.quaternary)
-                    .overlay(alignment: .leading) {
-                        Capsule()
-                            .fill(Theme.meterFill(.normal))
-                            .frame(width: proxy.size.width * share)
-                    }
-            }
-            .frame(height: density.meterHeight)
-            .padding(.top, 2)
-        }
-        .padding(.vertical, density.textRowPadding)
     }
 
     /// Share against the sum of the listed models' own (display-rounded) figures, not the spend row's

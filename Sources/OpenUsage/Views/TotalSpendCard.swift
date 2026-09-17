@@ -13,7 +13,6 @@ struct TotalSpendCard: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(WidgetDataStore.self) private var dataStore
     @Environment(\.colorScheme) private var colorScheme
-    @Namespace private var pickerNamespace
     /// The provider the pointer is over — set by the legend rows and the ring arcs alike, so hover
     /// links the two in both directions. Shared with the legend, so it lives here.
     @State private var hoveredProviderID: String?
@@ -179,53 +178,22 @@ struct TotalSpendCard: View {
         Dictionary(uniqueKeysWithValues: total.slices.map { ($0.provider.id, $0.tokenCount) })
     }
 
-    /// A capsule segmented switcher in the app's own design language (the footer's glass capsule
-    /// controls), replacing the stock `.segmented` picker whose legacy rounded-rect chrome clashes
-    /// with the Tahoe look. The selected segment is a Liquid Glass capsule (frosted material on
-    /// macOS 15) that slides between segments via `matchedGeometryEffect`. Sizes to its segments —
-    /// stretching it across the card read badly once the picker moved into the legend column.
+    /// The shared capsule switcher (`CapsuleSegmentedPicker`), sized to its segments — stretching it
+    /// across the card read badly once the picker moved into the legend column.
     private var periodPicker: some View {
-        HStack(spacing: 2) {
-            ForEach(TotalSpendPeriod.allCases) { candidate in
-                periodSegment(candidate)
-            }
-        }
-        .padding(3)
-        .background(.quinary, in: Capsule())
-    }
-
-    private func periodSegment(_ candidate: TotalSpendPeriod) -> some View {
-        let isSelected = candidate == period
-        return Button {
-            periodRawValue = candidate.rawValue
-        } label: {
-            Text(candidate.shortLabel)
-                .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .background {
-            if isSelected {
-                Capsule()
-                    .fill(.background)
-                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
-                    .matchedGeometryEffect(id: "totalSpendPeriod", in: pickerNamespace)
-            }
-        }
-        .animation(Motion.spring, value: periodRawValue)
+        CapsuleSegmentedPicker(
+            options: TotalSpendPeriod.allCases,
+            selection: Binding(get: { period }, set: { periodRawValue = $0.rawValue }),
+            label: \.shortLabel
+        )
     }
 
     /// A metric/period combination with nothing to show mirrors the spend tiles' "No data" rule —
-    /// never a fabricated zero ring.
+    /// never a fabricated zero ring. The shared empty state, a step shorter than on a full screen
+    /// since it sits inside a card under the period picker.
     private var emptyState: some View {
-        Text(metric.emptyMessage)
-            .font(.system(size: density.supportingPointSize))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 18)
+        EmptyStateView(title: metric.emptyMessage)
+            .padding(.vertical, -8)
     }
 }
 

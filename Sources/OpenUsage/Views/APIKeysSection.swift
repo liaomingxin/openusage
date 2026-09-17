@@ -34,22 +34,14 @@ struct APIKeysSection: View {
     private static let inputPlaceholder = "sk-or-v1-…"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            Text("API Key")
-                .font(.system(size: density.captionPointSize, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, Theme.sectionHeaderInset)
-            VStack(spacing: 0) {
-                providerRow
-                if isOpen {
-                    Divider()
-                    editorBlock
-                }
+        // Clipped to the card's rounded corners so the recessed editor block's flush rectangle
+        // background can't poke out of the card's rounded bottom.
+        SectionCard("API Key", clipsContent: true) {
+            providerRow
+            if isOpen {
+                Divider()
+                editorBlock
             }
-            .cardSurface()
-            // Clip the recessed editor block to the card's rounded corners so its flush rectangle
-            // background can't poke out of the card's rounded bottom.
-            .clipShape(Theme.cardShape)
         }
         .onAppear { status = provider.apiKeyStatus }
     }
@@ -57,21 +49,22 @@ struct APIKeysSection: View {
     // MARK: - Rows
 
     private var providerRow: some View {
-        HStack(spacing: 10) {
-            ProviderIcon(source: provider.provider.icon)
-                .frame(width: 18, height: 18)
-            Text(provider.provider.displayName)
-                .font(.system(size: density.bodyPointSize))
-            Spacer(minLength: 8)
-            statusDot
-            Button(isOpen ? "Done" : (status == .notSet ? "Add" : "Edit")) {
-                toggleExpand()
+        ControlRow {
+            HStack(spacing: 10) {
+                ProviderIcon(source: provider.provider.icon)
+                    .frame(width: 18, height: 18)
+                ControlRowLabel(title: provider.provider.displayName)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+        } control: {
+            HStack(spacing: 10) {
+                statusDot
+                Button(isOpen ? "Done" : (status == .notSet ? "Add" : "Edit")) {
+                    toggleExpand()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
         }
-        .padding(.horizontal, Theme.cardRowInset)
-        .padding(.vertical, density.controlRowPadding)
     }
 
     /// The dot is binary, never a palette: red when no key is set, green when a key is usable (from

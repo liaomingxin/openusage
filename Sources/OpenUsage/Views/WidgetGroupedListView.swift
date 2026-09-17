@@ -27,21 +27,16 @@ struct WidgetGroupedListView: View {
     @State private var balanceHeights: [String: CGFloat] = [:]
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
 
-    /// Rough stand-in height (header + a couple of rows) for a card that hasn't been measured yet.
-    /// Only needs to be even across cards so an unmeasured grid alternates left/right.
-    private static let estimatedCardHeight: CGFloat = 140
-
     var body: some View {
-        // Masonry grid: two independent columns, each card joining the currently shorter one instead
-        // of pairing into fixed rows. Row pairing left ragged whitespace under the shorter card of a
-        // row and stretched a leftover odd card to full width; independent columns stack tight and
-        // every card keeps the standard half width. Gap matches section spacing so the grid reads as
-        // even on both axes.
-        let columns = Self.assignColumns(layout.displayGroups, heights: balanceHeights)
+        // Masonry grid (`MasonryLayout`): two independent columns, each card joining the currently
+        // shorter one. Not `MasonryGrid` — the cards already publish frames for drag-reorder, so the
+        // heights come from those frames instead of a second measurement pass. Gap matches section
+        // spacing so the grid reads as even on both axes.
+        let columns = MasonryLayout.assignColumns(layout.displayGroups, heights: balanceHeights)
         HStack(alignment: .top, spacing: density.sectionSpacing) {
             ForEach(columns) { column in
                 VStack(alignment: .leading, spacing: density.sectionSpacing) {
-                    ForEach(column.groups) { group in
+                    ForEach(column.items) { group in
                         section(group)
                     }
                 }
@@ -55,31 +50,6 @@ struct WidgetGroupedListView: View {
         }
         .onChange(of: layout.displayGroups.map(\.provider.id)) { _, _ in rebalanceColumns() }
         .animation(Motion.spring, value: layout.displayGroups.map(\.provider.id))
-    }
-
-    /// One side of the masonry grid. Identified by position, so a card moving between columns moves
-    /// between two stable parents — same as it did between rows.
-    private struct CardColumn: Identifiable {
-        let index: Int
-        var groups: [ProviderGroup] = []
-        var id: Int { index }
-    }
-
-    /// Splits the cards between the two columns by walking them in display order and always adding
-    /// the next card to the currently shorter column. A card with no measurement yet (first render,
-    /// or a provider just turned on) counts as `estimatedCardHeight`, so a fresh grid starts in an
-    /// even left/right alternation and settles once real heights arrive. A card's height doesn't
-    /// depend on which equal-width column it lands in, so the split converges after one measurement
-    /// pass instead of looping.
-    private static func assignColumns(_ groups: [ProviderGroup], heights: [String: CGFloat]) -> [CardColumn] {
-        var columns = [CardColumn(index: 0), CardColumn(index: 1)]
-        var totals: [CGFloat] = [0, 0]
-        for group in groups {
-            let target = totals[0] <= totals[1] ? 0 : 1
-            columns[target].groups.append(group)
-            totals[target] += heights[group.provider.id] ?? estimatedCardHeight
-        }
-        return columns
     }
 
     /// Feeds the balancing heights from the reorder frames. `cardHeights` tracks the latest

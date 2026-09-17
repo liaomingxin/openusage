@@ -54,13 +54,10 @@ struct DashboardContentView: View {
                 .padding(.bottom, density.sectionSpacing)
         }
         if layout.displayGroups.isEmpty {
-            Text("Turn on Customize to choose what to show.")
-                .font(.system(size: density.supportingPointSize))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .padding(.horizontal, 16)
+            EmptyStateView(
+                title: "Nothing to Show",
+                message: "Turn on Customize to choose what to show."
+            )
         } else {
             WidgetGroupedListView(
                 reorderSpaceName: reorderSpaceName,

@@ -22,6 +22,12 @@ enum Theme {
         AnyShapeStyle(meterColor(severity))
     }
 
+    /// `meterFill` for an optional severity: the inactive gray when there's none (a no-data track, a
+    /// row with no warning to color).
+    static func severityFill(_ severity: WidgetData.MeterSeverity?) -> AnyShapeStyle {
+        severity.map(meterFill) ?? AnyShapeStyle(Color.secondary)
+    }
+
     private static func meterColor(_ severity: WidgetData.MeterSeverity) -> Color {
         switch severity {
         case .normal: return Color(nsColor: .systemBlue)

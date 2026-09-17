@@ -55,21 +55,14 @@ struct CustomizeProviderDetailView: View {
     // MARK: - Metric sections
 
     private func metricSection(_ title: String, metrics: [WidgetDescriptor], providerID: String) -> some View {
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            Text(title)
-                .font(.system(size: density.captionPointSize, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, Theme.sectionHeaderInset)
-            VStack(spacing: 0) {
-                if metrics.isEmpty {
-                    emptyDropZone(providerID: providerID)
-                } else {
-                    ForEach(metrics, id: \.id) { metric in
-                        metricRow(metric, in: providerID)
-                    }
+        SectionCard(title) {
+            if metrics.isEmpty {
+                emptyDropZone(providerID: providerID)
+            } else {
+                ForEach(metrics, id: \.id) { metric in
+                    metricRow(metric, in: providerID)
                 }
             }
-            .cardSurface()
         }
     }
 
