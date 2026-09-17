@@ -16,6 +16,8 @@ struct TotalSpendCard: View {
     /// The provider the pointer is over — set by the legend rows and the ring arcs alike, so hover
     /// links the two in both directions. Shared with the legend, so it lives here.
     @State private var hoveredProviderID: String?
+    /// Whether the pointer is over the header — reveals the share control, like a provider header.
+    @State private var isHeaderHovered = false
 
     /// The selected period survives popover closes and relaunches, like the meter-style toggles.
     @AppStorage(TotalSpendSetting.periodKey) private var periodRawValue = TotalSpendPeriod.today.rawValue
@@ -56,7 +58,8 @@ struct TotalSpendCard: View {
     // MARK: - Header
 
     /// Section header matching the provider headers' scale: title menu leading, the share control
-    /// trailing where a provider header shows its mark.
+    /// trailing — revealed on hover exactly like a provider header's copy control, so the two header
+    /// kinds share one affordance (the right-click menu keeps the action reachable without hovering).
     private var header: some View {
         HStack(spacing: 5) {
             metricMenu
@@ -69,6 +72,8 @@ struct TotalSpendCard: View {
         }
         .padding(.horizontal, Theme.sectionHeaderInset)
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .onHover { isHeaderHovered = $0 }
     }
 
     /// Title that is itself the metric switch — a plain pull-down with zero extra chrome.
@@ -111,7 +116,7 @@ struct TotalSpendCard: View {
     }
 
     private var shareButton: some View {
-        CopyFeedbackButton(accessibilityLabel: "Copy \(metric.title) Screenshot") {
+        CopyFeedbackButton(accessibilityLabel: "Copy \(metric.title) Screenshot", isRevealed: isHeaderHovered) {
             ShareCardRenderer.shareTotalSpend(
                 total: total,
                 metric: metric,

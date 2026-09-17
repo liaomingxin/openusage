@@ -23,7 +23,9 @@ struct AgentUsageSection: View {
     /// The agent identity on the mark + name (a provider header's anatomy), with the window's cost
     /// primary and tokens secondary on the trailing edge.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
+        // The mark centers on the text line (it has no baseline to align to) — the same anatomy as
+        // `ProviderSectionHeader`; only the text run inside is baseline-aligned.
+        HStack(alignment: .center, spacing: 5) {
             ProviderIcon(source: summary.icon, inset: 0.04)
                 .frame(width: density.headerIconSize, height: density.headerIconSize)
             HStack(alignment: .firstTextBaseline, spacing: 8) {
