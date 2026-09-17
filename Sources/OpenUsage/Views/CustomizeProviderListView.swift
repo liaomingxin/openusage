@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// The Customize provider list (L1): every known provider as a row, in the user's saved order —
-/// including disabled ones (greyed), so the user can re-enable them or open their detail. Each row
-/// carries an on/off toggle, a metric-count label, and a chevron into the provider's detail (L2).
-/// Enabled providers drag-reorder by the leading grip; tapping a row opens
-/// L2 (`layout.customizeProviderID = id`).
+/// including disabled ones (greyed), so the user can re-enable them or open their detail — dealt
+/// into two side-by-side cards in reading order. Each row carries an on/off toggle, a metric-count
+/// label, and a chevron into the provider's detail (L2). Enabled providers drag-reorder by the
+/// leading grip (across both cards); tapping a row opens L2 (`layout.customizeProviderID = id`).
 struct CustomizeProviderListView: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(AppContainer.self) private var container
@@ -18,13 +18,25 @@ struct CustomizeProviderListView: View {
     private var orderedRows: [ProviderRow] { layout.customizeProviderRows }
 
     var body: some View {
+        // Two cards side by side, the rows dealt into them in reading order (row 1 left, row 2 right,
+        // …) — the dashboard's shorter-column rule with equal-height rows, which is exactly that
+        // alternation. Halves the list's height on the wide panel and keeps each toggle within reach
+        // of its name. Drag-reorder is unchanged: the gesture hit-tests row frames in the shared
+        // coordinate space, so a drop onto any row (either card) takes that row's position and the
+        // rest re-deal. No measurement pass — every row is one line tall, so the split is fixed.
+        let columns = MasonryLayout.assignColumns(orderedRows, heights: [:])
         VStack(alignment: .leading, spacing: density.sectionSpacing) {
-            VStack(spacing: 0) {
-                ForEach(orderedRows) { row in
-                    providerRow(row)
+            HStack(alignment: .top, spacing: density.sectionSpacing) {
+                ForEach(columns) { column in
+                    VStack(spacing: 0) {
+                        ForEach(column.items) { row in
+                            providerRow(row)
+                        }
+                    }
+                    .cardSurface()
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
-            .cardSurface()
             // App behavior/appearance options live on the other screen; catch users who came here
             // hunting for them once they've scanned past the provider list.
             ScreenCrossLinkRow(

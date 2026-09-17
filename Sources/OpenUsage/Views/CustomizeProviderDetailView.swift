@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// The Customize detail for one provider (L2): two distinct cards — **Always Visible** (shown on the
-/// dashboard card) and **On Demand** (tucked behind the card's caret). Drag a metric by its grip
-/// onto a row in the other card to move it across; an empty card shows a small dashed "Drag metrics
-/// here" drop zone that's also the drop target for moving a metric into it. Each metric row is
+/// The Customize detail for one provider (L2): two distinct cards side by side — **Always Visible**
+/// (shown on the dashboard card) on the left and **On Demand** (tucked behind the card's caret) on
+/// the right. Drag a metric by its grip onto a row in the other card to move it across; an empty
+/// card shows a small dashed "Drag metrics here" drop zone that's also the drop target for moving a
+/// metric into it. Each metric row is
 /// grip · name · star · toggle (drag left, toggle right — same shape as the provider rows). The star
 /// is always visible: outline when not starred, filled accent when starred; tapping it pops a
 /// transient confirmation pill (and an orange denial pill over the per-provider cap). Providers that
@@ -45,10 +46,15 @@ struct CustomizeProviderDetailView: View {
         }
     }
 
+    /// The two cards side by side — Always Visible left, On Demand right — so moving a metric across
+    /// the fold is a left/right drag on the wide panel rather than a long vertical one. The drag
+    /// gesture lives on this container (see `metricDragGesture`), so it survives the cross.
     private func metricSections(_ group: ProviderMetrics) -> some View {
-        VStack(alignment: .leading, spacing: density.sectionSpacing) {
+        HStack(alignment: .top, spacing: density.sectionSpacing) {
             metricSection("Always Visible", metrics: group.alwaysShownMetrics, providerID: group.provider.id)
+                .frame(maxWidth: .infinity, alignment: .top)
             metricSection("On Demand", metrics: group.expandedMetrics, providerID: group.provider.id)
+                .frame(maxWidth: .infinity, alignment: .top)
         }
     }
 

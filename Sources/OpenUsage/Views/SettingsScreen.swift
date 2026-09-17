@@ -6,9 +6,10 @@ import SwiftUI
 /// The in-popover Settings screen — the popover's third mode alongside the dashboard and
 /// Customize. It replaces the old separate Settings window, which forced the popover closed every
 /// time it opened. Sections are `SectionCard`s (caption header over a rounded card of `ControlRow`s)
-/// so the popover keeps one visual language; controls sit on each row's trailing edge like
-/// System Settings. The footer already shows the version; the release build adds an "Updates" section
-/// (auto-check, beta channel, and a full-width manual check button).
+/// laid out in the dashboard's two-column masonry, so the popover keeps one visual language;
+/// controls sit on each row's trailing edge like System Settings. The footer already shows the
+/// version; the release build adds an "Updates" section (auto-check, beta channel, and a full-width
+/// manual check button).
 struct SettingsScreen: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout
@@ -34,11 +35,12 @@ struct SettingsScreen: View {
     /// Settings stays mounted between visits, so explicitly restore its previous scroll-to-top behavior.
     @State private var scrollPosition = ScrollPosition(edge: .top)
 
-    /// The screen's sections in display order. Enumerated (rather than listed inline) so the layout
-    /// can place them as identifiable cards.
+    /// The screen's sections in display order — the grid walks them in this order, so General and
+    /// iCloud Sync head the two columns. Enumerated (rather than listed inline) so the masonry can
+    /// place them as identifiable cards.
     private enum Section: String, CaseIterable, Identifiable {
         case general, iCloudSync, appearance, usageDisplay, notifications, privacy, commandLine, advanced
-        case updates, customizeLink
+        case updates
         var id: String { rawValue }
     }
 
@@ -58,11 +60,21 @@ struct SettingsScreen: View {
     }
 
     private var content: some View {
-        // Same section rhythm as the dashboard and Customize (all read the density setting).
+        // The dashboard's two-column masonry, so the settings cards pack the wide panel the way the
+        // provider cards do instead of stretching every label→control row across it. Same section
+        // rhythm as the dashboard and Customize (all read the density setting). The cross-link to
+        // Customize sits full width under the grid — a navigation row, not a settings card.
         VStack(alignment: .leading, spacing: density.sectionSpacing) {
-            ForEach(visibleSections) { section in
+            MasonryGrid(items: visibleSections, spacing: density.sectionSpacing) { section in
                 sectionView(section)
             }
+            // Mirror of the Customize cross-link — the layout controls live on the other screen.
+            ScreenCrossLinkRow(
+                systemImage: "slider.horizontal.3",
+                title: "Customize",
+                subtitle: "Choose what's visible and where",
+                destination: .customize
+            )
         }
         .padding(.horizontal, Theme.screenInset)
         .padding(.vertical, 12)
@@ -94,14 +106,6 @@ struct SettingsScreen: View {
         case .commandLine: commandLineSection
         case .advanced: advancedSection
         case .updates: updatesSection
-        case .customizeLink:
-            // Mirror of the Customize cross-link — the layout controls live on the other screen.
-            ScreenCrossLinkRow(
-                systemImage: "slider.horizontal.3",
-                title: "Customize",
-                subtitle: "Choose what's visible and where",
-                destination: .customize
-            )
         }
     }
 

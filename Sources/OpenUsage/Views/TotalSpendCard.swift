@@ -143,8 +143,10 @@ struct TotalSpendCard: View {
             }
     }
 
-    /// Ring steady on the left in a ~40% column; the right column stacks the compact period picker
-    /// over the legend, so a two-provider period no longer stretches the picker across empty space.
+    /// Ring steady on the left in a snug column; the right column stacks the compact period picker
+    /// over the legend and is capped in width, so on the wide card a legend row's name and figures
+    /// stay within one glance instead of stretching to opposite edges. Whatever is left stays empty
+    /// on the trailing side rather than padding the ring or the legend apart.
     @ViewBuilder private var cardBody: some View {
         if projection.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
@@ -153,9 +155,11 @@ struct TotalSpendCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            HStack(spacing: 18) {
+            HStack(alignment: .top, spacing: 18) {
                 TotalSpendRing(projection: projection, hoveredProviderID: $hoveredProviderID)
                     .frame(width: Self.ringColumnWidth)
+                    // Center the ring on the legend column's height (the legend grows with its rows).
+                    .frame(maxHeight: .infinity, alignment: .center)
                 VStack(alignment: .leading, spacing: 12) {
                     periodPicker
                     TotalSpendLegend(
@@ -164,13 +168,20 @@ struct TotalSpendCard: View {
                         hoveredProviderID: $hoveredProviderID
                     )
                 }
+                .frame(maxWidth: Self.legendColumnMaxWidth, alignment: .leading)
+                Spacer(minLength: 0)
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    /// Leading column for the 104pt ring (centered), sized to roughly a 4:6 split against the legend
-    /// column at the card's ~596pt content width.
-    private static let ringColumnWidth: CGFloat = 232
+    /// Leading column for the 104pt ring: the ring plus a little air on either side, so the hovered
+    /// arc's 5% growth never clips.
+    private static let ringColumnWidth: CGFloat = 132
+
+    /// Cap on the picker + legend column. A legend row is name · amount · share · (tokens); past
+    /// this width the name and its figures drift too far apart to read as one line.
+    private static let legendColumnMaxWidth: CGFloat = 360
 
     /// Raw per-provider token counts for the legend's parenthetical — from the un-projected total,
     /// since projected slices carry only the ranked display amount.
