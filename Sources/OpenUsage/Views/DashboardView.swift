@@ -356,7 +356,8 @@ struct DashboardView: View {
         if let index = pages.firstIndex(of: .settings) {
             return CGFloat(index) * pageWidth + slideOffset
         }
-        return pageWidth * 2
+        // Beyond the rightmost page (Settings sits at rank 3 in the four-screen slide order).
+        return pageWidth * 3
     }
 
     /// Parked Settings must not keep a second footer, keyboard shortcuts, or alert presenter alive.
@@ -475,6 +476,8 @@ struct DashboardView: View {
                 reorderSpaceName: Self.reorderSpace,
                 reorderLift: $reorderLift
             )
+        case .agentUsage:
+            AgentUsageScreen()
         case .settings:
             SettingsScreen()
         }

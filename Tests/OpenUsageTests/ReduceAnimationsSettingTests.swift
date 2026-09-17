@@ -39,8 +39,10 @@ final class ReduceAnimationsSettingTests: XCTestCase {
             ([.dashboard, .settings], 0, 320),
             ([.dashboard, .settings], -320, 0),
             ([.settings], 0, 0),
-            ([.dashboard], 0, 640),
-            ([.dashboard, .customize], -160, 640)
+            ([.dashboard], 0, 960),
+            ([.dashboard, .customize], -160, 960),
+            // Settings parks beyond the rightmost page (rank 3 in the four-screen order).
+            ([.agentUsage], 0, 960)
         ]
 
         for item in cases {

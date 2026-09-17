@@ -1,17 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// The dashboard footer's trailing control: a single **Options ⌄** menu button in Liquid Glass. The
-/// earlier split button ("Customize" + separate chevron) confused people — two tap targets in one
-/// capsule read as one — so everything now lives in one obvious menu: Customize / Settings / Share
-/// Screenshot / Check for Updates / About / Quit. Customize leads the menu because it's the screen
-/// users reach for most; Settings stays one click away (and always via ⌘,).
+/// The dashboard footer's trailing controls: an **Agents** quick-open button and the **Options ⌄** menu
+/// button, each on its own Liquid Glass capsule. Agent Usage — the per-agent, per-model local usage
+/// screen — is a data view the user hops to often, so it gets its own labeled capsule beside Options
+/// instead of hiding in the menu; Options still carries an Agent Usage item so the screen is reachable
+/// from either affordance. The menu holds everything else: Customize / Settings / Share Screenshot /
+/// Check for Updates / About / Quit. Customize leads the menu because it's the screen users reach for
+/// most; Settings stays one click away (and always via ⌘,).
 ///
-/// The capsule is a `.buttonStyle(.plain)` `Menu` with one `interactiveGlass(in: Capsule())` treatment
-/// behind it — the system `.buttonStyle(.glass)` renders flat on a `Menu` (its own button chrome wins),
-/// so the treatment goes on the container. Increase Transparency adds an adaptive frosted base beneath
-/// the glass for contrast; macOS 15 uses that frosted capsule as its fallback. The menu renders in its
-/// own `NSMenu`-backed window, which the panel's outside-click policy keeps the popover open for.
+/// Both capsules are `.buttonStyle(.plain)` controls with one `interactiveGlass(in: Capsule())`
+/// treatment behind each — the system `.buttonStyle(.glass)` renders flat on a `Menu` (its own button
+/// chrome wins), so the treatment goes on the container. Increase Transparency adds an adaptive
+/// frosted base beneath the glass for contrast; macOS 15 uses that frosted capsule as its fallback.
+/// The menu renders in its own `NSMenu`-backed window, which the panel's outside-click policy keeps
+/// the popover open for.
 ///
 /// Only the dashboard shows this; the Customize and Settings screens carry their own top-leading back
 /// button (`PopoverTopBar`) to return home — the macOS-native place for it — so the footer control
@@ -39,17 +42,45 @@ struct HeaderView: View {
         leadingControl
     }
 
-    /// On the dashboard, the Options menu button on one glass capsule.
+    /// On the dashboard, the Agent Usage quick-open button plus the Options menu button, each on
+    /// its own glass capsule. Agent Usage is a data view (per-agent, per-model local usage), so it
+    /// gets its own labeled control rather than hiding inside Options; the Options menu still
+    /// carries an Agent Usage item so the screen is reachable from either affordance.
     @ViewBuilder
     private var leadingControl: some View {
         if screen == .dashboard {
-            optionsButton
-                .fixedSize()
-                .interactiveGlass(
-                    in: Capsule(),
-                    reinforced: transparency.effectiveStyle.needsChromeLegibilityBacking
-                )
+            HStack(spacing: 8) {
+                agentUsageButton
+                optionsButton
+            }
+            .fixedSize()
         }
+    }
+
+    /// The Agent Usage quick-open: same capsule treatment as Options, with a chart glyph so the two
+    /// chrome buttons read as siblings. Toggling from the Agent Usage screen itself never happens —
+    /// the footer there shows only the identity line (see `leadingControl`'s screen guard).
+    private var agentUsageButton: some View {
+        Button {
+            withAnimation(Motion.modeSwitch) { layout.screen = .agentUsage }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Agents")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 14)
+            .frame(height: Self.controlHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .interactiveGlass(
+            in: Capsule(),
+            reinforced: transparency.effectiveStyle.needsChromeLegibilityBacking
+        )
+        .accessibilityLabel("Agent Usage")
     }
 
     /// The Options pull-down: label plus its own chevron glyph. `.menuStyle(.button)` +
@@ -74,6 +105,10 @@ struct HeaderView: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
+        .interactiveGlass(
+            in: Capsule(),
+            reinforced: transparency.effectiveStyle.needsChromeLegibilityBacking
+        )
     }
 
     /// The menu's items, mirroring their in-popover entry points. Customize leads, then Settings.
@@ -89,6 +124,10 @@ struct HeaderView: View {
             Label("Customize", systemImage: "slider.horizontal.3")
         }
         .keyboardShortcut(.return, modifiers: [])
+
+        Button { toggle(.agentUsage) } label: {
+            Label("Agent Usage", systemImage: "chart.bar.xaxis")
+        }
 
         Button { toggle(.settings) } label: {
             Label("Settings", systemImage: "gearshape")

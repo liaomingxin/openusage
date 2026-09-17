@@ -69,6 +69,7 @@ final class StatusItemController: NSObject {
                     .environment(container.layout)
                     .environment(container.dataStore)
                     .environment(container.transparency)
+                    .environment(container.agentUsage)
                     .environment(updater)
                     .environment(\.codexResetClaim, container.codexResetClaim)
             )

@@ -27,7 +27,9 @@ actor PiUsageScanner {
 
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("pi"),
-        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: 1)
+        // v2: unmapped-provider lines are kept (cardID falls back to the raw pi provider id) so the
+        // Agent Usage screen can see every model; v1 cached parses dropped those lines.
+        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: 2)
     )
 
     static func flushPersistentCacheWrites() async {
@@ -65,6 +67,19 @@ actor PiUsageScanner {
         cardID: String, daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing,
         estimateCost: CostEstimator? = nil
     ) async -> LogUsageScan? {
+        await scanEntries(cardID: cardID, daysBack: daysBack, now: now, pricing: pricing, estimateCost: estimateCost)
+    }
+
+    /// Every provider's pi usage in one scan — the Agent Usage screen's machine-wide view (which
+    /// model, how many tokens, what cost), with no card attribution filter.
+    func scanAll(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+        await scanEntries(cardID: nil, daysBack: daysBack, now: now, pricing: pricing, estimateCost: nil)
+    }
+
+    private func scanEntries(
+        cardID: String?, daysBack: Int, now: Date, pricing: ModelPricing,
+        estimateCost: CostEstimator?
+    ) async -> LogUsageScan? {
         let directory = PiPaths.sessionsDirectory(environment: environment, homeDirectory: homeDirectory())
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         let cacheIdentity = directory.resolvingSymlinksInPath().path
@@ -90,8 +105,9 @@ actor PiUsageScanner {
 
     // MARK: - Parsing
 
-    /// Parse every mapped assistant usage line of one session file. Lines for pi providers OpenUsage
-    /// doesn't track are dropped here so they never reach aggregation.
+    /// Parse every mapped assistant usage line of one session file. Lines whose pi provider has no
+    /// OpenUsage card are kept too (with the raw pi provider id as `cardID`) — card scans filter at
+    /// aggregation, and the Agent Usage screen wants every provider's models.
     static func parseFile(_ data: Data) -> [Entry] {
         let marker = Data(#""usage":{"#.utf8)
         var entries: [Entry] = []
@@ -110,9 +126,9 @@ actor PiUsageScanner {
               let message = object["message"] as? [String: Any],
               message["role"] as? String == "assistant",
               let providerID = message["provider"] as? String,
-              let cardID = PiProviderMapping.cardID(forPiProvider: providerID),
               let usage = message["usage"] as? [String: Any]
         else { return nil }
+        let cardID = PiProviderMapping.cardID(forPiProvider: providerID) ?? providerID
 
         let cacheWrite = Int(ProviderParse.number(usage["cacheWrite"]) ?? 0)
         let cacheWrite1h = Int(ProviderParse.number(usage["cacheWrite1h"]) ?? 0)
@@ -154,14 +170,15 @@ actor PiUsageScanner {
     /// Bucket the card's entries into local calendar days. Cost is pi's carried total when it recorded
     /// one, else the tokens priced through `pricing`; a model that can't be priced and carries no cost
     /// is excluded from the totals and surfaced as the tile's unknown-model warning, matching the log
-    /// scanners.
+    /// scanners. A nil `cardID` aggregates every entry — the Agent Usage screen's machine-wide view.
     static func aggregate(
-        entries: [Entry], cardID: String, since: Date, pricing: ModelPricing,
+        entries: [Entry], cardID: String?, since: Date, pricing: ModelPricing,
         estimateCost: CostEstimator? = nil
     ) -> LogUsageScan {
         let estimate = estimateCost ?? { pricing.estimatedCostDollars(model: $0, tokens: $1) }
         var accumulator = DailyUsageAccumulator()
-        for entry in entries where entry.cardID == cardID && entry.timestamp >= since {
+        for entry in entries where cardID == nil || entry.cardID == cardID {
+            if entry.timestamp < since { continue }
             let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
             let trimmedModel = entry.model.nilIfEmpty
             let modelName = trimmedModel ?? ModelUsageEntry.unattributedModelName

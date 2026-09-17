@@ -39,6 +39,12 @@ struct PopoverTopBar: View {
             } trailing: {
                 EmptyView()
             }
+        case .agentUsage:
+            navigationBar(title: "Agent Usage") {
+                withAnimation(Motion.modeSwitch) { layout.screen = .dashboard }
+            } trailing: {
+                EmptyView()
+            }
         }
     }
 

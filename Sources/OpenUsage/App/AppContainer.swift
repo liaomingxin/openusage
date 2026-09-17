@@ -33,6 +33,9 @@ final class AppContainer {
     /// plus the live capture signal. Read by `StatusItemImageUpdater` to swap the strip for the
     /// wordmark while the screen is shared or recorded.
     let privacy: MenuBarPrivacyStore
+    /// The Agent Usage screen's scan results and window reports (one machine-wide scan pass per
+    /// local agent, reduced into the four time windows the screen switches between).
+    let agentUsage: AgentUsageStore
     /// One-time onboarding state (the first-run Customize hint card). Only ever marked pending by
     /// `FirstRunSeeder` on a fresh install, so existing installs never see the card.
     let onboarding: OnboardingStore
@@ -187,6 +190,9 @@ final class AppContainer {
         self.telemetry = telemetry
         self.transparency = PopoverTransparencyStore()
         self.privacy = MenuBarPrivacyStore()
+        self.agentUsage = AgentUsageStore(
+            cursorSnapshot: { [dataStore] in dataStore.snapshots["cursor"] }
+        )
         self.localAPI = LocalUsageServer(state: { [layout, enablement, dataStore] in
             LocalUsageAPI.State(
                 enabledOrderedIDs: layout.orderedProviderIDs().filter { enablement.isEnabled($0) },

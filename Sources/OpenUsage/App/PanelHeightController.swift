@@ -133,6 +133,7 @@ final class PanelHeightController {
         switch screen {
         case .dashboard: "openusage.panel.height.dashboard"
         case .customize: "openusage.panel.height.customize"
+        case .agentUsage: "openusage.panel.height.agentUsage"
         case .settings: "openusage.panel.height.settings"
         }
     }

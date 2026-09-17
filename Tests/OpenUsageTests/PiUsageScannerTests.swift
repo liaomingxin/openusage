@@ -63,9 +63,12 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(entry?.tokens.cacheWrite5m, 600)
     }
 
-    func testMapsCodexAndSkipsUnmappedAndNonAssistant() {
+    func testMapsCodexAndKeepsUnmappedLinesForScanAll() {
         XCTAssertEqual(PiUsageScanner.parseLine(line(provider: "openai-codex"))?.cardID, "codex")
-        XCTAssertNil(PiUsageScanner.parseLine(line(provider: "nvidia-nim")))
+        // Unmapped providers have no OpenUsage card, but their lines now parse (the raw pi provider
+        // id stands in as cardID) so the Agent Usage screen's machine-wide scanAll sees every model;
+        // card scans filter them out at aggregation (see PiUsageScanAllTests).
+        XCTAssertEqual(PiUsageScanner.parseLine(line(provider: "nvidia-nim"))?.cardID, "nvidia-nim")
         let userLine = Data(#"{"type":"message","timestamp":"2026-07-12T10:00:00.000Z","message":{"role":"user","provider":"anthropic","usage":{}}}"#.utf8)
         XCTAssertNil(PiUsageScanner.parseLine(userLine))
     }
