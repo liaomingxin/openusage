@@ -15,7 +15,12 @@ The code is grouped by role:
 - `Stores/` — the mutable state the UI observes.
 - `Services/` — shared infrastructure (HTTP, the local API, process running).
 - `Support/` — small shared helpers (formatting, parsing, animations).
-- `Views/` — the SwiftUI screens (dashboard, customize, settings, menu-bar strip).
+- `Views/` — the SwiftUI screens (dashboard, customize, settings, menu-bar strip). `Views/Components/`
+  holds the building blocks every screen shares — the section card and its rows, the capsule
+  segmented picker, the two-column card grid, the empty state — so the screens look alike because
+  they are built from the same parts. Sizes come from two places: `Stores/DensitySetting.swift`
+  for everything that steps down in Compact (type sizes, row padding, gaps) and `Support/Theme.swift`
+  for the fixed insets, corner radii, and colors.
 
 ## Composition root
 
