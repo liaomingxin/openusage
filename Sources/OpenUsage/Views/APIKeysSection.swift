@@ -36,9 +36,9 @@ struct APIKeysSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             Text("API Key")
-                .font(.caption.weight(.semibold))
+                .font(.system(size: density.captionPointSize, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Theme.sectionHeaderInset)
             VStack(spacing: 0) {
                 providerRow
                 if isOpen {
@@ -61,6 +61,7 @@ struct APIKeysSection: View {
             ProviderIcon(source: provider.provider.icon)
                 .frame(width: 18, height: 18)
             Text(provider.provider.displayName)
+                .font(.system(size: density.bodyPointSize))
             Spacer(minLength: 8)
             statusDot
             Button(isOpen ? "Done" : (status == .notSet ? "Add" : "Edit")) {
@@ -69,7 +70,7 @@ struct APIKeysSection: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.controlRowPadding)
     }
 
@@ -101,7 +102,7 @@ struct APIKeysSection: View {
                 } else {
                     Toggle("Override With a Custom Key", isOn: $overrideChecked)
                         .toggleStyle(.checkbox)
-                        .font(.caption)
+                        .font(captionFont)
                 }
             } else {
                 // saved / overrideActive: a custom key is already set, so the override checkbox is
@@ -111,11 +112,12 @@ struct APIKeysSection: View {
             }
             if let actionError {
                 Text(actionError)
-                    .font(.caption)
+                    .font(captionFont)
                     .foregroundStyle(Theme.notice)
             }
         }
-        .padding(12)
+        .padding(.horizontal, Theme.cardRowInset)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Rectangle().fill(.fill.quinary))
         .onChange(of: overrideChecked) { _, isOn in
@@ -140,9 +142,11 @@ struct APIKeysSection: View {
             }
             .pickerStyle(.menu)
             .controlSize(.small)
-            .font(.caption)
+            .font(captionFont)
         }
     }
+
+    private var captionFont: Font { .system(size: density.captionPointSize) }
 
     /// The single field, in read-only or editable mode. Read-only shows a muted source hint (or the
     /// revealed key once the eye is clicked) and carries a leading clear button when a saved key can

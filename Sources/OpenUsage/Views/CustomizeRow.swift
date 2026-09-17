@@ -21,11 +21,12 @@ struct CustomizeMetricRow<Handle: View, Trailing: View>: View {
         HStack(spacing: 10) {
             handle(AnyView(ReorderGrip()))
             Text(title)
+                .font(.system(size: density.bodyPointSize))
                 .foregroundStyle(.primary)
             Spacer(minLength: 8)
             trailing
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.controlRowPadding)
     }
 }

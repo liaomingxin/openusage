@@ -49,6 +49,11 @@ struct WidgetRowView: View {
         .system(size: density.supportingPointSize, weight: .regular)
     }
 
+    /// Subtitle / detail line under a value ("on-device estimate", "1,030 / 28,000 credits").
+    private var captionFont: Font {
+        .system(size: density.captionPointSize)
+    }
+
     var body: some View {
         // A row with a concrete reset date derives time-sensitive state (reset countdown, pace marker,
         // "Runs out in …") from the current clock, so it re-renders on a 30s tick — the cadence the
@@ -65,7 +70,7 @@ struct WidgetRowView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Theme.cardRowInset)
         // Bar rows are multi-line and earn breathing room; single-line text rows (Today / Yesterday /
         // Last 30 Days) stay tighter so consecutive ones read as a cluster, not evenly-spaced
         // full-height rows. This differentiation — not the fonts — is what kills the "jumpy" rhythm.
@@ -118,7 +123,7 @@ struct WidgetRowView: View {
     private var meterDetailRow: some View {
         if data.hasData, let detail = data.meterDetail {
             Text(detail)
-                .font(.caption)
+                .font(captionFont)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -342,19 +347,19 @@ struct WidgetRowView: View {
                     // Secondary, not tertiary: the subtitle is informational ("on-device estimate"),
                     // and tertiary is reserved for inactive content on glass.
                     Text(subtitle)
-                        .font(.caption)
+                        .font(captionFont)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
             .multilineTextAlignment(.trailing)
-            // A quaternary chip behind the value — the app's subtle-fill token, in the shared 6pt
-            // continuous corner — signals the value is interactive before the breakdown even opens.
+            // A quaternary chip behind the value — the app's subtle-fill token, in the shared chip
+            // corner — signals the value is interactive before the breakdown even opens.
             // Negative-inset so it hugs the figure without changing the row's height (the text-row
             // rhythm that clusters Today / Yesterday / Last 30 Days must not shift), and a quick
             // opacity fade in/out matches macOS hover states.
             .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.chipCornerRadius, style: .continuous)
                     .fill(.quaternary)
                     .padding(.horizontal, -7)
                     .padding(.vertical, -4)

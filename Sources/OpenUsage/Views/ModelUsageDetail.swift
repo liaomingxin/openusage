@@ -28,7 +28,7 @@ struct ModelUsageDetail: View {
             }
             PopoverSourceNote(text: breakdown.sourceNote)
         }
-        .padding(14)
+        .padding(Theme.cardRowInset)
         .frame(width: Self.width)
         .onContinuousHover { phase in
             switch phase {

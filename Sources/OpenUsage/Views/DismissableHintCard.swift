@@ -13,6 +13,8 @@ struct DismissableHintCard: View {
     let action: () -> Void
     let onDismiss: () -> Void
 
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: systemImage)
@@ -21,10 +23,12 @@ struct DismissableHintCard: View {
                 .frame(width: 20, height: 20)
 
             VStack(alignment: .leading, spacing: 4) {
+                // The card title sits at the metric-label size (the dashboard's heaviest in-card line),
+                // its message at the caption size, so the banner reads in the same ladder as the cards.
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: density.labelPointSize, weight: .semibold))
                 Text(message)
-                    .font(.caption)
+                    .font(.system(size: density.captionPointSize))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(buttonTitle, action: action)
@@ -43,7 +47,8 @@ struct DismissableHintCard: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
         }
-        .padding(12)
+        .padding(.horizontal, Theme.cardRowInset)
+        .padding(.vertical, 12)
         .cardSurface()
     }
 }

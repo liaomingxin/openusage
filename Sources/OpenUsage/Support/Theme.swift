@@ -64,6 +64,32 @@ enum Theme {
     static var cardShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
     }
+
+    /// Corner radius of the small highlight chip behind an interactive value (the spend figure, the
+    /// sparkline strip) — the app's hover affordance, one shape everywhere it appears.
+    static let chipCornerRadius: CGFloat = 6
+
+    /// Corner radius of a panel nested inside a card or popover: the Customize "Drag metrics here" drop
+    /// zone, the reset-claim confirm card, result banners. One step tighter than the card it sits in.
+    static let insetCornerRadius: CGFloat = 8
+
+    // MARK: - Insets (not density-dependent — the popover width is fixed, so these are too)
+
+    /// Horizontal inset of every screen's scrolling content (and the fixed chrome's controls) from the
+    /// popover's edges — the dashboard, Customize, Settings, and Agent Usage all share it, so a
+    /// screen switch never shifts the cards' left edge.
+    static let screenInset: CGFloat = 14
+
+    /// Horizontal inset of content inside a card surface — every metric row, settings row, and
+    /// caption, plus the hairlines between them, so text and rules share one left edge. The hover
+    /// popovers (model breakdown, resets timeline, usage trend) use the same inset around their
+    /// content so the detail panels read as the cards they came from.
+    static let cardRowInset: CGFloat = 14
+
+    /// Horizontal inset of a section title (the provider mark + name, "General", "Always Visible")
+    /// relative to the card below it. Every section header on every screen uses this one value, so
+    /// the titles line up down the page whether the card holds meters, toggles, or a spend ring.
+    static let sectionHeaderInset: CGFloat = 8
 }
 
 extension View {

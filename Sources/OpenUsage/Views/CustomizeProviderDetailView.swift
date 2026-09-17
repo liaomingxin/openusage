@@ -57,9 +57,9 @@ struct CustomizeProviderDetailView: View {
     private func metricSection(_ title: String, metrics: [WidgetDescriptor], providerID: String) -> some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(.system(size: density.captionPointSize, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Theme.sectionHeaderInset)
             VStack(spacing: 0) {
                 if metrics.isEmpty {
                     emptyDropZone(providerID: providerID)
@@ -78,14 +78,14 @@ struct CustomizeProviderDetailView: View {
     /// this section via `applyMetricDividerOrder` (the sentinel sits at the empty section's edge).
     private func emptyDropZone(providerID: String) -> some View {
         let yOutset = max(0, (density.estimatedMetricRowHeight - 30) / 2)
-        return RoundedRectangle(cornerRadius: 8, style: .continuous)
+        return RoundedRectangle(cornerRadius: Theme.insetCornerRadius, style: .continuous)
             .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
             .foregroundStyle(.tertiary)
             .frame(height: 30)
             .padding(8)
             .overlay(
                 Text("Drag metrics here")
-                    .font(.caption)
+                    .font(.system(size: density.captionPointSize))
                     .foregroundStyle(.tertiary)
             )
             .reorderFrame(id: expandedDividerID(for: providerID), in: .named(reorderSpaceName), yOutset: yOutset)

@@ -34,6 +34,8 @@ final class DensitySettingTests: XCTestCase {
             ("supportingPointSize", \.supportingPointSize),
             ("headerPointSize", \.headerPointSize),
             ("planBadgePointSize", \.planBadgePointSize),
+            ("captionPointSize", \.captionPointSize),
+            ("bodyPointSize", \.bodyPointSize),
         ]
         for (name, size) in type {
             XCTAssertEqual(
@@ -43,6 +45,18 @@ final class DensitySettingTests: XCTestCase {
             )
         }
         XCTAssertEqual(DensitySetting.compact.headerIconSize, DensitySetting.regular.headerIconSize - 2)
+    }
+
+    func testTypeLadderStaysOrdered() {
+        // header → label/body → supporting → badge → caption must stay a strict descent in both
+        // densities, or a "supporting" line could print larger than the label it supports.
+        for density in DensitySetting.allCases {
+            XCTAssertGreaterThan(density.headerPointSize, density.labelPointSize)
+            XCTAssertEqual(density.bodyPointSize, density.labelPointSize)
+            XCTAssertGreaterThan(density.labelPointSize, density.supportingPointSize)
+            XCTAssertGreaterThan(density.supportingPointSize, density.planBadgePointSize)
+            XCTAssertGreaterThan(density.planBadgePointSize, density.captionPointSize)
+        }
     }
 
     func testSectionSpacingStaysWiderThanRowRhythm() {

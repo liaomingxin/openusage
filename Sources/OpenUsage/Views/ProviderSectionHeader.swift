@@ -113,8 +113,8 @@ struct ProviderSectionHeader: View {
                 )
             }
         }
-        .padding(.leading, 2)
-        .padding(.trailing, 4)
+        // No horizontal padding of its own: the caller applies `Theme.sectionHeaderInset`, the one
+        // inset every section title on every screen shares.
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }

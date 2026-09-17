@@ -5,9 +5,11 @@ import SwiftUI
 struct PopoverSourceNote: View {
     let text: String
 
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+
     var body: some View {
         Text(text)
-            .font(.system(size: 10))
+            .font(.system(size: density.captionPointSize))
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
             .multilineTextAlignment(.center)

@@ -9,8 +9,6 @@ import SwiftUI
 /// back provider buttons").
 struct ProviderLinksView: View {
     let links: [ProviderLink]
-    /// Matches the metric-row inset so the button row lines up with the rows above/below it.
-    private static let horizontalInset: CGFloat = 14
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
 
@@ -34,7 +32,8 @@ struct ProviderLinksView: View {
                     ProviderLinkButton(link: link)
                 }
             }
-            .padding(.horizontal, Self.horizontalInset)
+            // The metric-row inset, so the button row lines up with the rows above it.
+            .padding(.horizontal, Theme.cardRowInset)
             .padding(.top, density.textRowPadding)
             .padding(.bottom, density.textRowPadding)
         }

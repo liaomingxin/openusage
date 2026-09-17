@@ -53,7 +53,7 @@ struct DashboardView: View {
     /// click on its buttons can't be misread as an outside click that dismisses the popover.
     @State private var isPresentingResetAllConfirm = false
     /// Shared horizontal inset for dashboard content and fixed chrome.
-    private static let outerPadding: CGFloat = 14
+    private static let outerPadding: CGFloat = Theme.screenInset
     /// Breathing room between the bottom of the scrolling content and the pinned footer. Kept small
     /// because the native scroll edge effect — not whitespace — provides the visual separation.
     private static let contentBottomGap: CGFloat = 12

@@ -14,12 +14,13 @@ struct CodexPricingSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             Text("Cost Estimates")
-                .font(.caption.weight(.semibold))
+                .font(.system(size: density.captionPointSize, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Theme.sectionHeaderInset)
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
                     Text("Fallback Model")
+                        .font(.system(size: density.bodyPointSize))
                     Spacer(minLength: 8)
                     Picker("Fallback Model", selection: $selectedModel) {
                         Text("None").tag(CodexFallbackModelSetting.none)
@@ -34,7 +35,7 @@ struct CodexPricingSection: View {
                     .labelsHidden()
                     .disabled(activityLabel != nil)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.cardRowInset)
                 .padding(.vertical, density.controlRowPadding)
                 if let activityLabel {
                     HStack(spacing: 6) {
@@ -42,23 +43,23 @@ struct CodexPricingSection: View {
                             .accessibilityHidden(true)
                         Text(activityLabel)
                     }
-                    .font(.caption)
+                    .font(captionFont)
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .combine)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Theme.cardRowInset)
                     .padding(.bottom, 8)
                 }
                 Text("Estimate costs for models that don't have known pricing.")
-                    .font(.caption)
+                    .font(captionFont)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, Theme.cardRowInset)
                     .padding(.bottom, 10)
                 if selectionUnavailable && !isLoading {
                     Text("This model's pricing is unavailable. Choose another model or None.")
-                        .font(.caption)
+                        .font(captionFont)
                         .foregroundStyle(Theme.notice)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Theme.cardRowInset)
                         .padding(.bottom, 10)
                 }
             }
@@ -79,6 +80,8 @@ struct CodexPricingSection: View {
             recalculateIfNeeded()
         }
     }
+
+    private var captionFont: Font { .system(size: density.captionPointSize) }
 
     private func recalculateIfNeeded() {
         guard refreshState.update(model: selectedModel, options: options) else { return }

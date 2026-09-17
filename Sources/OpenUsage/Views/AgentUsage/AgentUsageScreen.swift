@@ -32,7 +32,7 @@ struct AgentUsageScreen: View {
             }
             .animation(Motion.spring, value: windowRawValue)
             .animation(Motion.spring, value: store.isLoading)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Theme.screenInset)
             .padding(.top, density.contentTopPadding)
             .padding(.bottom, 12)
             .frame(maxWidth: .infinity, alignment: .leading)

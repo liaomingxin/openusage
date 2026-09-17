@@ -129,8 +129,7 @@ struct WidgetGroupedListView: View {
             staleness: dataStore.stalenessHint(for: group.provider.id),
             onCopyScreenshot: { shareCard(group) }
         )
-        // Keep the provider mark and hover-revealed copy control aligned with the card's content edges.
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Theme.sectionHeaderInset)
         .highPriorityGesture(providerDragGesture(for: group))
         .contextMenu {
             // Hides the whole provider section (the Customize provider list brings it back). Mirrors

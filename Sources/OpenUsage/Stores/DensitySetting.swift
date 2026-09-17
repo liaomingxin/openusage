@@ -45,6 +45,17 @@ enum DensitySetting: String, Hashable, Sendable, CaseIterable {
     /// Plan badge beside the provider name — always one step below the supporting text.
     var planBadgePointSize: CGFloat { self == .compact ? 10 : 11 }
 
+    /// Explanatory / footnote text: settings captions, inline notices, source notes, row subtitles.
+    /// The bottom of the type ladder (header → label → supporting → badge → caption). Semantic
+    /// `.caption` doesn't track the density setting, so Compact left every caption full-size under
+    /// smaller rows; this steps them down with everything else.
+    var captionPointSize: CGFloat { self == .compact ? 9 : 10 }
+
+    /// Control-row label on the Settings / Customize screens (regular weight at the call site). The
+    /// same values as `labelPointSize`, kept as its own token so a metric-label change can't silently
+    /// move every settings row with it. Native controls beside the label keep their own system font.
+    var bodyPointSize: CGFloat { self == .compact ? 12 : 13 }
+
     // MARK: - Dimensions (all on the 4pt grid or its 2pt half-steps)
 
     /// Vertical padding on a bounded (meter) row: 20pt bar-to-bar in Default, 10pt in Compact.

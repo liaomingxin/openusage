@@ -30,6 +30,6 @@ struct CardHairline: View {
     var body: some View {
         Divider()
             .opacity(0.4)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Theme.cardRowInset)
     }
 }

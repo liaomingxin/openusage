@@ -41,6 +41,12 @@ struct SettingsScreen: View {
     /// Settings stays mounted between visits, so explicitly restore its previous scroll-to-top behavior.
     @State private var scrollPosition = ScrollPosition(edge: .top)
 
+    /// The three type sizes this screen uses, all off the density ladder so Compact steps every line
+    /// down together: the caption section title, the control-row label, and explanatory captions.
+    private var sectionTitleFont: Font { .system(size: density.captionPointSize, weight: .semibold) }
+    private var bodyFont: Font { .system(size: density.bodyPointSize) }
+    private var captionFont: Font { .system(size: density.captionPointSize) }
+
     /// Fills the region the dashboard's pinned footer leaves. Same scroller treatment as Customize:
     /// the overlay scroller stays (the scroll edge effect needs it) but is invisible.
     var body: some View {
@@ -70,7 +76,7 @@ struct SettingsScreen: View {
                 destination: .customize
             )
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Theme.screenInset)
         .padding(.vertical, 12)
         .task { await refreshNotificationsAuth() }
         .onChange(of: layout.screen) { _, screen in
@@ -209,13 +215,14 @@ struct SettingsScreen: View {
                     .settingsSwitchStyle()
             }
             Text("While your screen is shared or recorded, the menu bar shows “OpenUsage” instead of your usage.")
-                .font(.caption)
+                .font(captionFont)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.cardRowInset)
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(alignment: .center, spacing: 10) {
                 Text("Help make OpenUsage better by sharing anonymous usage analytics")
+                    .font(bodyFont)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Toggle("", isOn: Binding(
@@ -224,13 +231,13 @@ struct SettingsScreen: View {
                 ))
                 .settingsSwitchStyle()
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.cardRowInset)
             .padding(.vertical, density.controlRowPadding)
             // Daily activity and crash reports are always on; the toggle only gates extra analytics.
             Text("A daily anonymous active ping and crash reports are always sent. This toggle shares extra anonymous usage analytics — provider refreshes and error types. No account details, credentials, or usage values are sent.")
-                .font(.caption)
+                .font(captionFont)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.cardRowInset)
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -261,7 +268,7 @@ struct SettingsScreen: View {
                 .glassButtonStyle()
                 .controlSize(.regular)
                 .disabled(!updater.canCheckForUpdates)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.cardRowInset)
                 .padding(.vertical, density.controlRowPadding)
             }
         }
@@ -279,18 +286,18 @@ struct SettingsScreen: View {
         return VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             HStack(spacing: 6) {
                 Text("Notifications")
-                    .font(.caption.weight(.semibold))
+                    .font(sectionTitleFont)
                     .foregroundStyle(.secondary)
                 if needsAttention {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                        .font(captionFont)
+                        .foregroundStyle(Theme.notice)
                         .hoverTooltip(notificationsAuth == .denied
                             ? "Notifications are turned off for OpenUsage. Enable them in System Settings."
                             : "OpenUsage needs permission to send alerts.")
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Theme.sectionHeaderInset)
             VStack(spacing: 0) {
                 notifToggleRow(.underTenPercent, isOn: $notifications.underTenPercent)
                 notifToggleRow(.healthyToClose, isOn: $notifications.healthyToClose)
@@ -316,6 +323,7 @@ struct SettingsScreen: View {
     private func notifToggleRow(_ milestone: PaceMilestone, isOn: Binding<Bool>) -> some View {
         HStack(spacing: 6) {
             Text(milestone.settingLabel)
+                .font(bodyFont)
             Image(systemName: "info.circle")
                 .imageScale(.small)
                 .foregroundStyle(.secondary)
@@ -324,7 +332,7 @@ struct SettingsScreen: View {
             Toggle("", isOn: isOn)
                 .settingsSwitchStyle()
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.controlRowPadding)
     }
 
@@ -346,7 +354,7 @@ struct SettingsScreen: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.cardRowInset)
             .padding(.vertical, density.controlRowPadding)
         }
     }
@@ -388,9 +396,9 @@ struct SettingsScreen: View {
                 }
             }
             Text("Adds a global `openusage` command agents can use to monitor limits.")
-                .font(.caption)
+                .font(captionFont)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.cardRowInset)
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if commandLineTool.status == .conflict {
@@ -446,7 +454,7 @@ struct SettingsScreen: View {
             }
             .glassButtonStyle()
             .controlSize(.regular)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.cardRowInset)
             .padding(.vertical, density.controlRowPadding)
             .alert("Reset All Settings?", isPresented: $isPresentingResetConfirm) {
                 Button("Reset", role: .destructive) {
@@ -470,7 +478,7 @@ struct SettingsScreen: View {
         }
         .glassButtonStyle()
         .controlSize(.regular)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.controlRowPadding)
     }
 
@@ -485,9 +493,9 @@ struct SettingsScreen: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(sectionTitleFont)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Theme.sectionHeaderInset)
             VStack(spacing: 0) {
                 rows()
             }
@@ -500,10 +508,11 @@ struct SettingsScreen: View {
     private func row(_ label: String, @ViewBuilder control: () -> some View) -> some View {
         HStack(spacing: 10) {
             Text(label)
+                .font(bodyFont)
             Spacer(minLength: 8)
             control()
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.controlRowPadding)
     }
 
@@ -512,9 +521,9 @@ struct SettingsScreen: View {
     /// paused by a system accessibility setting, or by Party mode taking over the look).
     private func inlineNotice(_ text: String) -> some View {
         Text(text)
-            .font(.caption)
+            .font(captionFont)
             .foregroundStyle(Theme.notice)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.cardRowInset)
             .padding(.bottom, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
     }

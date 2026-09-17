@@ -70,7 +70,7 @@ struct ShareCardView: View {
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, Theme.cardRowInset)
                     .padding(.vertical, 10)
             }
         } else {

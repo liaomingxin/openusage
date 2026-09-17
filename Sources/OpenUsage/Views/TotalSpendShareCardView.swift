@@ -22,7 +22,7 @@ struct TotalSpendShareCardView: View {
                     projection: projection,
                     tokenCounts: Dictionary(uniqueKeysWithValues: total.slices.map { ($0.provider.id, $0.tokenCount) })
                 )
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, Theme.cardRowInset)
                     .padding(.vertical, 10)
             }
         }

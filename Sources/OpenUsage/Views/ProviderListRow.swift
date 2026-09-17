@@ -56,7 +56,7 @@ struct ProviderListRow<Handle: View>: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Open \(provider.displayName)")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.controlRowPadding)
         .opacity(isEnabled ? 1 : 0.55)
     }

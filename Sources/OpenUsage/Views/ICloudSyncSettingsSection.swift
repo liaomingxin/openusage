@@ -8,7 +8,7 @@ struct ICloudSyncSettingsSection: View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             HStack(spacing: 5) {
                 Text("iCloud Sync")
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: density.captionPointSize, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Image(systemName: "info.circle")
                     .imageScale(.small)
@@ -19,11 +19,12 @@ struct ICloudSyncSettingsSection: View {
                             + "never shared."
                     )
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Theme.sectionHeaderInset)
 
             VStack(spacing: 0) {
                 HStack(spacing: 7) {
                     Text("Sync Across Macs")
+                        .font(.system(size: density.bodyPointSize))
                     if sync.enabled, sync.isSyncing, sync.serviceError == nil {
                         MotionAwareProgressView(controlSize: .small)
                             .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -33,13 +34,13 @@ struct ICloudSyncSettingsSection: View {
                     Toggle("", isOn: $sync.enabled)
                         .settingsSwitchStyle()
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.cardRowInset)
                 .padding(.vertical, density.controlRowPadding)
                 .animation(Motion.spring, value: sync.isSyncing)
                 Text("Shares usage history through iCloud, so you can see one combined summary for all your Macs.")
-                .font(.caption)
+                .font(captionFont)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.cardRowInset)
                 .padding(.bottom, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -56,9 +57,9 @@ struct ICloudSyncSettingsSection: View {
 
         if sync.displayedDocuments.isEmpty, !sync.isSyncing, sync.serviceError == nil {
             Text("Waiting for this Mac’s first iCloud update…")
-                .font(.caption)
+                .font(captionFont)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, Theme.cardRowInset)
                 .padding(.bottom, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -76,11 +77,12 @@ struct ICloudSyncSettingsSection: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
                     Text(document.deviceName)
+                        .font(.system(size: density.bodyPointSize))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if isThisMac {
                         Text("This Mac")
-                            .font(.caption2.weight(.medium))
+                            .font(.system(size: density.captionPointSize, weight: .medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -90,22 +92,24 @@ struct ICloudSyncSettingsSection: View {
                 }
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     Text("Updated \(relativeAge(document.updatedAt, now: context.date))")
-                        .font(.caption)
+                        .font(captionFont)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.controlRowPadding)
     }
 
+    private var captionFont: Font { .system(size: density.captionPointSize) }
+
     private func inlineNotice(_ text: String) -> some View {
         Text(text)
-            .font(.caption)
+            .font(captionFont)
             .foregroundStyle(Theme.notice)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.cardRowInset)
             .padding(.top, 8)
             .padding(.bottom, 8)
             .frame(maxWidth: .infinity, alignment: .leading)

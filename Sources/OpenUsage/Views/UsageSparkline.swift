@@ -40,7 +40,7 @@ struct UsageSparkline: View {
                 // arrives, then hold the highlight while its detail popover is open so the chart still
                 // reads as the popover's source. `hover.dismiss()` clears both flags on panel close.
                 .background {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: Theme.chipCornerRadius, style: .continuous)
                         .fill(.quaternary)
                         .padding(.horizontal, -7)
                         .padding(.vertical, -4)

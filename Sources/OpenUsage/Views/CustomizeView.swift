@@ -20,7 +20,7 @@ struct CustomizeView: View {
     var body: some View {
         PopoverScrollView {
             content
-                .padding(.horizontal, 14)
+                .padding(.horizontal, Theme.screenInset)
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity)
         }

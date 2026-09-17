@@ -68,8 +68,7 @@ struct TotalSpendCard: View {
             Spacer(minLength: 8)
             shareButton
         }
-        .padding(.leading, 4)
-        .padding(.trailing, 4)
+        .padding(.horizontal, Theme.sectionHeaderInset)
         .padding(.vertical, 2)
     }
 
@@ -127,7 +126,7 @@ struct TotalSpendCard: View {
 
     private var card: some View {
         cardBody
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Theme.cardRowInset)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
             .cardSurface()

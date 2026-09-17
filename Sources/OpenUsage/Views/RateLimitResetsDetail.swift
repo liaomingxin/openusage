@@ -89,7 +89,7 @@ struct RateLimitResetsDetail: View {
                 }
             }
         }
-        .padding(14)
+        .padding(Theme.cardRowInset)
         .frame(width: Self.width)
         // Report the ideal (content-hugging) height as the fixed size, so collapsing the confirm card
         // back to a one-line node shrinks the popover again — without this, NSPopover keeps the largest
@@ -142,7 +142,7 @@ struct RateLimitResetsDetail: View {
                 .font(.system(size: density.supportingPointSize))
                 .foregroundStyle(.primary)
             Text("Expiry times unavailable")
-                .font(.system(size: 11))
+                .font(.system(size: density.captionPointSize))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
@@ -297,7 +297,7 @@ struct RateLimitResetsDetail: View {
                 .font(.system(size: density.supportingPointSize, weight: .medium))
                 .foregroundStyle(.primary)
             Text("Immediately reset your usage limits. This can't be undone.")
-                .font(.system(size: 11))
+                .font(.system(size: density.captionPointSize))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
@@ -315,7 +315,8 @@ struct RateLimitResetsDetail: View {
         }
         .padding(confirmCardPadding)
         .background {
-            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.5))
+            RoundedRectangle(cornerRadius: Theme.insetCornerRadius, style: .continuous)
+                .fill(.quaternary.opacity(0.5))
         }
         .padding(.vertical, 4)
     }
@@ -349,7 +350,8 @@ struct RateLimitResetsDetail: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
         .background {
-            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(banner.tint.opacity(0.12))
+            RoundedRectangle(cornerRadius: Theme.insetCornerRadius, style: .continuous)
+                .fill(banner.tint.opacity(0.12))
         }
     }
 

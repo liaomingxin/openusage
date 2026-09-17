@@ -77,7 +77,7 @@ struct ReorderLiftPreview: View {
         // header over the shared metric card, at the density's header→card spacing.
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             ProviderSectionHeader(provider: provider, plan: plan)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Theme.sectionHeaderInset)
 
             DashboardMetricCard {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in

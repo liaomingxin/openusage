@@ -13,6 +13,7 @@ struct UsageTrendDetail: View {
     var onHoverChange: (Bool) -> Void
 
     @State private var activeIndex: Int?
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
 
     private static let chartHeight: CGFloat = 76
     private static let width: CGFloat = 240
@@ -27,7 +28,7 @@ struct UsageTrendDetail: View {
                 PopoverSourceNote(text: note)
             }
         }
-        .padding(12)
+        .padding(Theme.cardRowInset)
         .frame(width: Self.width)
         // A refresh can replace `points` while the popover is open; drop the selection so the highlight
         // and readout never point at a day that shifted out from under the cursor.
@@ -41,13 +42,14 @@ struct UsageTrendDetail: View {
     }
 
     private var header: some View {
+        // Same header scale as `ModelUsageDetail` — the two hover panels read as one family.
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: density.headerPointSize, weight: .semibold))
                 .foregroundStyle(.primary)
             Spacer(minLength: 8)
             Text(readout)
-                .font(.system(size: 11))
+                .font(.system(size: density.supportingPointSize))
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
@@ -88,7 +90,7 @@ struct UsageTrendDetail: View {
             Spacer()
             Text(points.last?.label ?? "")
         }
-        .font(.system(size: 10))
+        .font(.system(size: density.captionPointSize))
         .monospacedDigit()
         .foregroundStyle(.secondary)
     }
@@ -113,7 +115,7 @@ struct UsageTrendDetail: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
-        .font(.system(size: 11))
+        .font(.system(size: density.supportingPointSize))
     }
 
     private func streakLabel(_ days: Int) -> String {

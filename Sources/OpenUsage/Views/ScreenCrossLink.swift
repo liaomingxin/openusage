@@ -44,7 +44,7 @@ struct ScreenCrossLinkRow: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.cardRowInset)
             .padding(.vertical, density.controlRowPadding)
             .contentShape(Rectangle())
         }

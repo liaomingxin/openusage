@@ -46,8 +46,7 @@ struct AgentUsageSection: View {
                 .monospacedDigit()
             }
         }
-        // Keep the mark and totals aligned with the card's content edges, like a provider header.
-        .padding(.horizontal, 8)
+        .padding(.horizontal, Theme.sectionHeaderInset)
     }
 
     @ViewBuilder
@@ -116,7 +115,7 @@ struct AgentUsageSection: View {
             .frame(height: density.meterHeight)
             .padding(.top, 2)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.textRowPadding)
     }
 
@@ -131,7 +130,7 @@ struct AgentUsageSection: View {
                 .font(.system(size: density.supportingPointSize))
                 .foregroundStyle(.secondary)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.textRowPadding)
     }
 }
