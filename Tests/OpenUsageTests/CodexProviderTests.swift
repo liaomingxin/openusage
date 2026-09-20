@@ -679,11 +679,8 @@ final class CodexProviderTests: XCTestCase {
         let milliseconds = Int(now.addingTimeInterval(-2 * 60 * 60).timeIntervalSince1970 * 1000)
         let openCodeRows = "[[\(milliseconds),0,150,\"gpt-test\",100,0,0,50,0,\"open-code-message\"]]"
         let openCodeScanner = OpenCodeCodexUsageScanner(
-            authStore: OpenCodeAuthStore(
-                files: FakeFiles(["/oc/auth.json": #"{"openai":{"type":"oauth","access":"token"}}"#]),
-                environment: FakeEnvironment(["OPENCODE_DATA_DIR": "/oc"]),
-                homeDirectory: { URL(fileURLWithPath: "/unused") },
-                databasePaths: { [] }
+            authStore: openCodeAuthStore(
+                files: FakeFiles(["/oc/auth.json": #"{"openai":{"type":"oauth","access":"token"}}"#])
             ),
             sqlite: OpenCodeFakeSQLite(data: ["/oc/opencode.db": openCodeRows]),
             databasePaths: { ["/oc/opencode.db"] }
