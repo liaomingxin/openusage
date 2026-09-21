@@ -7,7 +7,7 @@ How OpenUsage turns token counts into the estimated dollars on the Claude, Codex
 Prices are layered from four sources; when the same model appears in more than one, the higher layer wins:
 
 1. **Your custom pricing file** — `~/.config/openusage/custom-pricing.json`, edited by you (see [Setting your own prices](#setting-your-own-prices)). It wins over everything else, so a model no catalog prices yet can be priced immediately instead of waiting for a repo update.
-2. **OpenUsage pricing supplement** — a small JSON file maintained in this repo and published to GitHub Pages. It covers models no public catalog carries (Cursor-native models like `auto` and `composer-*`), fast-variant multipliers, and alias rules that map provider log/CSV slugs to catalog keys.
+2. **OpenUsage pricing supplement** — a small JSON file maintained in this repo and published to GitHub Pages. It covers models no public catalog carries (Cursor-native models like `auto` and `composer-*`, and Grok 4.7 Fast from Grok Build), fast-variant multipliers, and alias rules that map provider log/CSV slugs to catalog keys. Its entries can also carry long-context rates for requests above 200k prompt tokens.
 3. **LiteLLM** — the community-maintained `model_prices_and_context_window.json`, covering the vast majority of API-priced models.
 4. **models.dev** — a gap-filler for models LiteLLM misses (e.g. some brand-new or niche models).
 
@@ -52,6 +52,8 @@ Codex offers an optional **Fallback Model** under **Customize → Codex → Cost
 The picker lists public text/code models from the supplement's `fallback_models.codex` list, and only offers entries with usable exact pricing. It never reads account-specific model lists. The bundled list works offline; list updates arrive through the existing supplement refresh. Opening these settings recalculates a saved choice, and a change in its availability after a list refresh recalculates the local totals again. If a saved choice becomes unavailable, the settings show a warning and remove its fallback estimates; if its pricing returns, the estimates return. Unknown-model warnings remain in both cases.
 
 Cursor's Grok Bot modes use separate aliases: `grok-bot-default` uses Grok 4.6 Fast rates, while `grok-bot-automation` uses Grok 4.6 base rates. This follows the per-event list-price comparison in [#1229](https://github.com/robinebers/openusage/issues/1229); the rates themselves come from [Cursor's pricing table](https://cursor.com/docs/models-and-pricing.md). `grok-bot-cua` stays unpriced until its own rates are confirmed, so affected spend tiles flag it as an unpriced model and exclude its usage from their estimates.
+
+Grok 4.7 names from Grok Build, such as the `grok-4.7-build-fast` that pi records, use SpaceXAI's own rates from the supplement: Grok 4.7 costs $2 input, $0.50 cached input, and $6 output per million tokens, and Grok 4.7 Fast costs twice that. A request whose prompt exceeds 200k tokens is billed entirely at the long-context rates: $4 / $1 / $12 for Grok 4.7 and $6 / $1.50 / $18 for Fast ([SpaceXAI pricing](https://docs.x.ai/developers/pricing)). Cursor's Grok 4.7 names are not mapped yet, because Cursor starts long-context billing at 256k and sells separate 500k variants.
 
 ## What the estimate includes
 

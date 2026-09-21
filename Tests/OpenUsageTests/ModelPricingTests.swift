@@ -396,4 +396,65 @@ final class ModelPricingTests: XCTestCase {
         let pricing = try makePricing()
         XCTAssertNil(pricing.estimatedCostDollars(model: "mystery", tokens: TokenBreakdown(input: 100)))
     }
+
+    func testSupplementEntryCarriesLongContextRates() throws {
+        let supplement = """
+        {"pricing": {"tiered": {"input_per_million": 4.0, "cache_read_per_million": 1.0, "output_per_million": 12.0,
+          "input_above_200k_per_million": 6.0, "cache_read_above_200k_per_million": 1.5,
+          "output_above_200k_per_million": 18.0}}, "alias_rules": []}
+        """
+        let pricing = try makePricing(supplementJSON: supplement)
+        let short = TokenBreakdown(input: 100_000, cacheRead: 50_000, output: 10_000)
+        let long = TokenBreakdown(input: 150_000, cacheRead: 60_000, output: 10_000)
+
+        // 0.1M × $4 + 0.05M × $1 + 0.01M × $12
+        XCTAssertEqual(try XCTUnwrap(pricing.estimatedCostDollars(model: "tiered", tokens: short)), 0.57, accuracy: 0.000_001)
+        // A 210k prompt bills the whole request at the long-context rates: 0.15M × $6 + 0.06M × $1.5 + 0.01M × $18
+        XCTAssertEqual(try XCTUnwrap(pricing.estimatedCostDollars(model: "tiered", tokens: long)), 1.17, accuracy: 0.000_001)
+    }
+
+    func testGrok47FastSlugsUseBundledSupplementRates() throws {
+        let pricing = TestPricing.bundled
+        let expected = ModelRates(
+            inputPerMillion: 4, outputPerMillion: 12, cacheWritePerMillion: 4, cacheReadPerMillion: 1,
+            inputAbove200kPerMillion: 6, outputAbove200kPerMillion: 18,
+            cacheWriteAbove200kPerMillion: 6, cacheReadAbove200kPerMillion: 1.5
+        )
+        for model in ["grok-4.7-build-fast", "grok-4.7-fast", "grok-4-7-build-fast", "grok-4.7-high-fast", "grok-4.7-fast-xhigh"] {
+            XCTAssertEqual(pricing.supplement.canonicalName(for: model), "grok-4.7-fast", model)
+            XCTAssertEqual(pricing.resolve(model: model), expected, model)
+        }
+        // Cursor's Grok 4.7 SKUs bill long context from 256k and ship separate 500k variants.
+        for unaliased in ["cursor-grok-4.7-fast", "grok-4.7-500k-fast"] {
+            XCTAssertNil(pricing.supplement.canonicalName(for: unaliased), unaliased)
+        }
+    }
+
+    func testGrok47BaseSlugsUseXaiRatesOverResellers() throws {
+        let catalog: [String: ModelRates] = [
+            "xai/grok-4.7": rates(2, 6, cacheRead: 0.5),
+            "openrouter/x-ai/grok-4.7": rates(1.6, 4.8, cacheRead: 0.4)
+        ]
+        // Without the supplement the longest fuzzy key wins, which is the reseller's discounted rate.
+        XCTAssertEqual(try makePricing(primary: catalog).resolve(model: "grok-4.7")?.inputPerMillion, 1.6)
+
+        let expected = ModelRates(
+            inputPerMillion: 2, outputPerMillion: 6, cacheWritePerMillion: 2, cacheReadPerMillion: 0.5,
+            inputAbove200kPerMillion: 4, outputAbove200kPerMillion: 12,
+            cacheWriteAbove200kPerMillion: 4, cacheReadAbove200kPerMillion: 1
+        )
+        let online = ModelPricing(
+            supplement: TestPricing.bundled.supplement,
+            primary: PricingCatalog(entries: catalog),
+            secondary: PricingCatalog()
+        )
+        let offline = ModelPricing(
+            supplement: TestPricing.bundled.supplement, primary: PricingCatalog(), secondary: PricingCatalog()
+        )
+        for model in ["grok-4.7", "grok-4-7", "grok-4.7-build", "grok-4.7-high"] {
+            XCTAssertEqual(online.supplement.canonicalName(for: model), "grok-4.7", model)
+            XCTAssertEqual(online.resolve(model: model), expected, model)
+            XCTAssertEqual(offline.resolve(model: model), expected, model)
+        }
+    }
 }

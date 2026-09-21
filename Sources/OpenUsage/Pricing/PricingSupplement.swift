@@ -92,6 +92,10 @@ extension PricingSupplement {
                 outputPerMillion: entry.outputPerMillion,
                 cacheWritePerMillion: entry.cacheWritePerMillion ?? entry.inputPerMillion,
                 cacheReadPerMillion: entry.cacheReadPerMillion ?? entry.inputPerMillion * 0.1,
+                inputAbove200kPerMillion: entry.inputAbove200kPerMillion,
+                outputAbove200kPerMillion: entry.outputAbove200kPerMillion,
+                cacheWriteAbove200kPerMillion: entry.cacheWriteAbove200kPerMillion,
+                cacheReadAbove200kPerMillion: entry.cacheReadAbove200kPerMillion,
                 cacheReadIsExplicit: entry.cacheReadPerMillion != nil,
                 // Carry the declared multiplier onto the entry itself: scanners that flag fast mode
                 // on the request (Claude's `speed` field) price the base slug, never a `-fast` one.
@@ -128,12 +132,22 @@ extension PricingSupplement {
             var outputPerMillion: Double
             var cacheWritePerMillion: Double?
             var cacheReadPerMillion: Double?
+            /// Long-context rates for requests whose prompt exceeds 200k tokens, for models the
+            /// catalogs don't carry with that tier. Omitted fields keep the base rate.
+            var inputAbove200kPerMillion: Double?
+            var outputAbove200kPerMillion: Double?
+            var cacheWriteAbove200kPerMillion: Double?
+            var cacheReadAbove200kPerMillion: Double?
 
             enum CodingKeys: String, CodingKey {
                 case inputPerMillion = "input_per_million"
                 case outputPerMillion = "output_per_million"
                 case cacheWritePerMillion = "cache_write_per_million"
                 case cacheReadPerMillion = "cache_read_per_million"
+                case inputAbove200kPerMillion = "input_above_200k_per_million"
+                case outputAbove200kPerMillion = "output_above_200k_per_million"
+                case cacheWriteAbove200kPerMillion = "cache_write_above_200k_per_million"
+                case cacheReadAbove200kPerMillion = "cache_read_above_200k_per_million"
             }
         }
 
