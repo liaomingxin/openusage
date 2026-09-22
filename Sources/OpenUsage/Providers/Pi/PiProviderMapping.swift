@@ -9,18 +9,21 @@ import Foundation
 /// equivalent are intentionally absent and left for future work:
 /// - `nvidia-nim` — no OpenUsage card.
 ///
-/// Mapped here but not yet consumed (only Claude and Codex read the pi slice today; the rest have no
-/// local usage-trend card to fold into, or use a different spend path): `cursor` (Cursor's trend is
-/// built from its CSV export), `zai`/`zhipu`, `google-antigravity`, `github-copilot`.
+/// `cursor`, `google-antigravity`, and `github-copilot` stay mapped for the Agent Usage screen
+/// but no card consumes them: Cursor's headline is its account CSV, Antigravity already scans its
+/// own databases, and Copilot CLI is out of scope. Consuming them would double-count.
 enum PiProviderMapping {
     /// pi `provider` value → OpenUsage `Provider.id`.
     static let providerToCard: [String: String] = [
         "anthropic": "claude",
         "claude-agent-sdk": "claude",
         "openai-codex": "codex",
+        "xai": "grok",
+        "kimi-coding": "kimi",
         "cursor": "cursor",
         "zai": "zai",
         "zhipu": "zai",
+        "zai-coding-cn": "zai",
         "google-antigravity": "antigravity",
         "github-copilot": "copilot"
     ]

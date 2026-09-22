@@ -317,6 +317,8 @@ final class GrokProviderTests: XCTestCase {
             authStore: GrokAuthStore(files: files, now: { now }),
             usageClient: GrokUsageClient(httpClient: httpClient),
             logUsageScanner: scanner ?? noLogScanner(),
+            piScanner: PiUsageScanner(homeDirectory: { URL(fileURLWithPath: "/tmp/openusage-no-pi") }),
+            openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner(databasePaths: { [] }),
             now: { now },
             pricing: { TestPricing.bundled }
         )

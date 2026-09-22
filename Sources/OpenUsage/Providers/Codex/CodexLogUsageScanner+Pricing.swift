@@ -65,7 +65,12 @@ extension CodexLogUsageScanner {
             if let eventCost = cost(rates: rates, event: event, model: rateModel, fastTier: appliesCodexFastTier) {
                 accumulator.add(
                     day: day, tokens: event.total, cost: eventCost, model: model,
-                    fallbackPricingModel: usedFallback
+                    fallbackPricingModel: usedFallback,
+                    buckets: TokenBreakdown(
+                        input: max(0, event.input - event.cached),
+                        cacheRead: event.cached,
+                        output: event.output + event.reasoning
+                    )
                 )
             } else if event.total > 0 {
                 accumulator.addUnknownModel(day: day, model: model)

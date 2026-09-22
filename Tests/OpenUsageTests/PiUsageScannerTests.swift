@@ -115,6 +115,7 @@ final class PiUsageScannerTests: XCTestCase {
         )
 
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.25, accuracy: 0.000_001)
+        XCTAssertEqual(scan.modelUsage?.daily.first?.models.first?.cacheReadTokens, 100_000)
     }
 
     func testUnpriceableZeroCostBecomesUnknownModel() {
@@ -144,6 +145,37 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "claude-agent-sdk"), "claude")
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "zhipu"), "zai")
         XCTAssertNil(PiProviderMapping.cardID(forPiProvider: "nvidia-nim"))
+    }
+
+    func testSubscriptionProvidersLandOnTheRightCardWithoutChangingAZAIHeadline() {
+        let cases: [(String, String, SubscriptionSpendMode)] = [
+            ("zai-coding-cn", "zai", .thisMacDetail),
+            ("kimi-coding", "kimi", .addToLocalSpend),
+            ("xai", "grok", .addToLocalSpend),
+            ("openai-codex", "codex", .addToLocalSpend)
+        ]
+        for (provider, card, mode) in cases {
+            let entry = PiUsageScanner.parseLine(line(id: provider, provider: provider, model: "m", cost: "1"))!
+            XCTAssertEqual(entry.cardID, card, provider)
+            XCTAssertEqual(SubscriptionAttributionRules.attribution(providerID: provider)?.mode, mode, provider)
+            let onCard = PiUsageScanner.aggregate(entries: [entry], cardID: card, since: .distantPast, pricing: .empty)
+            XCTAssertEqual(onCard.series.daily.first?.totalTokens, 150, provider)
+            let elsewhere = PiUsageScanner.aggregate(entries: [entry], cardID: "claude", since: .distantPast, pricing: .empty)
+            XCTAssertTrue(elsewhere.series.daily.isEmpty, provider)
+        }
+
+        let zai = PiUsageScanner.aggregate(
+            entries: [PiUsageScanner.parseLine(line(id: "z", provider: "zai-coding-cn", cost: "1"))!],
+            cardID: "zai", since: .distantPast, pricing: .empty
+        )
+        let headline = DailyUsageSeries(daily: [DailyUsageEntry(date: "2026-07-12", totalTokens: 10, costUSD: nil)])
+        let history = ProviderUsageHistory(
+            series: headline,
+            thisMacSeries: zai.series,
+            thisMacModelUsage: zai.modelUsage
+        )
+        XCTAssertEqual(history.series.daily.first?.totalTokens, 10)
+        XCTAssertEqual(history.thisMacSeries?.daily.first?.totalTokens, 150)
     }
 
     func testMergedSumsNativeAndPiOnSameDay() {

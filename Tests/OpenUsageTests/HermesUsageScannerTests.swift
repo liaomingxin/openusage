@@ -71,6 +71,20 @@ final class HermesUsageScannerTests: XCTestCase {
         XCTAssertEqual(row.cost, 1.5)
     }
 
+    func testOfficialSlicesKeepZAIAndCodexAndDropProxies() throws {
+        let now = ms(Date())
+        let rows = HermesUsageScanner.parseRows(json([
+            [now, "glm-5.3", 10, 1, 0, 0, 0, 0, "zai", "https://api.z.ai/api/coding/paas/v4"],
+            [now, "gpt-5.5", 10, 1, 0, 0, 0, 0, "openai-codex", "https://chatgpt.com/backend-api/codex"],
+            [now, "claude-opus-4-6", 10, 1, 0, 0, 0, 0, "anthropic", "https://6688ai.xyz"],
+            [now, "gpt-5.4", 10, 1, 0, 0, 0, 0, "custom", "http://127.0.0.1:8317/v1"]
+        ]))
+        XCTAssertEqual(rows.count, 4)
+        let slices = HermesUsageScanner.officialSlices(rows)
+        XCTAssertEqual(slices.zai.map(\.model), ["glm-5.3"])
+        XCTAssertEqual(slices.codex.map(\.model), ["gpt-5.5"])
+    }
+
     func testParseRowsKeepsRowWithoutCostColumn() throws {
         let rows = HermesUsageScanner.parseRows(json([[
             ms(Date()), "gpt-hermes", 1, 2, 0, 0, 0,

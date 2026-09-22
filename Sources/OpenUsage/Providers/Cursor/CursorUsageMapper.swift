@@ -353,7 +353,8 @@ enum CursorUsageMapper {
             modelsByDay[day, default: [:]][family, default: ModelAccumulator()].add(
                 variant: modelName,
                 tokens: row.tokens.totalTokens,
-                costUSD: cost
+                costUSD: cost,
+                buckets: row.tokens
             )
         }
 
@@ -394,13 +395,19 @@ enum CursorUsageMapper {
     private struct ModelAccumulator {
         var tokens = 0
         var costUSD: Double?
+        var inputTokens = OptionalTokenSum()
+        var cacheReadTokens = OptionalTokenSum()
+        var cacheWriteTokens = OptionalTokenSum()
         var variants: [String: (tokens: Int, costUSD: Double?)] = [:]
 
-        mutating func add(variant: String, tokens: Int, costUSD: Double?) {
+        mutating func add(variant: String, tokens: Int, costUSD: Double?, buckets: TokenBreakdown) {
             self.tokens += tokens
             if let costUSD {
                 self.costUSD = (self.costUSD ?? 0) + costUSD
             }
+            inputTokens.add(buckets.input)
+            cacheReadTokens.add(buckets.cacheRead)
+            cacheWriteTokens.add(buckets.cacheWrite5m + buckets.cacheWrite1h)
             let existing = variants[variant] ?? (0, nil)
             let combinedCost: Double? = costUSD.map { (existing.costUSD ?? 0) + $0 } ?? existing.costUSD
             variants[variant] = (existing.tokens + tokens, combinedCost)
@@ -411,8 +418,12 @@ enum CursorUsageMapper {
             // the hover tooltip falls back to plain figures.
             let list = variants.map { ModelUsageVariant(model: $0.key, totalTokens: $0.value.tokens, costUSD: $0.value.costUSD) }
             let isTrivial = list.count == 1 && list[0].model == model
-            return ModelUsageEntry(model: model, totalTokens: tokens, costUSD: costUSD,
-                                   variants: isTrivial ? nil : list)
+            return ModelUsageEntry(
+                model: model, totalTokens: tokens, costUSD: costUSD,
+                variants: isTrivial ? nil : list,
+                inputTokens: inputTokens.value, cacheReadTokens: cacheReadTokens.value,
+                cacheWriteTokens: cacheWriteTokens.value
+            )
         }
     }
 

@@ -8,6 +8,8 @@ final class CodexProvider: ProviderRuntime {
     let usageClient: CodexUsageClient
     let logUsageScanner: CodexLogUsageScanner
     let openCodeUsageScanner: OpenCodeCodexUsageScanner
+    let openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner
+    let hermesScanner: HermesUsageScanner
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
     /// Extra-account cards (credential dumps without a Codex home) skip every local spend source —
@@ -23,6 +25,8 @@ final class CodexProvider: ProviderRuntime {
         usageClient: CodexUsageClient = CodexUsageClient(),
         logUsageScanner: CodexLogUsageScanner = CodexLogUsageScanner(),
         openCodeUsageScanner: OpenCodeCodexUsageScanner = OpenCodeCodexUsageScanner(),
+        openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner = OpenCodeSubscriptionUsageScanner(),
+        hermesScanner: HermesUsageScanner = HermesUsageScanner(),
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
         scansLocalLogs: Bool = true,
@@ -42,6 +46,8 @@ final class CodexProvider: ProviderRuntime {
         self.usageClient = usageClient
         self.logUsageScanner = logUsageScanner
         self.openCodeUsageScanner = openCodeUsageScanner
+        self.openCodeSubscriptionScanner = openCodeSubscriptionScanner
+        self.hermesScanner = hermesScanner
         self.now = now
         self.pricing = pricing
         self.scansLocalLogs = scansLocalLogs
@@ -208,12 +214,20 @@ final class CodexProvider: ProviderRuntime {
         async let openCode = scansLocalLogs
             ? openCodeUsageScanner.scan(now: now(), pricing: pricing)
             : nil
-        let (nativeScan, piScan, openCodeScan) = await (native, pi, openCode)
+        async let openCodeAPIKey = scansLocalLogs
+            ? openCodeSubscriptionScanner.scan(now: now(), pricing: pricing).localSpend["codex"]
+            : nil
+        async let hermes = scansLocalLogs
+            ? hermesScanner.officialCodexScan(now: now(), pricing: pricing)
+            : nil
+        let (nativeScan, piScan, openCodeScan, openCodeAPIKeyScan, hermesScan) = await (native, pi, openCode, openCodeAPIKey, hermes)
         var usageHistory: ProviderUsageHistory?
         // Cancellation can land between the local scans. Treat them as one unit so a
         // partial result cannot replace the last-good combined history in WidgetDataStore.
-        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan, openCodeScan]) {
-            let baseNote = Self.localUsageSourceNote(hasPi: piScan != nil, hasOpenCode: openCodeScan != nil)
+        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan, openCodeScan, openCodeAPIKeyScan, hermesScan]) {
+            let baseNote = Self.localUsageSourceNote(
+                hasPi: piScan != nil, hasOpenCode: openCodeScan != nil || openCodeAPIKeyScan != nil
+            )
             usageHistory = ProviderUsageHistory(
                 series: scan.series,
                 modelUsage: scan.modelUsage,

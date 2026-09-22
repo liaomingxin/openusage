@@ -65,6 +65,7 @@ final class OpenCodeCodexUsageScannerTests: XCTestCase {
         // 100*$2/M + 20*$0.20/M + (20+10)*$10/M.
         XCTAssertEqual(day.costUSD ?? -1, 0.000504, accuracy: 0.0000001)
         XCTAssertEqual(scan?.modelUsage?.daily.first?.models.first?.model, "gpt-test")
+        XCTAssertEqual(scan?.modelUsage?.daily.first?.models.first?.cacheReadTokens, 20)
     }
 
     func testAPIKeyTrafficIsExcludedBeforeDatabaseRead() async {

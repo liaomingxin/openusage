@@ -80,6 +80,47 @@ struct HermesUsageScanner: Sendable {
         return accumulator.build()
     }
 
+    /// Codex-card slice: official `openai-codex` rows only. The Agent scan stays unfiltered.
+    func officialCodexScan(now: Date, daysBack: Int = 30, pricing: ModelPricing) async -> LogUsageScan? {
+        await officialScan(card: "codex", now: now, daysBack: daysBack, pricing: pricing)
+    }
+
+    /// Z.ai This Mac slice: official `zai` host rows only.
+    func officialZAIScan(now: Date, daysBack: Int = 30, pricing: ModelPricing) async -> LogUsageScan? {
+        await officialScan(card: "zai", now: now, daysBack: daysBack, pricing: pricing)
+    }
+
+    private func officialScan(
+        card: String, now: Date, daysBack: Int, pricing: ModelPricing
+    ) async -> LogUsageScan? {
+        guard let path = databasePath(), FileManager.default.fileExists(atPath: path) else { return nil }
+        let rows: [Row]
+        do {
+            guard let json = try sqlite.queryValue(path: path, sql: Self.perModelSQL) else { return nil }
+            rows = Self.parseRows(json)
+        } catch {
+            return nil
+        }
+        let slices = Self.officialSlices(rows)
+        let selected = card == "codex" ? slices.codex : slices.zai
+        let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
+        var accumulator = DailyUsageAccumulator()
+        for row in selected {
+            let date = Date(timeIntervalSince1970: row.ms / 1000)
+            guard date >= since else { continue }
+            let cost = (row.cost ?? 0) > 0
+                ? row.cost!
+                : pricing.estimatedCostDollars(model: row.model, tokens: row.tokensBreakdown)
+            guard let cost else { continue }
+            accumulator.add(
+                day: DailyUsageAccumulator.dayKey(from: date), tokens: row.tokens, cost: cost,
+                model: row.model, buckets: row.tokensBreakdown
+            )
+        }
+        let scan = accumulator.build()
+        return scan.series.daily.isEmpty ? nil : scan
+    }
+
     // MARK: - Rows
 
     /// One per-model usage row. `cost` is Hermes' actual (else estimated) value; nil when the row
@@ -91,6 +132,8 @@ struct HermesUsageScanner: Sendable {
         var cost: Double?
         /// The buckets, kept for pricing the carried-cost fall-through.
         var tokensBreakdown: TokenBreakdown
+        var billingProvider: String?
+        var billingBaseURL: String?
     }
 
     /// Parse the `json_group_array(json_array(...))` payload each query emits:
@@ -113,6 +156,8 @@ struct HermesUsageScanner: Sendable {
             let cacheWrite = Self.clampedTokens(entry[5])
             let reasoning = entry.count > 6 ? Self.clampedTokens(entry[6]) : 0
             let cost = entry.count > 7 ? ProviderParse.number(entry[7]) : nil
+            let billingProvider = entry.count > 8 ? entry[8] as? String : nil
+            let billingBaseURL = entry.count > 9 ? entry[9] as? String : nil
             // OpenAI-family models bill reasoning as output tokens; Hermes reports the buckets
             // separately, so they fold back together for pricing (the displayed total keeps both).
             rows.append(Row(
@@ -125,10 +170,28 @@ struct HermesUsageScanner: Sendable {
                     cacheWrite5m: cacheWrite,
                     cacheRead: cacheRead,
                     output: output + reasoning
-                )
+                ),
+                billingProvider: billingProvider,
+                billingBaseURL: billingBaseURL
             ))
+
         }
         return rows
+    }
+
+    /// Official-host slices. Proxy and custom rows stay in the unfiltered Agent scan and are dropped here.
+    static func officialSlices(_ rows: [Row]) -> (codex: [Row], zai: [Row]) {
+        var codex: [Row] = []
+        var zai: [Row] = []
+        for row in rows {
+            guard let provider = row.billingProvider else { continue }
+            guard let attribution = SubscriptionAttributionRules.attribution(
+                providerID: provider, baseURL: row.billingBaseURL
+            ) else { continue }
+            if attribution.cardID == "codex", attribution.mode == .addToLocalSpend { codex.append(row) }
+            if attribution.cardID == "zai", attribution.mode == .thisMacDetail { zai.append(row) }
+        }
+        return (codex, zai)
     }
 
     /// Clamp before the Int conversion so a corrupt, absurdly large token count can't trap
@@ -146,7 +209,7 @@ struct HermesUsageScanner: Sendable {
     /// SELECT runs as a subquery — SQLite rejects nested aggregates
     /// (`json_group_array(json_array(SUM(...)))` is "misuse of aggregate function").
     static let perModelSQL = """
-        SELECT json_group_array(json_array(started_ms, model, input, output, cache_read, cache_write, reasoning, cost))
+        SELECT json_group_array(json_array(started_ms, model, input, output, cache_read, cache_write, reasoning, cost, billing_provider, billing_base_url))
         FROM (
           SELECT s.started_at * 1000.0 AS started_ms,
                  smu.model AS model,
@@ -155,12 +218,14 @@ struct HermesUsageScanner: Sendable {
                  SUM(smu.cache_read_tokens) AS cache_read,
                  SUM(smu.cache_write_tokens) AS cache_write,
                  SUM(smu.reasoning_tokens) AS reasoning,
-                 SUM(COALESCE(NULLIF(smu.actual_cost_usd, 0), smu.estimated_cost_usd, 0)) AS cost
+                 SUM(COALESCE(NULLIF(smu.actual_cost_usd, 0), smu.estimated_cost_usd, 0)) AS cost,
+                 smu.billing_provider AS billing_provider,
+                 smu.billing_base_url AS billing_base_url
           FROM session_model_usage smu
           JOIN sessions s ON s.id = smu.session_id
           WHERE smu.model IS NOT NULL
             AND TRIM(smu.model) != ''
-          GROUP BY smu.session_id, smu.model, smu.billing_provider, s.started_at
+          GROUP BY smu.session_id, smu.model, smu.billing_provider, smu.billing_base_url, s.started_at
           HAVING SUM(smu.input_tokens) > 0
               OR SUM(smu.output_tokens) > 0
               OR SUM(smu.cache_read_tokens) > 0

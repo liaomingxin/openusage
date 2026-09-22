@@ -245,7 +245,7 @@ final class CursorSpendRangeTests: XCTestCase {
             makeRow(date: now, cost: 3.00, tokens: 300, model: "claude-opus-4-8-thinking-max"),
             makeRow(date: now, cost: 1.00, tokens: 100, model: "claude-opus-4-8-thinking-high"),
             makeRow(date: now, cost: 2.00, tokens: 200, model: "gpt-5.5-extra-high-fast"),
-            makeRow(date: now, cost: 0.50, tokens: 50, model: "gpt-5.5")
+            makeRow(date: now, cost: 0.50, tokens: 50, model: "gpt-5.5", cacheRead: 10)
         ]
 
         var lines: [MetricLine] = []
@@ -264,6 +264,8 @@ final class CursorSpendRangeTests: XCTestCase {
         let gpt = try XCTUnwrap(breakdown.models.first { $0.model == "gpt-5.5" })
         XCTAssertEqual(gpt.variants?.map(\.model), ["gpt-5.5-extra-high-fast", "gpt-5.5"],
                        "a -fast canonical folds into its base family")
+        XCTAssertEqual(gpt.cacheReadTokens, 10)
+        XCTAssertEqual(gpt.totalTokens, 250)
     }
 
     func testUnpricedOnlyDayLeavesTilesUnbacked() {
@@ -294,11 +296,13 @@ final class CursorSpendRangeTests: XCTestCase {
     }
 
     /// `cost: nil` models a row no pricing source could price (the unknown-model case).
-    private func makeRow(date: Date, cost: Double?, tokens: Int, model: String = "composer-1") -> CursorUsageCSVRow {
+    private func makeRow(
+        date: Date, cost: Double?, tokens: Int, model: String = "composer-1", cacheRead: Int = 0
+    ) -> CursorUsageCSVRow {
         CursorUsageCSVRow(
             date: date,
             model: model,
-            tokens: TokenBreakdown(input: tokens),
+            tokens: TokenBreakdown(input: tokens - cacheRead, cacheRead: cacheRead),
             imputedCostDollars: cost
         )
     }

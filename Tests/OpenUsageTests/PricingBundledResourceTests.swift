@@ -42,6 +42,7 @@ final class PricingBundledResourceTests: XCTestCase {
             ("gpt-5.5-xhigh-fast", 12.5),
             ("gpt-5.6-sol-ultra", 5), ("gpt-5.6-sol-ultra-fast", 10),
             ("gpt-6-astra", 10), ("gpt-6-astra-high", 10), ("gpt-6-astra-high-fast", 20),
+            ("gpt-6-sol", 2), ("gpt-6-sol-high", 2), ("gpt-6-sol-high-fast", 4),
             ("gpt-5.6-terra-high", 2), ("gpt-5.6-terra-high-fast", 4),
             ("gpt-5.6-luna", 0.2), ("gpt-5.6-luna-fast", 0.4),
             ("gemini-3.6-flash-high", 1.5), ("gemini-3.7-flash-high", 0.75),
@@ -176,6 +177,38 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(opus5.fastMultiplier, opus48.fastMultiplier)
     }
 
+    /// Claude Opus 5.5: launch rates, including the 0.05x cache read. Fast mode is 2x and Claude
+    /// logs still send `speed: fast` on the base id, so the base entry carries the multiplier.
+    func testClaudeOpus55PricingAndAliases() throws {
+        let pricing = Self.pricing
+        let opus = try XCTUnwrap(pricing.resolve(model: "claude-opus-5-5"))
+        XCTAssertEqual(opus.inputPerMillion, 4)
+        XCTAssertEqual(opus.cacheWritePerMillion, 5)
+        XCTAssertEqual(opus.cacheReadPerMillion, 0.2)
+        XCTAssertEqual(opus.outputPerMillion, 20)
+        XCTAssertEqual(opus.fastMultiplier, 2)
+        XCTAssertEqual(pricing.resolve(model: "claude-opus-5.5"), opus)
+        XCTAssertEqual(pricing.resolve(model: "claude-opus-5-5[1m]"), opus)
+        XCTAssertEqual(pricing.resolve(model: "claude-opus-5-5-thinking-xhigh"), opus)
+        XCTAssertEqual(pricing.resolve(model: "claude-5.5-opus-high-thinking"), opus)
+
+        let fast = try XCTUnwrap(pricing.resolve(model: "claude-opus-5-5-thinking-high-fast"))
+        XCTAssertEqual(fast.inputPerMillion, 8)
+        XCTAssertEqual(fast.cacheReadPerMillion, 0.4)
+        XCTAssertEqual(fast.outputPerMillion, 40)
+
+        let tokens = TokenBreakdown(input: 1_000_000, cacheRead: 1_000_000, output: 1_000_000)
+        var fastTokens = tokens
+        fastTokens.isFast = true
+        XCTAssertEqual(
+            try XCTUnwrap(opus.costDollars(for: fastTokens)),
+            try XCTUnwrap(opus.costDollars(for: tokens)) * 2,
+            accuracy: 0.000_001
+        )
+        // Opus 5 must stay on its own rates; the 5.5 alias must not swallow it.
+        XCTAssertEqual(pricing.resolve(model: "claude-opus-5")?.inputPerMillion, 5)
+    }
+
     /// Claude logs signal fast mode with a `speed` field while the model stays `claude-opus-5`, so
     /// the base entry itself must carry the 2x multiplier — the `-fast` slug is never involved.
     func testClaudeOpus5FastModeBillsAtTwiceBaseRate() throws {
@@ -222,6 +255,8 @@ final class PricingBundledResourceTests: XCTestCase {
     func testCursorRouterLabelsPriceAsTheRoutedModel() throws {
         let pricing = Self.pricing
         let expected: [String: String] = [
+            "Opus 5.5 (Auto Balanced)": "claude-opus-5-5",
+            "Claude Opus 5.5 (Auto)": "claude-opus-5-5",
             "Opus 5 (Auto Balanced)": "claude-opus-5",
             "Claude Opus 5 (Auto)": "claude-opus-5",
             "Opus 4.8 (Auto)": "claude-opus-4-8",
@@ -240,6 +275,7 @@ final class PricingBundledResourceTests: XCTestCase {
             "GPT-5.5 (Auto)": "gpt-5.5",
             "GPT-5.6 Sol (Auto Cost)": "gpt-5.6-sol",
             "GPT-6 Astra (Auto Balanced)": "gpt-6-astra",
+            "GPT-6 Sol (Auto Cost)": "gpt-6-sol",
             "GPT-5.6 Luna (Auto)": "gpt-5.6-luna",
             "Gemini 3.1 Pro (Auto Balanced)": "gemini-3.1-pro-preview",
             "Gemini 3.6 Flash (Auto)": "gemini-3.6-flash",
@@ -270,6 +306,9 @@ final class PricingBundledResourceTests: XCTestCase {
             ("gpt-6-astra", [10, 12.5, 1, 50]),
             ("gpt-6-astra-high", [10, 12.5, 1, 50]),
             ("gpt-6-astra-high-fast", [20, 25, 2, 100]),
+            ("gpt-6-sol", [2, 2.5, 0.2, 10]),
+            ("gpt-6-sol-high", [2, 2.5, 0.2, 10]),
+            ("gpt-6-sol-high-fast", [4, 5, 0.4, 20]),
             ("gpt-5.6-terra-high", [2, 2.5, 0.2, 12]),
             ("gpt-5.6-terra-high-fast", [4, 5, 0.4, 24]),
             ("gpt-5.6-luna", [0.2, 0.25, 0.02, 1.2]),

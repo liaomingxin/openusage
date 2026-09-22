@@ -114,7 +114,8 @@ struct OpenCodeCodexUsageScanner: Sendable {
                 day: day,
                 tokens: row.reportedTotalTokens,
                 cost: cost,
-                model: model
+                model: model,
+                buckets: row.tokens
             )
         }
         return accumulator.build()

@@ -14,6 +14,8 @@ final class GrokProvider: ProviderRuntime {
     let authStore: GrokAuthStore
     let usageClient: GrokUsageClient
     let logUsageScanner: GrokLogUsageScanner
+    let piScanner: PiUsageScanner
+    let openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
@@ -21,12 +23,16 @@ final class GrokProvider: ProviderRuntime {
         authStore: GrokAuthStore = GrokAuthStore(),
         usageClient: GrokUsageClient = GrokUsageClient(),
         logUsageScanner: GrokLogUsageScanner = GrokLogUsageScanner(),
+        piScanner: PiUsageScanner = .shared,
+        openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner = OpenCodeSubscriptionUsageScanner(),
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
         self.logUsageScanner = logUsageScanner
+        self.piScanner = piScanner
+        self.openCodeSubscriptionScanner = openCodeSubscriptionScanner
         self.now = now
         self.pricing = pricing
     }
@@ -104,7 +110,14 @@ final class GrokProvider: ProviderRuntime {
         // older turns without a carried cost use the shared pricing store.
         var usageHistory: ProviderUsageHistory?
         let scanPricing = await pricing()
-        if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: scanPricing) {
+        let nativeScan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: scanPricing)
+        let piScan = await piScanner.scan(cardID: provider.id, now: now(), pricing: scanPricing)
+        let openCodeScan = await openCodeSubscriptionScanner.scan(now: now(), pricing: scanPricing).localSpend["grok"]
+        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan, openCodeScan]) {
+            var sources = ["Grok logs"]
+            if piScan != nil { sources.append("pi") }
+            if openCodeScan != nil { sources.append("OpenCode") }
+            let note = "From your \(sources.joined(separator: " and ")) (estimated)"
             usageHistory = ProviderUsageHistory(
                 series: scan.series,
                 modelUsage: scan.modelUsage,
@@ -116,11 +129,10 @@ final class GrokProvider: ProviderRuntime {
                 now: now(),
                 unknownModelsByDay: scan.unknownModelsByDay,
                 modelUsage: scan.modelUsage,
-                modelSourceNote: "From your Grok logs (estimated)",
+                modelSourceNote: note,
                 pricing: scanPricing
             )
-            SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(),
-                                             note: "From your Grok logs (estimated)")
+            SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
         }
 
         return ProviderSnapshot.make(

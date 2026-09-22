@@ -648,6 +648,8 @@ final class CodexProviderTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: httpClient),
             logUsageScanner: fixtureScanner,
+            openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner(databasePaths: { [] }),
+            hermesScanner: HermesUsageScanner(databasePath: { nil }),
             now: { now },
             pricing: {
                 // 150 tokens -> $0.25 at these fixture rates: (100 x 1000 + 50 x 3000) / 1M.

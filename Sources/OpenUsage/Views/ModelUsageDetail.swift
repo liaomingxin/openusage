@@ -31,6 +31,23 @@ struct ModelUsageDetail: View {
                     )
                 }
             }
+            if let mac = breakdown.thisMacModels, !mac.isEmpty {
+                Text(breakdown.thisMacSourceNote ?? "This Mac")
+                    .font(.system(size: density.supportingPointSize, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                let macShares = Self.shares(for: mac)
+                let macPercents = Self.wholePercents(macShares)
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(mac.indices, id: \.self) { index in
+                        ModelShareRow(
+                            entry: mac[index],
+                            share: macShares[index],
+                            percent: macPercents[index],
+                            unit: breakdown.unit
+                        )
+                    }
+                }
+            }
             PopoverSourceNote(text: breakdown.sourceNote)
         }
         .padding(Theme.cardRowInset)
@@ -46,9 +63,28 @@ struct ModelUsageDetail: View {
     }
 
     private var header: some View {
-        Text(title)
-            .font(.system(size: density.headerPointSize, weight: .semibold))
-            .foregroundStyle(.primary)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: density.headerPointSize, weight: .semibold))
+                .foregroundStyle(.primary)
+            if let rate = Self.periodHitRate(breakdown.models) {
+                Text("Cache hit \(Int((rate * 100).rounded()))%")
+                    .font(.system(size: density.supportingPointSize))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Hit rate for the period only when every listed model reported cache buckets.
+    static func periodHitRate(_ models: [ModelUsageEntry]) -> Double? {
+        guard !models.isEmpty, models.allSatisfy({
+            $0.inputTokens != nil && $0.cacheReadTokens != nil && $0.cacheWriteTokens != nil
+        }) else { return nil }
+        return CacheUsage.hitRate(
+            input: models.reduce(0) { $0 + ($1.inputTokens ?? 0) },
+            cacheRead: models.reduce(0) { $0 + ($1.cacheReadTokens ?? 0) },
+            cacheWrite: models.reduce(0) { $0 + ($1.cacheWriteTokens ?? 0) }
+        )
     }
 
     /// Share against the sum of the listed models' own (display-rounded) figures, not the spend row's

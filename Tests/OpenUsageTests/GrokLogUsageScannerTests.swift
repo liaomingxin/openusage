@@ -40,6 +40,10 @@ final class GrokLogUsageScannerTests: XCTestCase {
         // 200k input + 100k cache write at $2/M, 700k cache read at $0.5/M, 250k output at $6/M.
         XCTAssertEqual(day.totalTokens, 1_250_000)
         XCTAssertEqual(try XCTUnwrap(day.costUSD), 2.45, accuracy: 0.0001)
+        let model = try XCTUnwrap(scan(line).modelUsage?.daily.first?.models.first)
+        XCTAssertEqual(model.cacheReadTokens, 700_000)
+        XCTAssertEqual(model.cacheWriteTokens, 100_000)
+        XCTAssertEqual(model.inputTokens, 200_000)
     }
 
     func testSplitsCompletedTurnAcrossModelsWithoutDuplicatingTheEvent() throws {

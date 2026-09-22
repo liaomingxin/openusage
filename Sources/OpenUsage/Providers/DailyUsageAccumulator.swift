@@ -25,11 +25,23 @@ struct DailyUsageAccumulator {
         return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
 
-    /// Add a priced row's tokens + cost, attributed to `model` on `day`.
-    mutating func add(day: String, tokens: Int, cost: Double, model: String, fallbackPricingModel: String? = nil) {
+    /// Add a priced row's tokens + cost, attributed to `model` on `day`. `buckets`, when the
+    /// source reported them, keeps uncached input and cache read/write beside the display total.
+    /// Omitting it leaves those fields unreported. Cache writes combine the 5-minute and 1-hour
+    /// buckets. The display total is `tokens` and is not recomputed from the buckets.
+    mutating func add(
+        day: String, tokens: Int, cost: Double, model: String, fallbackPricingModel: String? = nil,
+        buckets: TokenBreakdown? = nil
+    ) {
         tokensByDay[day, default: 0] += tokens
         costByDay[day, default: 0] += cost
-        modelsByDay[day, default: [:]][model, default: ModelAccumulator()].add(tokens: tokens, costUSD: cost)
+        let reported = buckets.map {
+            (input: $0.input, cacheRead: $0.cacheRead, cacheWrite: $0.cacheWrite5m + $0.cacheWrite1h)
+        }
+        modelsByDay[day, default: [:]][model, default: ModelAccumulator()].add(
+            tokens: tokens, costUSD: cost,
+            input: reported?.input, cacheRead: reported?.cacheRead, cacheWrite: reported?.cacheWrite
+        )
         if let fallbackPricingModel { fallbackPricingModelsByDay[day, default: []].insert(fallbackPricingModel) }
     }
 
@@ -51,7 +63,11 @@ struct DailyUsageAccumulator {
                     // Skip cost-unknown entries rather than treating nil as $0 — their unknown-model
                     // metadata is already carried through via unknownModelsByDay below.
                     guard let cost = model.costUSD else { continue }
-                    accumulator.add(day: day.date, tokens: model.totalTokens, cost: cost, model: model.model)
+                    accumulator.replay(
+                        day: day.date, tokens: model.totalTokens, cost: cost, model: model.model,
+                        input: model.inputTokens, cacheRead: model.cacheReadTokens,
+                        cacheWrite: model.cacheWriteTokens
+                    )
                 }
             }
             for (day, models) in scan.unknownModelsByDay {
@@ -61,6 +77,19 @@ struct DailyUsageAccumulator {
             }
         }
         return accumulator.build()
+    }
+
+    /// Replay one already-built model row. Each bucket is summed only with other reports of that
+    /// same bucket; a nil beside a number leaves that field nil.
+    private mutating func replay(
+        day: String, tokens: Int, cost: Double, model: String,
+        input: Int?, cacheRead: Int?, cacheWrite: Int?
+    ) {
+        tokensByDay[day, default: 0] += tokens
+        costByDay[day, default: 0] += cost
+        modelsByDay[day, default: [:]][model, default: ModelAccumulator()].add(
+            tokens: tokens, costUSD: cost, input: input, cacheRead: cacheRead, cacheWrite: cacheWrite
+        )
     }
 
     /// Note a model with no known price that carried tokens. The warning remains even when an
@@ -92,16 +121,27 @@ struct DailyUsageAccumulator {
     private struct ModelAccumulator {
         var tokens = 0
         var costUSD: Double?
+        var inputTokens = OptionalTokenSum()
+        var cacheReadTokens = OptionalTokenSum()
+        var cacheWriteTokens = OptionalTokenSum()
 
-        mutating func add(tokens: Int, costUSD: Double?) {
+        mutating func add(tokens: Int, costUSD: Double?, input: Int?, cacheRead: Int?, cacheWrite: Int?) {
             self.tokens += tokens
             if let costUSD {
                 self.costUSD = (self.costUSD ?? 0) + costUSD
             }
+            inputTokens.add(input)
+            cacheReadTokens.add(cacheRead)
+            cacheWriteTokens.add(cacheWrite)
         }
 
         func entry(model: String) -> ModelUsageEntry {
-            ModelUsageEntry(model: model, totalTokens: tokens, costUSD: costUSD)
+            ModelUsageEntry(
+                model: model, totalTokens: tokens, costUSD: costUSD,
+                inputTokens: inputTokens.value, cacheReadTokens: cacheReadTokens.value,
+                cacheWriteTokens: cacheWriteTokens.value
+            )
         }
     }
 }
+

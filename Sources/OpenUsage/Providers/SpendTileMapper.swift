@@ -244,6 +244,9 @@ enum SpendTileMapper {
     private struct ModelAccumulator {
         var tokens = 0
         var costUSD: Double?
+        private var inputTokens = OptionalTokenSum()
+        private var cacheReadTokens = OptionalTokenSum()
+        private var cacheWriteTokens = OptionalTokenSum()
         private var nameVote = SpellingVote()
         /// Keyed by the case-folded slug; the vote inside restores a display spelling.
         private var variants: [String: (tokens: Int, costUSD: Double?, vote: SpellingVote)] = [:]
@@ -268,6 +271,7 @@ enum SpendTileMapper {
             if let cost = entry.costUSD {
                 costUSD = (costUSD ?? 0) + cost
             }
+            addBuckets(of: entry)
             mergeVariant(entry.model, tokens: entry.totalTokens, costUSD: entry.costUSD)
         }
 
@@ -276,7 +280,14 @@ enum SpendTileMapper {
             if let cost = entry.costUSD {
                 costUSD = (costUSD ?? 0) + cost
             }
+            addBuckets(of: entry)
             nameVote.note(name, weight: entry.totalTokens)
+        }
+
+        private mutating func addBuckets(of entry: ModelUsageEntry) {
+            inputTokens.add(entry.inputTokens)
+            cacheReadTokens.add(entry.cacheReadTokens)
+            cacheWriteTokens.add(entry.cacheWriteTokens)
         }
 
         private mutating func mergeVariant(_ model: String, tokens: Int, costUSD: Double?) {
@@ -299,7 +310,10 @@ enum SpendTileMapper {
             let isTrivial = list.count == 1 && list[0].model.lowercased() == model.lowercased()
             return ModelUsageEntry(model: model, totalTokens: tokens,
                                    costUSD: costUSD.map(SpendTileMapper.roundToCents),
-                                   variants: isTrivial ? nil : list)
+                                   variants: isTrivial ? nil : list,
+                                   inputTokens: inputTokens.value,
+                                   cacheReadTokens: cacheReadTokens.value,
+                                   cacheWriteTokens: cacheWriteTokens.value)
         }
     }
 

@@ -18,6 +18,8 @@ Most spend-tracking providers don't fetch history from an API. OpenUsage reads t
 
 - **Codex CLI** writes session rollouts under `~/.codex/sessions/` and `~/.codex/archived_sessions/` (or `$CODEX_HOME`). We found **no documented automatic cleanup** — rollouts stay until you remove them, and a configurable retention period is still an open feature request ([openai/codex#6015](https://github.com/openai/codex/issues/6015)). The `[history]` settings in `~/.codex/config.toml` (`persistence`, `max_bytes`) only govern the typed-prompt history file (`history.jsonl`), not session rollouts. So for Codex, missing days are the 31-day window rolling past them, not logs being cleaned.
 
+- **ZCode** writes per-request token totals, including cache read and cache write, in `~/.zcode/cli/db/db.sqlite` (`model_usage`). OpenUsage uses completed BigModel rows as Z.ai's This Mac detail. They are not added to Z.ai's account totals.
+- **Kimi Code CLI** writes turn usage in `~/.kimi-code/server/events/session_*.jsonl` (`inputOther`, `inputCacheRead`, `inputCacheCreation`, `output`). Those rows feed Kimi's local spend tiles.
 - **pi coding agent** sessions live under `~/.pi/agent/sessions/` (or `$PI_CODING_AGENT_SESSION_DIR`; pi usage folds into Codex's rows). No automatic cleanup is documented — sessions stay until you delete their `.jsonl` files or remove them from `/resume`.
 
 - **OpenCode** history comes from its local storage (`~/.local/share/opencode/`). No automatic cleanup is documented; clearing that storage removes the history.

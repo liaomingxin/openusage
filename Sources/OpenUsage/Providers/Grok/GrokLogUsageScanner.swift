@@ -187,7 +187,10 @@ actor GrokLogUsageScanner {
                 }
                 continue
             }
-            accumulator.add(day: day, tokens: entry.tokens.totalTokens, cost: cost, model: entry.model)
+            accumulator.add(
+                day: day, tokens: entry.tokens.totalTokens, cost: cost, model: entry.model,
+                buckets: entry.tokens
+            )
         }
         return accumulator.build()
     }

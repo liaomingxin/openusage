@@ -431,7 +431,10 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(may12?.costUSD ?? 0, 0.5, accuracy: 0.0001)
         XCTAssertTrue(scan.unknownModelsByDay.isEmpty)
         let may12Models = scan.modelUsage?.daily.first { $0.date == "2026-05-12" }?.models ?? []
-        XCTAssertEqual(may12Models, [ModelUsageEntry(model: "gpt-5.2", totalTokens: 300, costUSD: 0.5)])
+        XCTAssertEqual(may12Models, [ModelUsageEntry(
+            model: "gpt-5.2", totalTokens: 300, costUSD: 0.5,
+            inputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 0
+        )])
     }
 
     func testAggregateAttributesAutoReviewUsageToSlugWhileUsingFallbackPrice() {
@@ -446,7 +449,10 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.25, accuracy: 0.0001)
         XCTAssertEqual(
             scan.modelUsage?.daily.first?.models,
-            [ModelUsageEntry(model: "codex-auto-review", totalTokens: 150, costUSD: 0.25)]
+            [ModelUsageEntry(
+                model: "codex-auto-review", totalTokens: 150, costUSD: 0.25,
+                inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0
+            )]
         )
     }
 
@@ -464,7 +470,10 @@ final class CodexLogUsageScannerTests: XCTestCase {
             return XCTFail("Expected a Today spend row")
         }
         XCTAssertEqual(try XCTUnwrap(breakdown).models,
-                       [ModelUsageEntry(model: "gpt-5.2", totalTokens: 150, costUSD: 0.25)])
+                       [ModelUsageEntry(
+                           model: "gpt-5.2", totalTokens: 150, costUSD: 0.25,
+                           inputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0
+                       )])
     }
 
     func testAggregateDropsIdenticalEventsAcrossFiles() {
@@ -548,7 +557,8 @@ final class CodexLogUsageScannerTests: XCTestCase {
             ("gpt-5.6-sol", 2.55),
             ("gpt-5.6-terra", 1.02),
             ("gpt-5.6-luna", 0.102),
-            ("gpt-6-astra", 4.95)
+            ("gpt-6-astra", 4.95),
+            ("gpt-6-sol", 0.99)
         ]
 
         for (model, expected) in expectedCosts {
@@ -619,7 +629,8 @@ final class CodexLogUsageScannerTests: XCTestCase {
             ("gpt-5.5", 2.5, 2.5),
             // Cursor's supplement currently says 2.5 for this model; Codex priority is 2x.
             ("gpt-5.6-sol", 2.5, 2),
-            ("gpt-6-astra", 2, 2)
+            ("gpt-6-astra", 2, 2),
+            ("gpt-6-sol", 2, 2)
         ]
 
         for entry in cases {

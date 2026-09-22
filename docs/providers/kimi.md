@@ -10,6 +10,7 @@ quotas the `kimi` CLI reports with its `/usage` command.
 | Session | 5-hour rolling window quota (percentage) |
 | Weekly | The headline weekly allowance (percentage), with its reset countdown |
 | Booster | Pay-as-you-go booster wallet balance (only on non-subscription accounts) |
+| Today / Yesterday / Last 30 Days | Local tokens and estimated cost from the Kimi Code CLI, pi's `kimi-coding` provider, and OpenCode's official Kimi login. On Demand, not pinned |
 
 When Kimi reports your membership level, OpenUsage shows it beside the provider name (e.g.
 "Advanced").

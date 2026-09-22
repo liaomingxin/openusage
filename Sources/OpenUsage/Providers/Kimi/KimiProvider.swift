@@ -12,15 +12,27 @@ final class KimiProvider: ProviderRuntime {
 
     let authStore: KimiAuthStore
     let usageClient: KimiUsageClient
+    let piScanner: PiUsageScanner
+    let cliScanner: KimiCLIUsageScanner
+    let openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner
+    let pricing: @Sendable () async -> ModelPricing
     let now: @Sendable () -> Date
 
     init(
         authStore: KimiAuthStore = KimiAuthStore(),
         usageClient: KimiUsageClient = KimiUsageClient(),
+        piScanner: PiUsageScanner = .shared,
+        cliScanner: KimiCLIUsageScanner = KimiCLIUsageScanner(),
+        openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner = OpenCodeSubscriptionUsageScanner(),
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
+        self.piScanner = piScanner
+        self.cliScanner = cliScanner
+        self.openCodeSubscriptionScanner = openCodeSubscriptionScanner
+        self.pricing = pricing
         self.now = now
     }
 
@@ -42,7 +54,7 @@ final class KimiProvider: ProviderRuntime {
                            metricLabel: "Booster", valueWord: "left")
                 .exportingLimit("booster", kind: .balance, unit: "usd",
                                 source: .value(kind: .dollars))
-        ]
+        ] + WidgetDescriptor.spendTiles(provider: provider)
     }
 
     func hasLocalCredentials() async -> Bool {
@@ -68,12 +80,32 @@ final class KimiProvider: ProviderRuntime {
                 credentials: &credentials, region: region, deviceID: deviceID
             )
             var mapped = try KimiUsageMapper.map(response, now: now())
+            let priced = await pricing()
+            let piScan = await piScanner.scan(cardID: provider.id, now: now(), pricing: priced)
+            let cliScan = cliScanner.scan(now: now(), pricing: priced)
+            let openCodeScan = await openCodeSubscriptionScanner.scan(now: now(), pricing: priced).localSpend[provider.id]
+            if let scan = DailyUsageAccumulator.merged([piScan, cliScan, openCodeScan]) {
+                SpendTileMapper.appendTokenUsage(
+                    scan.series, to: &mapped.lines, now: now(),
+                    unknownModelsByDay: scan.unknownModelsByDay,
+                    modelUsage: scan.modelUsage,
+                    modelSourceNote: "From your Kimi Code logs (estimated)",
+                    pricing: priced
+                )
+                mapped.lines.removeAll { $0.label == "No data" }
+            }
             MetricLine.appendNoDataIfNeeded(&mapped.lines)
+            let history = DailyUsageAccumulator.merged([piScan, cliScan, openCodeScan])
             return ProviderSnapshot.make(
                 provider: provider,
                 plan: mapped.plan,
                 lines: mapped.lines,
-                refreshedAt: now()
+                refreshedAt: now(),
+                usageHistory: history.map {
+                    ProviderUsageHistory(
+                        series: $0.series, modelUsage: $0.modelUsage, unknownModelsByDay: $0.unknownModelsByDay
+                    )
+                }
             )
         } catch {
             return ProviderSnapshot.error(provider: provider, error: error)

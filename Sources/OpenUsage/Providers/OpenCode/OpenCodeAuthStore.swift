@@ -45,6 +45,16 @@ struct OpenCodeAuthStore: Sendable {
         OpenCodePaths.authFilePath(dataDirectory: dataDirectory)
     }
 
+    /// `oauth` or `api` for one provider entry in `auth.json`, or nil when that provider is absent.
+    /// A custom base URL is not an official login.
+    func credentialKind(providerID: String) throws -> String? {
+        guard let object = try authObject(),
+              let entry = object[providerID] as? [String: Any]
+        else { return nil }
+        if entry["baseURL"] != nil || entry["baseUrl"] != nil { return nil }
+        return entry["type"] as? String
+    }
+
     /// The non-empty `opencode-go` API key from `auth.json`, or `nil` when the user has not logged into
     /// OpenCode Go. Reads only that one entry — tolerant of unrelated sibling entries (other providers, or
     /// a future non-object field like a schema marker) so one odd value can't hide a valid key. A present

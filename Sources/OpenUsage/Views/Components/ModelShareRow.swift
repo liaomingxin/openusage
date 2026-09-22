@@ -18,6 +18,21 @@ struct ModelShareRow: View {
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
 
+    /// Cache read, cache write, and hit rate. Nil when the source did not report cache, so a gap
+    /// is not printed as 0%.
+    static func cacheCaption(for entry: ModelUsageEntry) -> String? {
+        guard entry.cacheReadTokens != nil || entry.cacheWriteTokens != nil else { return nil }
+        let read = MetricFormatter.number(Double(entry.cacheReadTokens ?? 0), kind: .count, style: .row)
+        let write = MetricFormatter.number(Double(entry.cacheWriteTokens ?? 0), kind: .count, style: .row)
+        var caption = "Cache read \(read) · write \(write)"
+        if let rate = CacheUsage.hitRate(
+            input: entry.inputTokens, cacheRead: entry.cacheReadTokens, cacheWrite: entry.cacheWriteTokens
+        ) {
+            caption += " · \(Int((rate * 100).rounded()))% hit"
+        }
+        return caption
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -52,6 +67,13 @@ struct ModelShareRow: View {
             }
             .font(.system(size: density.supportingPointSize))
             .foregroundStyle(.secondary)
+
+            if let caption = Self.cacheCaption(for: entry) {
+                Text(caption)
+                    .font(.system(size: density.supportingPointSize))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
 
             GeometryReader { proxy in
                 Capsule()

@@ -100,7 +100,7 @@ enum CodexUsagePricing {
         switch base {
         case "gpt-5.5", "gpt-5.5-pro": return 2.5
         case "gpt-5.4", "gpt-5.4-pro",
-             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra": return 2
+             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol": return 2
         default: return rates.fastMultiplier == 1 ? 2 : rates.fastMultiplier
         }
     }
@@ -123,6 +123,8 @@ enum CodexUsagePricing {
         case "gpt-5.6-luna": return (0.4, 1.8, 0.04)
         // Above 272k: 2x input and cache, 1.5x output (developers.openai.com/api/docs/models/gpt-6-astra).
         case "gpt-6-astra": return (20, 75, 2)
+        // Same long-context rule (developers.openai.com/api/docs/models/gpt-6-sol).
+        case "gpt-6-sol": return (4, 15, 0.4)
         default: return nil
         }
     }

@@ -4,6 +4,11 @@ import Foundation
 final class ZAIProvider: ProviderRuntime {
     let authStore: ZAIAuthStore
     let usageClient: ZAIUsageClient
+    let piScanner: PiUsageScanner
+    let openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner
+    let zcodeScanner: ZCodeUsageScanner
+    let hermesScanner: HermesUsageScanner
+    let pricing: @Sendable () async -> ModelPricing
     let now: @Sendable () -> Date
 
     /// The console this account lives on, read from the key file at launch and re-read on every
@@ -14,10 +19,20 @@ final class ZAIProvider: ProviderRuntime {
     init(
         authStore: ZAIAuthStore = ZAIAuthStore(),
         usageClient: ZAIUsageClient = ZAIUsageClient(),
+        piScanner: PiUsageScanner = .shared,
+        openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner = OpenCodeSubscriptionUsageScanner(),
+        zcodeScanner: ZCodeUsageScanner = ZCodeUsageScanner(),
+        hermesScanner: HermesUsageScanner = HermesUsageScanner(),
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
+        self.piScanner = piScanner
+        self.openCodeSubscriptionScanner = openCodeSubscriptionScanner
+        self.zcodeScanner = zcodeScanner
+        self.hermesScanner = hermesScanner
+        self.pricing = pricing
         self.now = now
         self.platform = authStore.loadPlatform()
     }
@@ -104,7 +119,7 @@ final class ZAIProvider: ProviderRuntime {
             let credit = ZAIUsageMapper.isCreditPackage(body)
             let activity = await loadActivity(auth: auth, credit: credit)
             do {
-                let mapped = try ZAIUsageMapper.map(
+                var mapped = try ZAIUsageMapper.map(
                     quotaBody: body,
                     subscriptionBody: subscription,
                     activityLines: ZAIActivityMapper.lines(
@@ -115,14 +130,19 @@ final class ZAIProvider: ProviderRuntime {
                         now: now()
                     )
                 )
+                let priced = await pricing()
+                let piScan = await piScanner.scan(cardID: "zai", now: now(), pricing: priced)
+                let openCodeScan = await openCodeSubscriptionScanner.scan(now: now(), pricing: priced).thisMac["zai"]
+                let zcodeScan = await zcodeScanner.scan(now: now(), pricing: priced)
+                let hermesScan = await hermesScanner.officialZAIScan(now: now(), pricing: priced)
+                let thisMac = DailyUsageAccumulator.merged([piScan, openCodeScan, zcodeScan, hermesScan])
+                Self.attachThisMac(thisMac, now: now(), to: &mapped.lines)
                 return ProviderSnapshot.make(
                     provider: provider,
                     plan: mapped.plan,
                     lines: mapped.lines,
                     refreshedAt: now(),
-                    usageHistory: activity.window.map {
-                        ProviderUsageHistory(series: $0.series, modelUsage: $0.modelUsage)
-                    }
+                    usageHistory: Self.usageHistory(server: activity.window, thisMac: thisMac)
                 )
             } catch {
                 return ProviderSnapshot.error(provider: provider, error: error)
@@ -132,6 +152,57 @@ final class ZAIProvider: ProviderRuntime {
         case .failed(let error):
             return ProviderSnapshot.error(provider: provider, error: error)
         }
+    }
+
+    /// Server history stays the headline. Pi's Z.ai rows hang off `thisMac` and must not change
+    /// `series`, which is what the spend tiles and Total Spend already rendered.
+    private static func attachThisMac(_ scan: LogUsageScan?, now: Date, to lines: inout [MetricLine]) {
+        guard let scan else { return }
+        let today = DailyUsageAccumulator.dayKey(from: now)
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)
+            .map { DailyUsageAccumulator.dayKey(from: $0) }
+        lines = lines.map { line in
+            guard case .values(let label, let values, let color, let expiries, let unknown, var breakdown) = line
+            else { return line }
+            let days: Set<String>
+            switch label {
+            case "Today": days = [today]
+            case "Yesterday": days = Set([yesterday].compactMap { $0 })
+            case "Last 30 Days": days = Set(scan.series.daily.map(\.date))
+            default: return line
+            }
+            let models = (scan.modelUsage?.daily ?? []).filter { days.contains($0.date) }.flatMap(\.models)
+            guard !models.isEmpty else { return line }
+            if breakdown == nil {
+                breakdown = ModelUsageBreakdown(
+                    totalTokens: Int(values.first { $0.label == "tokens" }?.number ?? 0),
+                    totalCostUSD: nil, models: [], sourceNote: "From Z.ai"
+                )
+            }
+            breakdown?.thisMacModels = models
+            breakdown?.thisMacSourceNote = "This Mac"
+            return .values(
+                label: label, values: values, colorHex: color, expiriesAt: expiries,
+                unknownModels: unknown, modelBreakdown: breakdown
+            )
+        }
+    }
+
+    private static func usageHistory(server: ZAIModelActivity?, thisMac: LogUsageScan?) -> ProviderUsageHistory? {
+        if let server {
+            return ProviderUsageHistory(
+                series: server.series,
+                modelUsage: server.modelUsage,
+                thisMacSeries: thisMac?.series,
+                thisMacModelUsage: thisMac?.modelUsage
+            )
+        }
+        guard let thisMac else { return nil }
+        return ProviderUsageHistory(
+            series: DailyUsageSeries(daily: []),
+            thisMacSeries: thisMac.series,
+            thisMacModelUsage: thisMac.modelUsage
+        )
     }
 
     /// The usage-history payloads behind the trend, the day rows and MCP Tools, on whichever endpoint

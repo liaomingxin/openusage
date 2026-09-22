@@ -127,6 +127,9 @@ enum UsageHistoryAggregator {
         var tokens = 0
         var cost: Double?
         var sawCost = false
+        var inputTokens = OptionalTokenSum()
+        var cacheReadTokens = OptionalTokenSum()
+        var cacheWriteTokens = OptionalTokenSum()
         var variants: [String: VariantAccumulator] = [:]
 
         mutating func add(_ model: ModelUsageEntry) {
@@ -136,6 +139,9 @@ enum UsageHistoryAggregator {
                 cost = (cost ?? 0) + value
                 sawCost = true
             }
+            inputTokens.add(model.inputTokens)
+            cacheReadTokens.add(model.cacheReadTokens)
+            cacheWriteTokens.add(model.cacheWriteTokens)
             for variant in model.variants ?? [] {
                 variants[variant.model.lowercased(), default: VariantAccumulator(name: variant.model)]
                     .add(variant)
@@ -149,7 +155,10 @@ enum UsageHistoryAggregator {
                 model: displayName,
                 totalTokens: tokens,
                 costUSD: sawCost ? cost : nil,
-                variants: mergedVariants.isEmpty ? nil : mergedVariants
+                variants: mergedVariants.isEmpty ? nil : mergedVariants,
+                inputTokens: inputTokens.value,
+                cacheReadTokens: cacheReadTokens.value,
+                cacheWriteTokens: cacheWriteTokens.value
             )
         }
     }

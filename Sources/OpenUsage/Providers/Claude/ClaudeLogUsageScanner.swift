@@ -626,7 +626,10 @@ actor ClaudeLogUsageScanner {
                 continue
             }
 
-            accumulator.add(day: day, tokens: entry.tokens.totalTokens, cost: cost, model: modelName)
+            accumulator.add(
+                day: day, tokens: entry.tokens.totalTokens, cost: cost, model: modelName,
+                buckets: entry.tokens
+            )
         }
 
         return accumulator.build()

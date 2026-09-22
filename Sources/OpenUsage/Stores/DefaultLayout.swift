@@ -31,6 +31,7 @@ enum DefaultLayout {
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30", "grok.productUsage",
 
         "kimi.session", "kimi.weekly",
+        "kimi.today", "kimi.yesterday", "kimi.last30",
 
         "ollama.session", "ollama.weekly", "ollama.last4Weeks",
 
@@ -129,7 +130,8 @@ enum DefaultLayout {
         "zai.webSearches", "zai.today", "zai.yesterday", "zai.last30", "zai.mcpTools", "zai.renews",
         // Kimi Code: Session + Weekly stay above the fold; the booster wallet (pay-as-you-go only,
         // absent on subscription accounts) sits below the caret.
-        "kimi.booster"
+        "kimi.booster",
+        "kimi.today", "kimi.yesterday", "kimi.last30"
     ]
 
     /// Copy a family's default metric ids onto extra account cards already in `registry`

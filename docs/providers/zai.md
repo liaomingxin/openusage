@@ -21,7 +21,7 @@ When Z.ai reports your plan name, OpenUsage shows it beside the provider name.
 and the [local API](../local-http-api.md) export — but each row now also shows the raw figures behind
 the percentage, e.g. `1,030 / 28,000 credits`, under the bar.
 
-Hovering **Today**, **Yesterday**, or **Last 30 Days** opens the per-model breakdown for that period.
+Hovering **Today**, **Yesterday**, or **Last 30 Days** opens the per-model breakdown for that period. Those headline numbers stay Z.ai's account totals. A **This Mac** list under them shows ZCode, pi (`zai`, `zhipu`, `zai-coding-cn`), and OpenCode `zai-coding-plan` usage on this Mac, including cache read, cache write, and hit rate. That list is not added to the headline or to Total Spend.
 A GLM Coding Plan is a flat subscription, so nothing is priced: the panel ranks models by their share
 of tokens rather than by cost. On credit-metered plans (every current Pro, Lite, Max, and Ultra
 plan) Z.ai no longer reports call counts, so those rows carry tokens only; the numbers come from

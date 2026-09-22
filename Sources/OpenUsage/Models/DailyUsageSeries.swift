@@ -50,6 +50,43 @@ struct ModelUsageEntry: Hashable, Sendable, Codable {
     var totalTokens: Int
     var costUSD: Double?
     var variants: [ModelUsageVariant]? = nil
+    /// Uncached input, when the source reported buckets. Nil means unreported; zero means a
+    /// reported zero. Merging a report with a gap leaves the field nil instead of treating the
+    /// gap as zero.
+    var inputTokens: Int? = nil
+    var cacheReadTokens: Int? = nil
+    /// Cache writes, 5-minute and 1-hour combined. Same nil-versus-zero rule as `inputTokens`.
+    var cacheWriteTokens: Int? = nil
+}
+
+/// Sums one reported token bucket. A missing report stays missing: seeing both a number and a
+/// nil yields nil, so a gap is never stored as zero.
+struct OptionalTokenSum: Hashable, Sendable {
+    private var total = 0
+    private var sawReported = false
+    private var sawUnreported = false
+
+    mutating func add(_ value: Int?) {
+        if let value {
+            sawReported = true
+            total += value
+        } else {
+            sawUnreported = true
+        }
+    }
+
+    var value: Int? { sawReported && !sawUnreported ? total : nil }
+}
+
+enum CacheUsage {
+    /// `cache read / (uncached input + cache write + cache read)`. Nil when any bucket was not reported
+    /// or the prompt is empty. Output is not part of the denominator.
+    static func hitRate(input: Int?, cacheRead: Int?, cacheWrite: Int?) -> Double? {
+        guard let input, let cacheRead, let cacheWrite else { return nil }
+        let prompt = input + cacheRead + cacheWrite
+        guard prompt > 0 else { return nil }
+        return Double(cacheRead) / Double(prompt)
+    }
 }
 
 /// One raw slug inside a grouped `ModelUsageEntry` — the "per thinking effort" line of the hover
@@ -78,17 +115,25 @@ struct ProviderUsageHistory: Hashable, Sendable, Codable {
     var unknownModelsByDay: [String: Set<String>]
     /// Optional for compatibility with histories saved before fallback estimation existed.
     var fallbackPricingModelsByDay: [String: Set<String>]?
+    /// Local agent usage for a card whose headline comes from the provider's account API.
+    /// Never merged into `series`. Absent on cards that already add agent usage to the headline.
+    var thisMacSeries: DailyUsageSeries?
+    var thisMacModelUsage: ModelUsageSeries?
 
     init(
         series: DailyUsageSeries,
         modelUsage: ModelUsageSeries? = nil,
         unknownModelsByDay: [String: Set<String>] = [:],
-        fallbackPricingModelsByDay: [String: Set<String>]? = nil
+        fallbackPricingModelsByDay: [String: Set<String>]? = nil,
+        thisMacSeries: DailyUsageSeries? = nil,
+        thisMacModelUsage: ModelUsageSeries? = nil
     ) {
         self.series = series
         self.modelUsage = modelUsage
         self.unknownModelsByDay = unknownModelsByDay
         self.fallbackPricingModelsByDay = fallbackPricingModelsByDay
+        self.thisMacSeries = thisMacSeries
+        self.thisMacModelUsage = thisMacModelUsage
     }
 }
 
@@ -105,6 +150,9 @@ struct ModelUsageBreakdown: Hashable, Sendable, Codable {
     var models: [ModelUsageEntry]
     var sourceNote: String
     var unitLabel: String? = nil
+    /// Local-agent rows for a server-backed headline. They do not change `totalTokens`.
+    var thisMacModels: [ModelUsageEntry]? = nil
+    var thisMacSourceNote: String? = nil
 
     /// The unit noun each entry prints, defaulting to the spend rows' "tokens".
     var unit: String { unitLabel ?? "tokens" }

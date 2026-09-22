@@ -194,7 +194,10 @@ actor PiUsageScanner {
                 }
                 continue
             }
-            accumulator.add(day: day, tokens: entry.reportedTotalTokens, cost: cost, model: modelName)
+            accumulator.add(
+                day: day, tokens: entry.reportedTotalTokens, cost: cost, model: modelName,
+                buckets: entry.tokens
+            )
         }
         return accumulator.build()
     }

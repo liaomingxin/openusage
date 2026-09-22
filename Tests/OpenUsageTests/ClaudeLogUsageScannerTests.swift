@@ -176,6 +176,8 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 1.23014, accuracy: 1e-9)
         let models = scan.modelUsage?.daily.first?.models ?? []
         XCTAssertEqual(models.first { $0.model == "main-model" }?.costUSD, 1.23)
+        XCTAssertEqual(models.first { $0.model == "main-model" }?.cacheReadTokens, 0)
+        XCTAssertEqual(models.first { $0.model == "main-model" }?.cacheWriteTokens, 0)
         XCTAssertEqual(
             models.first { $0.model == "claude-test-model" }?.costUSD ?? 0, 0.00014, accuracy: 1e-9
         )
@@ -307,7 +309,10 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily, [DailyUsageEntry(date: day, totalTokens: 1500, costUSD: 0.02)])
         XCTAssertEqual(scan.unknownModelsByDay[day], ["mystery-model"])
         XCTAssertEqual(scan.modelUsage?.daily.first?.models, [
-            ModelUsageEntry(model: "claude-test-model", totalTokens: 1500, costUSD: 0.02)
+            ModelUsageEntry(
+                model: "claude-test-model", totalTokens: 1500, costUSD: 0.02,
+                inputTokens: 1000, cacheReadTokens: 0, cacheWriteTokens: 0
+            )
         ])
     }
 
@@ -340,7 +345,10 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily[0].totalTokens, 15)
         XCTAssertEqual(scan.series.daily[0].costUSD ?? 0, 0.10, accuracy: 1e-9)
         XCTAssertEqual(scan.modelUsage?.daily.first?.models, [
-            ModelUsageEntry(model: ModelUsageEntry.unattributedModelName, totalTokens: 15, costUSD: 0.10)
+            ModelUsageEntry(
+                model: ModelUsageEntry.unattributedModelName, totalTokens: 15, costUSD: 0.10,
+                inputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0
+            )
         ])
     }
 
