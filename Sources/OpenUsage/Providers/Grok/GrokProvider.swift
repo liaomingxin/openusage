@@ -100,9 +100,22 @@ final class GrokProvider: ProviderRuntime {
         // The weekly shared-pool meter, the pay-as-you-go badge, and the per-product split of the pool
         // all come from one billing call with `?format=credits` — the call the Grok CLI itself makes.
         // This is the provider's primary remote fetch; a failure here fails the provider like any
-        // other usage call.
+        // other usage call, except the documented team-principal 412 which has no weekly pool to show.
         let creditsResponse = try await fetchCreditsConfigWithRetry(accessToken: accessToken, state: &state)
-        var mapped = try GrokUsageMapper.mapCreditsConfig(creditsResponse)
+        var mapped: GrokMappedUsage
+        var warning: String?
+        if GrokUsageMapper.isTeamBillingUnavailable(creditsResponse) {
+            // Same shape as Claude's missing-profile-scope path: log it, keep the snapshot
+            // successful, and let local spend tiles load under an amber header warning.
+            AppLog.warn(
+                LogTag.plugin("grok"),
+                "credits config unavailable: team principal has no personal team; weekly/pay-as-you-go omitted, local spend still loads"
+            )
+            mapped = GrokMappedUsage(lines: [])
+            warning = GrokUsageMapper.teamBillingUnavailableWarning
+        } else {
+            mapped = try GrokUsageMapper.mapCreditsConfig(creditsResponse)
+        }
 
         let plan = await fetchPlanName(accessToken: state.token)
 
@@ -140,7 +153,8 @@ final class GrokProvider: ProviderRuntime {
             plan: plan,
             lines: mapped.lines,
             refreshedAt: now(),
-            usageHistory: usageHistory
+            usageHistory: usageHistory,
+            warning: warning
         )
     }
 

@@ -233,12 +233,7 @@ struct SettingsScreen: View {
                     .settingsSwitchStyle()
             }
             CardCaption(text: "While your screen is shared or recorded, the menu bar shows “OpenUsage” instead of your usage.")
-            ControlRow {
-                Text("Help make OpenUsage better by sharing anonymous usage analytics")
-                    .font(.system(size: density.bodyPointSize))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } control: {
+            ControlRow("Help Make OpenUsage Better") {
                 Toggle("", isOn: Binding(
                     get: { container.telemetry.isEnabled },
                     set: { container.telemetry.setEnabled($0) }
@@ -253,7 +248,7 @@ struct SettingsScreen: View {
     private var updatesSection: some View {
         @Bindable var updater = updater
         return SectionCard("Updates") {
-            ControlRow("Update Automatically") {
+            ControlRow("Check Automatically") {
                 Toggle("", isOn: $updater.automaticallyChecksForUpdates)
                     .settingsSwitchStyle()
             }

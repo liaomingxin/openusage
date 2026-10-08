@@ -117,7 +117,8 @@ final class UsageOnlyHTTPClient: HTTPClient, @unchecked Sendable {
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        let readOnly = [ClaudeSwapOAuth.usageURL, ClaudeSwapOAuth.profileURL].contains(request.url)
+        let bareURL = URL(string: request.url.absoluteString.components(separatedBy: "?")[0])!
+        let readOnly = [ClaudeSwapOAuth.usageURL, ClaudeSwapOAuth.profileURL].contains(bareURL)
         if !readOnly || request.method != "GET" {
             XCTFail("a claude-swap card may only GET the usage or profile endpoint, got \(request.method) \(request.url)")
         }
@@ -317,7 +318,11 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
 
         // Exactly one usage request, then the one-time profile lookup for the live plan. Both carry the
         // stashed access token — never the refresh token — and neither has a body.
-        XCTAssertEqual(http.requests.map(\.url), [ClaudeSwapOAuth.usageURL, ClaudeSwapOAuth.profileURL])
+        // The client opts into the cedar_ember reset-grants block with a query flag (#1290).
+        XCTAssertEqual(http.requests.map(\.url), [
+            URL(string: ClaudeSwapOAuth.usageURL.absoluteString + "?cedar_ember=1")!,
+            ClaudeSwapOAuth.profileURL
+        ])
         for request in http.requests {
             XCTAssertEqual(request.method, "GET")
             XCTAssertEqual(request.headers["Authorization"], "Bearer sk-ant-oat01-stashed")
@@ -353,7 +358,9 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         XCTAssertEqual(first.plan, "Max 5x", "the stashed blob says Max 20x; the live profile wins")
         XCTAssertEqual(second.plan, "Max 5x")
         XCTAssertEqual(http.requests.map(\.url), [
-            ClaudeSwapOAuth.usageURL, ClaudeSwapOAuth.profileURL, ClaudeSwapOAuth.usageURL
+            URL(string: ClaudeSwapOAuth.usageURL.absoluteString + "?cedar_ember=1")!,
+            ClaudeSwapOAuth.profileURL,
+            URL(string: ClaudeSwapOAuth.usageURL.absoluteString + "?cedar_ember=1")!
         ])
     }
 

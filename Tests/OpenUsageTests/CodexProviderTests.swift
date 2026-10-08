@@ -129,8 +129,8 @@ final class CodexUsageMapperTests: XCTestCase {
 
     func testPlanNamesPreserveOtherPlansAndUnknownEntitlements() {
         let cases = [
-            ("prolite", "Pro 5x"),
-            ("pro", "Pro 20x"),
+            ("prolite", "Pro 100"),
+            ("pro", "Pro 200"),
             ("team", "Team"),
             ("business", "Business"),
             ("self_serve_business", "Self Serve Business"),
@@ -184,7 +184,7 @@ final class CodexUsageMapperTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_800_000_000)
         )
 
-        XCTAssertEqual(mapped.plan, "Pro 5x")
+        XCTAssertEqual(mapped.plan, "Pro 100")
         XCTAssertEqual(progress(mapped.lines, "Session")?.used, 10)
         XCTAssertEqual(progress(mapped.lines, "Weekly")?.used, 20)
         // Credits lead with the dollar value (4¢/credit), then the raw count — no inverted fake cap.
@@ -748,7 +748,7 @@ final class CodexProviderTests: XCTestCase {
 
         XCTAssertFalse(snapshot.lines.contains(where: \.isError))
         XCTAssertEqual(progress(snapshot.lines, "Session")?.used, 5)
-        XCTAssertEqual(snapshot.plan, "Pro 20x")
+        XCTAssertEqual(snapshot.plan, "Pro 200")
         // The account rows simply don't render; nothing else changes.
         for label in ["Account Trend", "Lifetime Tokens", "Day Streak", "Threads"] {
             XCTAssertFalse(snapshot.lines.contains { $0.label == label }, label)

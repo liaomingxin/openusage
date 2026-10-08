@@ -49,7 +49,7 @@ final class ClaudeSwapProviderTests: XCTestCase {
         let descriptors = provider(files: [:]).widgetDescriptors
         XCTAssertEqual(descriptors.map(\.id), [
             "claude@abcd1234.session", "claude@abcd1234.weekly", "claude@abcd1234.fable",
-            "claude@abcd1234.sonnet", "claude@abcd1234.extra"
+            "claude@abcd1234.sonnet", "claude@abcd1234.extra", "claude@abcd1234.rateLimitResets"
         ])
         let claudeAPIRows = ClaudeProvider().widgetDescriptors
             .map { $0.id.dropFirst("claude.".count) }
@@ -139,7 +139,7 @@ final class ClaudeSwapCatalogAndLayoutTests: XCTestCase {
         let group = try XCTUnwrap(store.displayGroups.first { $0.provider.id == cardID })
         XCTAssertEqual(
             group.alwaysShownWidgets.map(\.descriptorID) + group.expandedWidgets.map(\.descriptorID),
-            ["\(cardID).session", "\(cardID).weekly", "\(cardID).fable", "\(cardID).extra"]
+            ["\(cardID).session", "\(cardID).weekly", "\(cardID).fable", "\(cardID).extra", "\(cardID).rateLimitResets"]
         )
         XCTAssertEqual(
             store.pinnedGroups.flatMap { $0.metrics.map(\.id) },

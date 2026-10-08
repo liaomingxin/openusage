@@ -47,6 +47,7 @@ extension CodexLogUsageScanner {
             var rateModel = resolution.rateModel
             var resolvedRates = resolution.rates
             var appliesCodexFastTier = resolution.isFastAlias ? resolution.hasBaseRates : event.isFast
+            var appliesUltrafastTier = event.isUltrafast && (!resolution.isFastAlias || resolution.hasBaseRates)
             var usedFallback: String?
             // A reference can estimate the cost without making the model's own price known.
             // Keep the existing warning independently of whether an estimate can be included.
@@ -57,12 +58,16 @@ extension CodexLogUsageScanner {
                 resolvedRates = fallbackRates
                 rateModel = fallbackModel
                 appliesCodexFastTier = resolution.isFastAlias || event.isFast
+                appliesUltrafastTier = event.isUltrafast
                 usedFallback = fallbackModel
             }
             guard let rates = resolvedRates else { continue }
             // Rates can still fail to cover the event (a custom-pricing entry omitting a field the
             // event bills at) — that stays unpriced and warned about, exactly like an unknown model.
-            if let eventCost = cost(rates: rates, event: event, model: rateModel, fastTier: appliesCodexFastTier) {
+            if let eventCost = cost(
+                rates: rates, event: event, model: rateModel, fastTier: appliesCodexFastTier,
+                ultrafastTier: appliesUltrafastTier
+            ) {
                 accumulator.add(
                     day: day, tokens: event.total, cost: eventCost, model: model,
                     fallbackPricingModel: usedFallback,
@@ -83,14 +88,17 @@ extension CodexLogUsageScanner {
     /// Native rollout events count cached tokens inside `input`; the shared estimator takes disjoint
     /// buckets, so the cached portion is subtracted here rather than in `CodexUsagePricing`. Nil when
     /// the rates don't cover one of the event's billed buckets.
-    static func cost(rates: ModelRates, event: Event, model: String, fastTier: Bool) -> Double? {
+    static func cost(
+        rates: ModelRates, event: Event, model: String, fastTier: Bool, ultrafastTier: Bool = false
+    ) -> Double? {
         CodexUsagePricing.cost(
             rates: rates,
             tokens: TokenBreakdown(
                 input: max(0, event.input - event.cached), cacheRead: event.cached, output: event.output
             ),
             model: model,
-            fastTier: fastTier
+            fastTier: fastTier,
+            ultrafastTier: ultrafastTier
         )
     }
 }

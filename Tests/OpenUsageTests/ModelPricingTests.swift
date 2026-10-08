@@ -424,10 +424,11 @@ final class ModelPricingTests: XCTestCase {
             XCTAssertEqual(pricing.supplement.canonicalName(for: model), "grok-4.7-fast", model)
             XCTAssertEqual(pricing.resolve(model: model), expected, model)
         }
-        // Cursor's Grok 4.7 SKUs bill long context from 256k and ship separate 500k variants.
-        for unaliased in ["cursor-grok-4.7-fast", "grok-4.7-500k-fast"] {
-            XCTAssertNil(pricing.supplement.canonicalName(for: unaliased), unaliased)
-        }
+        // Cursor's Grok 4.7 SKUs bill long context from 256k and ship separate 500k variants;
+        // each is pinned to its own bundled entry rather than the xAI 200k-tier rates above.
+        XCTAssertEqual(pricing.supplement.canonicalName(for: "cursor-grok-4.7-fast"), "cursor-grok-4.7-fast")
+        XCTAssertEqual(pricing.supplement.canonicalName(for: "grok-4.7-500k-fast"), "grok-4.7-500k-fast")
+        XCTAssertNotNil(pricing.resolve(model: "grok-4.7-500k-fast"))
     }
 
     func testGrok47BaseSlugsUseXaiRatesOverResellers() throws {

@@ -109,7 +109,11 @@ final class ClaudeSwapProvider: ProviderRuntime {
                 .exportingLimit("sonnet", unit: "percent"),
             .boundedDollars(id: "\(provider.id).extra", provider: provider, title: "Extra Usage",
                             metricLabel: "Extra usage spent", limit: 100, valueWord: "spent")
-                .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars))
+                .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars)),
+            // Mirrors the Claude card's `cedar_ember` reset-grants row (#1290): the same usage API
+            // serves both cards, and DefaultLayout's claude rows translate onto this card unchanged.
+            .values(id: "\(provider.id).rateLimitResets", provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
+                .exportingLimit("rateLimitResets", kind: .balance, unit: "resets", source: .value(kind: .count, label: "available"))
         ]
     }
 

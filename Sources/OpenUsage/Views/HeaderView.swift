@@ -6,8 +6,8 @@ import SwiftUI
 /// screen — is a data view the user hops to often, so it gets its own labeled capsule beside Options
 /// instead of hiding in the menu; Options still carries an Agent Usage item so the screen is reachable
 /// from either affordance. The menu holds everything else: Customize / Settings / Share Screenshot /
-/// Check for Updates / About / Quit. Customize leads the menu because it's the screen users reach for
-/// most; Settings stays one click away (and always via ⌘,).
+/// Check for Updates / Report an Issue / About / Quit. Customize leads the menu because it's the
+/// screen users reach for most; Settings stays one click away (and always via ⌘,).
 ///
 /// Both capsules are `.buttonStyle(.plain)` controls with one `interactiveGlass(in: Capsule())`
 /// treatment behind each — the system `.buttonStyle(.glass)` renders flat on a `Menu` (its own button
@@ -31,8 +31,8 @@ struct HeaderView: View {
     @Environment(UpdaterController.self) private var updater
     @Environment(PopoverTransparencyStore.self) private var transparency
     @Environment(\.colorScheme) private var colorScheme
-    /// The current screen. The footer is fixed chrome keyed off `layout.screen` (it no longer slides
-    /// per-page), so this control shows only when that's `.dashboard` and swaps in place on a switch.
+    /// The screen this footer belongs to — each page carries its own — so the control shows on the
+    /// dashboard and slides away with it.
     let screen: PopoverScreen
 
     /// Control height, so the capsule matches the footer's other chrome.
@@ -144,6 +144,10 @@ struct HeaderView: View {
         .disabled(!updater.canCheckForUpdates)
 
         Divider()
+
+        Link(destination: URL(string: "https://github.com/robinebers/openusage/issues/new/choose")!) {
+            Label("Report an Issue…", systemImage: "ladybug")
+        }
 
         Button { AboutPanel.present() } label: {
             Label("About OpenUsage", systemImage: "info.circle")

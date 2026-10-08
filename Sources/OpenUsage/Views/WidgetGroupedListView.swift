@@ -27,6 +27,7 @@ struct WidgetGroupedListView: View {
     @State private var balanceHeights: [String: CGFloat] = [:]
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
 
+
     var body: some View {
         // Masonry grid (`MasonryLayout`): two independent columns, each card joining the currently
         // shorter one. Not `MasonryGrid` — the cards already publish frames for drag-reorder, so the

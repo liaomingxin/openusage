@@ -87,7 +87,9 @@ final class ResetDisplayTests: XCTestCase {
                                  "antigravity.geminiPro": .zeroUsage,
                                  "antigravity.claude": .zeroUsage,
                                  "kimi.session": .zeroUsage,
-                                 "opencode.session": .zeroUsage])
+                                 // OpenCode moved to .missingResetDate (upstream #062fb5ec): a session
+                                 // under 1% still gets a real reset countdown instead of reading empty.
+                                 "opencode.session": .missingResetDate])
 
         // Same wiring pin for the menu-bar tray suffix (it replaced a title-string match).
         let suffixed = descriptors.filter { $0.sample.traySuffix != nil }

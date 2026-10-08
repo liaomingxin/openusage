@@ -147,6 +147,15 @@ enum CodexLogFixture {
         )
     }
 
+    /// A pi scanner pinned to an empty sessions dir, so a developer's real pi logs stay out.
+    static func noPi() -> PiUsageScanner {
+        PiUsageScanner(
+            environment: FakeEnvironment([:]),
+            homeDirectory: { FileManager.default.temporaryDirectory.appendingPathComponent("openusage-no-pi-home") },
+            incrementalScanner: IncrementalJSONLScanner<PiUsageScanner.Entry>()
+        )
+    }
+
     /// A `turn_context` line carrying the session's active model.
     static func turnContext(timestamp: String, model: String) -> String {
         jsonLine([
@@ -188,13 +197,17 @@ enum CodexLogFixture {
 
     /// An `event_msg`/`thread_settings_applied` line carrying the session's service tier, the way
     /// Codex CLI ≥ July 2026 records tier changes.
-    static func threadSettingsApplied(timestamp: String, serviceTier: String, model: String = "gpt-5.2") -> String {
-        jsonLine([
+    static func threadSettingsApplied(timestamp: String, serviceTier: String?, model: String = "gpt-5.2") -> String {
+        var threadSettings: [String: Any] = ["model": model]
+        if let serviceTier {
+            threadSettings["service_tier"] = serviceTier
+        }
+        return jsonLine([
             "timestamp": timestamp,
             "type": "event_msg",
             "payload": [
                 "type": "thread_settings_applied",
-                "thread_settings": ["model": model, "service_tier": serviceTier]
+                "thread_settings": threadSettings
             ]
         ])
     }
@@ -365,6 +378,7 @@ final class RecordedHTTPRequests: @unchecked Sendable {
 extension ProviderRuntime {
     func hasLocalCredentials() async -> Bool { false }
 }
+
 
 
 @MainActor
