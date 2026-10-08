@@ -244,6 +244,43 @@ final class ModelPricingStoreTests: XCTestCase {
         """
     }
 
+    /// Fork regression: the upstream feed is fresher but carries none of the fork's bundled-only
+    /// rules (pi-log slugs like `grok-4.7-build-fast`) or entries. Recency must pick the feed's
+    /// *rates*, not delete the bundled-only rules — both sides have to survive the merge.
+    func testFresherFeedKeepsBundledOnlySupplementEntriesAndRules() async throws {
+        // A cache (feed) dated newer than the bundle, with its own entry but no fork-only rules.
+        try Data("""
+        {"updated_at": "2026-09-30T00:00:00Z",
+         "pricing": {"feed-only": {"input_per_million": 7, "output_per_million": 7}},
+         "fast_multipliers": {}, "alias_rules": []}
+        """.utf8).write(to: tempDir.appendingPathComponent("supplement.json"), options: .atomic)
+
+        let bundledJSON = """
+        {"updated_at": "2026-09-29T00:00:00Z",
+         "pricing": {"bundled-only": {"input_per_million": 3, "output_per_million": 3}},
+         "fast_multipliers": {"bundled-only": 2},
+         "alias_rules": [{"pattern": "^grok-4[.-]7(?:-(?:build|low|medium|high|xhigh))?-fast$", "canonical": "feed-only"}]}
+        """
+        let store = ModelPricingStore(
+            http: RoutingHTTPClient(handler: { _ in throw URLError(.notConnectedToInternet) }),
+            cacheDirectory: tempDir,
+            bundledData: { name in
+                name == "pricing_supplement" ? Data(bundledJSON.utf8) : Self.bundledFixtures(name)
+            }
+        )
+
+        let pricing = await store.current()
+        // The feed's fresher entry still prices its model.
+        XCTAssertEqual(pricing.resolve(model: "feed-only")?.inputPerMillion, 7)
+        // The bundled-only entry survived the feed winning on recency.
+        XCTAssertEqual(pricing.resolve(model: "bundled-only")?.inputPerMillion, 3)
+        // The bundled-only alias rule survived, so the pi-log slug resolves through it.
+        XCTAssertEqual(pricing.supplement.canonicalName(for: "grok-4.7-build-fast"), "feed-only")
+        XCTAssertEqual(pricing.resolve(model: "grok-4.7-build-fast")?.inputPerMillion, 7)
+        // The bundled-only fast multiplier survived too.
+        XCTAssertEqual(pricing.supplement.fastMultiplier(for: "bundled-only"), 2)
+    }
+
     private func writeSupplementCache(updatedAt: String?, autoInput: Double) throws {
         try Data(Self.supplementJSON(updatedAt: updatedAt, autoInput: autoInput).utf8)
             .write(to: tempDir.appendingPathComponent("supplement.json"), options: .atomic)

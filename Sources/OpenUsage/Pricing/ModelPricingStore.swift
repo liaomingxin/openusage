@@ -149,10 +149,13 @@ actor ModelPricingStore {
         rebuildPricing()
     }
 
-    /// Whichever of the fetched cache and the bundled resource carries the newer `updated_at`. The
-    /// cache can't simply win: an app update ships a newer bundled supplement while an older cache is
-    /// still on disk, and the feed is only re-read once an hour — so a cache-always-wins rule hides
-    /// freshly shipped rates for that hour, and forever for anyone who can't reach the feed.
+    /// Whichever of the fetched cache and the bundled resource carries the newer `updated_at`, merged
+    /// with the entries only the other side has. The cache can't simply win: an app update ships a
+    /// newer bundled supplement while an older cache is still on disk, and the feed is only re-read
+    /// once an hour — so a cache-always-wins rule hides freshly shipped rates for that hour, and
+    /// forever for anyone who can't reach the feed. But the fresher copy can't simply replace either:
+    /// on a fork the bundled file carries rules the upstream feed never ships (and vice versa on the
+    /// feed's side), so the fresher copy wins per-entry and the other side fills in the rest.
     private func loadSupplement() -> PricingSupplement {
         let cached = decodedCachedSupplement()
         let bundled = decodedBundledSupplement()
@@ -160,8 +163,10 @@ actor ModelPricingStore {
         case (let cached?, let bundled?):
             // Bundled wins only when strictly newer, so the usual case (a feed ahead of the shipped
             // file, or the two in step) keeps serving the cache.
-            let preferred = Self.isNewer(bundled.updatedAt, than: cached.updatedAt) ? bundled : cached
-            return preferred.fillingMissingFallbackModels(from: bundled)
+            if Self.isNewer(bundled.updatedAt, than: cached.updatedAt) {
+                return bundled.mergingEntries(from: cached).fillingMissingFallbackModels(from: bundled)
+            }
+            return cached.mergingEntries(from: bundled).fillingMissingFallbackModels(from: bundled)
         case (let cached?, nil):
             return cached
         case (nil, let bundled?):

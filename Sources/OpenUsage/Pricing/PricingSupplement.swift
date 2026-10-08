@@ -46,6 +46,27 @@ struct PricingSupplement: Sendable {
         )
     }
 
+    /// Fills this supplement with entries only `other` carries, keeping every entry of its own.
+    /// The receiver is the fresher source (usually the fetched feed) and stays authoritative for
+    /// anything both sides define; `other` (usually the bundled file) only contributes entries the
+    /// receiver lacks — pricing keys, fast multipliers, and alias rules that exist on only one
+    /// side of a forked feed. Rules apply first-match-wins, so the receiver's rule order is kept
+    /// intact and `other`'s unique rules append at the end. Two copies of the same feed merge to
+    /// themselves, so upstream's recency semantics are unchanged where they hold.
+    func mergingEntries(from other: PricingSupplement) -> PricingSupplement {
+        let ownRuleKeys = Set(aliasRules.map { "\($0.canonical)@\($0.pattern.pattern)" })
+        let appendedRules = other.aliasRules.filter { rule in
+            !ownRuleKeys.contains("\(rule.canonical)@\(rule.pattern.pattern)")
+        }
+        return PricingSupplement(
+            pricing: other.pricing.merging(pricing) { _, preferred in preferred },
+            fastMultipliers: other.fastMultipliers.merging(fastMultipliers) { _, preferred in preferred },
+            aliasRules: aliasRules + appendedRules,
+            updatedAt: updatedAt,
+            fallbackModels: fallbackModels
+        )
+    }
+
     /// The canonical pricing key for `model` per the alias rules, or nil when no rule matches.
     func canonicalName(for model: String) -> String? {
         let range = NSRange(model.startIndex..., in: model)
