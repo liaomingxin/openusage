@@ -661,7 +661,7 @@ final class LayoutStoreTests: XCTestCase {
 
         XCTAssertEqual(Set(store.placed.map(\.descriptorID)), Set([
             "claude.session", "claude.weekly", "claude.fable", "claude.trend",
-            "claude.extra", "claude.today", "claude.yesterday", "claude.last30",
+            "claude.extra", "claude.rateLimitResets", "claude.today", "claude.yesterday", "claude.last30",
             "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly",
             "codex.gptReserve", "codex.gptReserveWeekly", "codex.trend",
             "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
@@ -698,7 +698,7 @@ final class LayoutStoreTests: XCTestCase {
             "claude.session", "claude.weekly", "claude.fable", "claude.extra", "claude.trend"
         ])
         XCTAssertEqual(expandedByProvider["claude"], [
-            "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30"
+            "claude.sonnet", "claude.rateLimitResets", "claude.today", "claude.yesterday", "claude.last30"
         ])
         XCTAssertEqual(primaryByProvider["codex"], ["codex.session", "codex.weekly", "codex.trend"])
         // Spark (the optional model-specific limits) leads the On Demand section, followed by the
@@ -1293,7 +1293,7 @@ final class LayoutStoreTests: XCTestCase {
             expanded.filter { $0.hasPrefix(extraCodexID + ".") },
             codexRows.map { extraCodexID + $0.dropFirst("codex".count) }
         )
-        XCTAssertEqual(claudeRows.count, 8, "the Claude row set this test pins is the one AppContainer copies")
+        XCTAssertEqual(claudeRows.count, 9, "the Claude row set this test pins is the one AppContainer copies")
 
         // …and the same holds once the store turns those defaults into placed widgets.
         let store = LayoutStore(
@@ -1304,8 +1304,8 @@ final class LayoutStoreTests: XCTestCase {
         )
         let placedIDs = store.placed.map(\.descriptorID)
         XCTAssertEqual(placedIDs.count, Set(placedIDs).count, "placed must not carry a descriptor twice")
-        XCTAssertEqual(placedIDs.filter { $0.hasPrefix(extraClaudeID + ".") }.count, 8)
-        XCTAssertEqual(placedIDs.filter { $0.hasPrefix("claude.") }.count, 8)
+        XCTAssertEqual(placedIDs.filter { $0.hasPrefix(extraClaudeID + ".") }.count, 9)
+        XCTAssertEqual(placedIDs.filter { $0.hasPrefix("claude.") }.count, 9)
     }
 
     private func makeStore(_ name: String) -> LayoutStore {

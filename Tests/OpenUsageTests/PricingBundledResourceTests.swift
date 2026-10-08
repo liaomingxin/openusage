@@ -209,6 +209,48 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "claude-opus-5")?.inputPerMillion, 5)
     }
 
+    func testClaudeSonnet55PricingAndAliases() throws {
+        let pricing = Self.pricing
+        let sonnet55 = try XCTUnwrap(pricing.resolve(model: "claude-sonnet-5-5"))
+        XCTAssertEqual(sonnet55.inputPerMillion, 2.0)
+        XCTAssertEqual(sonnet55.cacheWritePerMillion, 2.5)
+        XCTAssertEqual(sonnet55.cacheReadPerMillion, 0.2)
+        XCTAssertEqual(sonnet55.outputPerMillion, 10.0)
+
+        for slug in ["claude-sonnet-5.5", "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high", "claude-sonnet-5-5-thinking-max", "claude-sonnet-5-5[1m]"] {
+            XCTAssertEqual(pricing.resolve(model: slug), sonnet55, slug)
+        }
+        XCTAssertNotEqual(pricing.resolve(model: "claude-sonnet-5"), sonnet55)
+    }
+
+    /// Cursor's Grok 4.7 SKUs must not inherit SpaceXAI's 200k long-context tier. Bare Grok Build
+    /// slugs keep that tier; Cursor's 500k names are flat whole-request rates.
+    func testCursorGrok47StaysSeparateFromXAILongContext() throws {
+        let pricing = Self.pricing
+        let xai = try XCTUnwrap(pricing.resolve(model: "grok-4.7-build"))
+        let xaiFast = try XCTUnwrap(pricing.resolve(model: "grok-4.7-build-fast"))
+        let cursor = try XCTUnwrap(pricing.resolve(model: "cursor-grok-4.7"))
+        let cursorFast = try XCTUnwrap(pricing.resolve(model: "cursor-grok-4.7-fast"))
+        let long = try XCTUnwrap(pricing.resolve(model: "grok-4.7-500k"))
+        let longFast = try XCTUnwrap(pricing.resolve(model: "cursor-grok-4.7-500k-fast"))
+
+        XCTAssertEqual(xai.inputAbove200kPerMillion, 4)
+        XCTAssertEqual(xaiFast.outputAbove200kPerMillion, 18)
+        XCTAssertNil(cursor.inputAbove200kPerMillion)
+        XCTAssertNil(cursorFast.inputAbove200kPerMillion)
+        XCTAssertEqual([cursor.inputPerMillion, cursor.cacheReadPerMillion, cursor.outputPerMillion], [2, 0.5, 6])
+        XCTAssertEqual([cursorFast.inputPerMillion, cursorFast.outputPerMillion], [4, 12])
+        XCTAssertEqual([long.inputPerMillion, long.cacheReadPerMillion, long.outputPerMillion], [4, 1, 12])
+        XCTAssertEqual([longFast.inputPerMillion, longFast.cacheReadPerMillion, longFast.outputPerMillion], [6, 1.5, 18])
+        XCTAssertEqual(pricing.resolve(model: "grok-4.7"), xai)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.7-fast"), xaiFast)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.7-slow"), cursor)
+        XCTAssertEqual(pricing.resolve(model: "Grok 4.7 (Auto Balanced)"), cursor)
+        XCTAssertEqual(pricing.resolve(model: "Grok 4.7 Fast (Auto)"), cursorFast)
+        XCTAssertEqual(pricing.resolve(model: "Grok 4.7 500k (Auto Intelligence)"), long)
+        XCTAssertEqual(pricing.resolve(model: "Cursor Grok 4.7 500k Fast (Auto)"), longFast)
+    }
+
     /// Claude logs signal fast mode with a `speed` field while the model stays `claude-opus-5`, so
     /// the base entry itself must carry the 2x multiplier — the `-fast` slug is never involved.
     func testClaudeOpus5FastModeBillsAtTwiceBaseRate() throws {
@@ -257,6 +299,13 @@ final class PricingBundledResourceTests: XCTestCase {
         let expected: [String: String] = [
             "Opus 5.5 (Auto Balanced)": "claude-opus-5-5",
             "Claude Opus 5.5 (Auto)": "claude-opus-5-5",
+            "Opus 5.5 Fast (Auto Balanced)": "claude-opus-5-5-fast",
+            "Claude Opus 5.5 Fast (Auto)": "claude-opus-5-5-fast",
+            "Sonnet 5.5 (Auto Balanced)": "claude-sonnet-5-5",
+            "Grok 4.7 (Auto Balanced)": "cursor-grok-4.7",
+            "Cursor Grok 4.7 Fast (Auto)": "cursor-grok-4.7-fast",
+            "Grok 4.7 500k (Auto Intelligence)": "grok-4.7-500k",
+            "Cursor Grok 4.7 500k Fast (Auto)": "grok-4.7-500k-fast",
             "Opus 5 (Auto Balanced)": "claude-opus-5",
             "Claude Opus 5 (Auto)": "claude-opus-5",
             "Opus 4.8 (Auto)": "claude-opus-4-8",
@@ -275,6 +324,7 @@ final class PricingBundledResourceTests: XCTestCase {
             "GPT-5.5 (Auto)": "gpt-5.5",
             "GPT-5.6 Sol (Auto Cost)": "gpt-5.6-sol",
             "GPT-6 Astra (Auto Balanced)": "gpt-6-astra",
+            "GPT-6.1 Sol (Auto Cost)": "gpt-6.1-sol",
             "GPT-6 Sol (Auto Cost)": "gpt-6-sol",
             "GPT-5.6 Luna (Auto)": "gpt-5.6-luna",
             "Gemini 3.1 Pro (Auto Balanced)": "gemini-3.1-pro-preview",
@@ -306,6 +356,9 @@ final class PricingBundledResourceTests: XCTestCase {
             ("gpt-6-astra", [10, 12.5, 1, 50]),
             ("gpt-6-astra-high", [10, 12.5, 1, 50]),
             ("gpt-6-astra-high-fast", [20, 25, 2, 100]),
+            ("gpt-6.1-sol", [2, 2.5, 0.1, 10]),
+            ("gpt-6.1-sol-max", [2, 2.5, 0.1, 10]),
+            ("gpt-6-1-sol-high-fast", [4, 5, 0.2, 20]),
             ("gpt-6-sol", [2, 2.5, 0.2, 10]),
             ("gpt-6-sol-high", [2, 2.5, 0.2, 10]),
             ("gpt-6-sol-high-fast", [4, 5, 0.4, 20]),

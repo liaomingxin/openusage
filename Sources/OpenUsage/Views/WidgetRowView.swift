@@ -392,11 +392,11 @@ struct WidgetRowView: View {
                         count: data.resetCreditCount, expiries: data.expiriesAt,
                         onHoverChange: { inside in modelHover.detailHover(inside) },
                         onPinChange: { pinned in modelHover.setPinned(pinned) },
-                        // Rows with reset expiries are Codex-only today, so the Codex claim service is
-                        // the right backing; absent from the environment (previews, share renders) the
-                        // timeline is read-only.
+                        // Only Codex cards can spend a reset. Claude's row is read-only, and so is any
+                        // render without a router (previews, share cards).
                         claim: {
-                            guard let router = codexResetClaim, let providerID else { return nil }
+                            guard let router = codexResetClaim, let providerID,
+                                  ProviderAccountID.family(of: providerID) == "codex" else { return nil }
                             return { expiry, redeemRequestID in
                                 await router.claim(
                                     providerID: providerID,

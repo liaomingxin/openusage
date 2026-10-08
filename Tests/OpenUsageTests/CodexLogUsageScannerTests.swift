@@ -558,7 +558,8 @@ final class CodexLogUsageScannerTests: XCTestCase {
             ("gpt-5.6-terra", 1.02),
             ("gpt-5.6-luna", 0.102),
             ("gpt-6-astra", 4.95),
-            ("gpt-6-sol", 0.99)
+            ("gpt-6-sol", 0.99),
+            ("gpt-6.1-sol", 0.97)
         ]
 
         for (model, expected) in expectedCosts {
@@ -630,7 +631,8 @@ final class CodexLogUsageScannerTests: XCTestCase {
             // Cursor's supplement currently says 2.5 for this model; Codex priority is 2x.
             ("gpt-5.6-sol", 2.5, 2),
             ("gpt-6-astra", 2, 2),
-            ("gpt-6-sol", 2, 2)
+            ("gpt-6-sol", 2, 2),
+            ("gpt-6.1-sol", 2, 2)
         ]
 
         for entry in cases {

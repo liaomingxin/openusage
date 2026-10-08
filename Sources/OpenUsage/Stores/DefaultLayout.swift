@@ -11,7 +11,7 @@ enum DefaultLayout {
         "antigravity.trend", "antigravity.today", "antigravity.yesterday", "antigravity.last30",
 
         "claude.session", "claude.weekly", "claude.fable", "claude.trend",
-        "claude.extra", "claude.today", "claude.yesterday", "claude.last30",
+        "claude.extra", "claude.rateLimitResets", "claude.today", "claude.yesterday", "claude.last30",
 
         "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly",
         "codex.gptReserve", "codex.gptReserveWeekly", "codex.trend",
@@ -33,7 +33,7 @@ enum DefaultLayout {
         "kimi.session", "kimi.weekly",
         "kimi.today", "kimi.yesterday", "kimi.last30",
 
-        "ollama.session", "ollama.weekly", "ollama.last4Weeks",
+        "ollama.session", "ollama.weekly", "ollama.monthly", "ollama.last4Weeks",
 
         "opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend",
         "opencode.today", "opencode.yesterday", "opencode.last30",
@@ -91,8 +91,8 @@ enum DefaultLayout {
         "antigravity.claude", "antigravity.claudeWeekly",
         "antigravity.today", "antigravity.yesterday", "antigravity.last30",
         // Claude's core meters (Session, Weekly, Fable, Extra, Usage Trend) stay above the fold;
-        // optional Sonnet and spend-history rows sit below the caret.
-        "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30",
+        // optional Sonnet, reset grants, and spend-history rows sit below the caret.
+        "claude.sonnet", "claude.rateLimitResets", "claude.today", "claude.yesterday", "claude.last30",
         // Codex's core Session/Weekly meters and Usage Trend stay above the fold; Spark (the optional
         // model-specific limits), the hidden GPT Reserve window, credits, reset details, and spend rows
         // sit below the caret.
@@ -115,8 +115,9 @@ enum DefaultLayout {
         // Grok: the Weekly meter and Usage Trend stay above the fold; the pay-as-you-go badge, the
         // spend tiles, and the per-product split of the weekly pool sit below the caret.
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30", "grok.productUsage",
-        // Ollama: the Session and Weekly meters stay above the fold; the rolling four-week spend total
-        // (always $0.00 on a subscription, real only for pay-as-you-go) sits below the caret.
+        // Ollama: Session, Weekly, and Monthly stay above the fold. Monthly starts unpinned. The
+        // rolling four-week spend total (always $0.00 on a subscription, real only for pay-as-you-go)
+        // sits below the caret.
         "ollama.last4Weeks",
         // OpenCode: the three Go caps (Session/Weekly/Monthly) and Usage Trend stay above the fold —
         // matching every other provider — with the spend tiles (Today/Yesterday/Last 30 Days) below.

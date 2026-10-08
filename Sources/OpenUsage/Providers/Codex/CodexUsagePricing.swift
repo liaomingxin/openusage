@@ -80,6 +80,9 @@ enum CodexUsagePricing {
             effective.inputAbove200kPerMillion = longContext.input
             effective.outputAbove200kPerMillion = longContext.output
             effective.cacheReadAbove200kPerMillion = longContext.cacheRead
+            if let cacheWrite = longContext.cacheWrite {
+                effective.cacheWriteAbove200kPerMillion = cacheWrite
+            }
             effective.longContextThresholdTokens = 272_000
         }
         // Either the model publishes no cache discount at all, or the catalog gave no explicit
@@ -100,7 +103,8 @@ enum CodexUsagePricing {
         switch base {
         case "gpt-5.5", "gpt-5.5-pro": return 2.5
         case "gpt-5.4", "gpt-5.4-pro",
-             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol": return 2
+             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6-sol",
+             "gpt-6.1-sol": return 2
         default: return rates.fastMultiplier == 1 ? 2 : rates.fastMultiplier
         }
     }
@@ -112,19 +116,21 @@ enum CodexUsagePricing {
         }
     }
 
-    private static func longContextRates(base: String) -> (input: Double, output: Double, cacheRead: Double)? {
+    private static func longContextRates(base: String) -> (input: Double, output: Double, cacheRead: Double, cacheWrite: Double?)? {
         switch base {
-        case "gpt-5.4": return (5, 22.5, 0.5)
-        case "gpt-5.4-pro": return (60, 270, 60)
-        case "gpt-5.5": return (10, 45, 1)
-        case "gpt-5.5-pro": return (60, 270, 60)
-        case "gpt-5.6-sol": return (10, 45, 1)
-        case "gpt-5.6-terra": return (4, 18, 0.4)
-        case "gpt-5.6-luna": return (0.4, 1.8, 0.04)
+        case "gpt-5.4": return (5, 22.5, 0.5, nil)
+        case "gpt-5.4-pro": return (60, 270, 60, nil)
+        case "gpt-5.5": return (10, 45, 1, nil)
+        case "gpt-5.5-pro": return (60, 270, 60, nil)
+        case "gpt-5.6-sol": return (10, 45, 1, nil)
+        case "gpt-5.6-terra": return (4, 18, 0.4, nil)
+        case "gpt-5.6-luna": return (0.4, 1.8, 0.04, nil)
         // Above 272k: 2x input and cache, 1.5x output (developers.openai.com/api/docs/models/gpt-6-astra).
-        case "gpt-6-astra": return (20, 75, 2)
+        case "gpt-6-astra": return (20, 75, 2, nil)
         // Same long-context rule (developers.openai.com/api/docs/models/gpt-6-sol).
-        case "gpt-6-sol": return (4, 15, 0.4)
+        case "gpt-6-sol": return (4, 15, 0.4, nil)
+        // Cached input is $0.10, so the 272k tier is $0.20 and cache writes are $5.
+        case "gpt-6.1-sol": return (4, 15, 0.2, 5)
         default: return nil
         }
     }
