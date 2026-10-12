@@ -78,8 +78,13 @@ enum CodexUsagePricing {
         return cost(prepared: prepared, tokens: tokens)
     }
 
+    /// Ultrafast bills at 6x on credits and 8x on subscription quota (learn.chatgpt.com/docs/pricing).
+    /// Local spend imputes the credits (out-of-quota) rate, the same out-of-pocket basis the Fast
+    /// tier's multiplier uses, so this is a flat 6x for every model — log data shows Ultrafast runs
+    /// on more than Astra (gpt-6.1-sol carries most of the volume), and a request whose tier this
+    /// method declined to price would silently fall back to the ordinary Fast multiplier.
     static func ultrafastMultiplier(base: String) -> Double? {
-        base == "gpt-6-astra" ? 6 : nil
+        6
     }
 
     /// Applies every model-derived Codex adjustment in one pass so the slug is normalized once.

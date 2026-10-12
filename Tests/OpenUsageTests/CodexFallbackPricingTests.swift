@@ -110,6 +110,8 @@ final class CodexFallbackPricingTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(fastSuffix.series.daily.first?.costUSD), 0.0124, accuracy: 0.000_001)
     }
 
+    /// An unlisted model flagged ultrafast prices at the fallback model's 6x credits rate,
+    /// whatever that fallback is — the toggle is account-wide, not Astra-only.
     func testUltrafastFallbackUsesFallbackModelMultiplier() throws {
         let pricing = TestPricing.bundled
         let usage = event(input: 1_000_000, cached: 0, output: 100_000, ultrafast: true)
@@ -131,7 +133,7 @@ final class CodexFallbackPricingTests: XCTestCase {
         XCTAssertEqual(astraStandard, 27.5, accuracy: 0.000_001)
         XCTAssertEqual(astraUltrafast, astraStandard * 6, accuracy: 0.000_001)
         XCTAssertEqual(solStandard, 5.5, accuracy: 0.000_001)
-        XCTAssertEqual(solUltrafast, solStandard * 2, accuracy: 0.000_001)
+        XCTAssertEqual(solUltrafast, solStandard * 6, accuracy: 0.000_001)
     }
 
     func testFallbackPreservesDeduplicationAndSkipsBlankModels() {

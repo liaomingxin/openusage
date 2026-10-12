@@ -681,6 +681,32 @@ final class CodexLogUsageScannerTests: XCTestCase {
         )
     }
 
+    /// Ultrafast is a account-wide speed toggle, not an Astra-only feature — real logs carry it
+    /// on gpt-6.1-sol more than on Astra. The 6x credits rate must apply on every model; before this
+    /// was generalized, non-Astra Ultrafast runs fell back to the ordinary Fast multiplier (2x)
+    /// and under-reported their cost threefold.
+    func testUltrafastBeyondGPT6AstraCostsSixTimesStandard() {
+        let standard = CodexLogUsageScanner.aggregate(
+            events: [makeEvent(
+                "2026-05-12T08:00:00.000Z", model: "gpt-6.1-sol", input: 100_000,
+                cached: 20_000, output: 10_000
+            )],
+            since: .distantPast, pricing: TestPricing.bundled
+        ).series.daily.first?.costUSD ?? 0
+        let ultrafast = CodexLogUsageScanner.aggregate(
+            events: [makeEvent(
+                "2026-05-12T08:00:00.000Z", model: "gpt-6.1-sol", input: 100_000,
+                cached: 20_000, output: 10_000, isUltrafast: true
+            )],
+            since: .distantPast, pricing: TestPricing.bundled
+        ).series.daily.first?.costUSD ?? 0
+
+        // 80k uncached × $2/M + 20k cached × $0.1/M + 10k output × $10/M.
+        XCTAssertEqual(standard, 0.262, accuracy: 0.000_001)
+        XCTAssertEqual(ultrafast, 1.572, accuracy: 0.000_001)
+        XCTAssertEqual(ultrafast / standard, 6, accuracy: 0.000_001)
+    }
+
     func testUltrafastGPT6AstraCostsSixTimesStandard() {
         let cases: [(timestamp: String, input: Int, cached: Int, output: Int, standard: Double, ultrafast: Double)] = [
             ("2026-05-12T08:00:00.000Z", 100_000, 20_000, 10_000, 1.32, 7.92),
@@ -728,6 +754,8 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(ultrafastFastAlias, standard * 6, accuracy: 0.000_001)
     }
 
+    /// Ultrafast on gpt-6-sol (the model most of the real ultrafast volume runs on) prices at the
+    /// 6x credits rate, the same as Astra — the old behavior billed it as plain Fast (2x).
     func testUltrafastGPT6SolUsesFastPrice() {
         let standard = CodexLogUsageScanner.aggregate(
             events: [makeEvent(
@@ -751,8 +779,8 @@ final class CodexLogUsageScannerTests: XCTestCase {
             since: .distantPast, pricing: TestPricing.bundled
         ).series.daily.first?.costUSD ?? 0
 
-        XCTAssertEqual(ultrafast, fast, accuracy: 0.000_001)
-        XCTAssertEqual(ultrafast, standard * 2, accuracy: 0.000_001)
+        XCTAssertEqual(ultrafast, fast * 3, accuracy: 0.000_001)
+        XCTAssertEqual(ultrafast, standard * 6, accuracy: 0.000_001)
     }
 
     func testAggregatePriorityTierUsesProviderSpecificModelMultipliers() {
