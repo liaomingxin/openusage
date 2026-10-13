@@ -16,4 +16,10 @@ enum PiPaths {
         }
         return homeDirectory.appendingPathComponent(".pi/agent/sessions")
     }
+
+    /// omp — a pi-family agent — writes the same per-message usage jsonl under
+    /// `~/.omp/agent/sessions`, in the same per-working-directory layout.
+    static func ompSessionsDirectory(homeDirectory: URL) -> URL {
+        homeDirectory.appendingPathComponent(".omp/agent/sessions")
+    }
 }

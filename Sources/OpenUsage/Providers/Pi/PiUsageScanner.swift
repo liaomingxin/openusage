@@ -19,6 +19,21 @@ actor PiUsageScanner {
     /// the shared pricing engine.
     typealias CostEstimator = @Sendable (String, TokenBreakdown) -> Double?
 
+    /// One pi-family agent with its own log root. The card fold-in (`scan(cardID:)`) reads every
+    /// root — a card wants all usage of its provider regardless of which agent produced it — while
+    /// the Agent Usage screen scans one root per entry so each agent's spend stays its own row.
+    enum AgentRoot: String, CaseIterable, Sendable {
+        case pi
+        case omp
+
+        func sessionsDirectory(environment: EnvironmentReading, homeDirectory: URL) -> URL {
+            switch self {
+            case .pi: PiPaths.sessionsDirectory(environment: environment, homeDirectory: homeDirectory)
+            case .omp: PiPaths.ompSessionsDirectory(homeDirectory: homeDirectory)
+            }
+        }
+    }
+
     static let shared = PiUsageScanner()
 
     private let environment: EnvironmentReading
@@ -67,38 +82,47 @@ actor PiUsageScanner {
         cardID: String, daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing,
         estimateCost: CostEstimator? = nil
     ) async -> LogUsageScan? {
-        await scanEntries(cardID: cardID, daysBack: daysBack, now: now, pricing: pricing, estimateCost: estimateCost)
+        await scanEntries(cardID: cardID, roots: AgentRoot.allCases, daysBack: daysBack, now: now, pricing: pricing, estimateCost: estimateCost)
     }
 
     /// Every provider's pi usage in one scan — the Agent Usage screen's machine-wide view (which
-    /// model, how many tokens, what cost), with no card attribution filter.
-    func scanAll(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
-        await scanEntries(cardID: nil, daysBack: daysBack, now: now, pricing: pricing, estimateCost: nil)
+    /// model, how many tokens, what cost), with no card attribution filter. `root` selects which
+    /// pi-family agent's logs the entry reads, so each agent keeps its own row on that screen.
+    func scanAll(root: AgentRoot = .pi, daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+        await scanEntries(cardID: nil, roots: [root], daysBack: daysBack, now: now, pricing: pricing, estimateCost: nil)
     }
 
     private func scanEntries(
-        cardID: String?, daysBack: Int, now: Date, pricing: ModelPricing,
+        cardID: String?, roots: [AgentRoot], daysBack: Int, now: Date, pricing: ModelPricing,
         estimateCost: CostEstimator?
     ) async -> LogUsageScan? {
-        let directory = PiPaths.sessionsDirectory(environment: environment, homeDirectory: homeDirectory())
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
-        let cacheIdentity = directory.resolvingSymlinksInPath().path
-        let files = JSONLScanning.jsonlFiles(under: directory)
-        guard !files.isEmpty else {
-            _ = await scanner.items(
-                from: [], since: since, cacheIdentity: cacheIdentity, parse: Self.parseFile
-            )
-            return nil
+        var allEntries: [Entry] = []
+        var sawAnyFiles = false
+        for root in roots {
+            let directory = root.sessionsDirectory(environment: environment, homeDirectory: homeDirectory())
+            let files = JSONLScanning.jsonlFiles(under: directory)
+            // The pi root keeps its historical bare-path cache identity so existing installs don't
+            // reparse; later roots namespace under the agent name.
+            let cacheIdentity = root == .pi
+                ? directory.resolvingSymlinksInPath().path
+                : "\(root.rawValue):\(directory.resolvingSymlinksInPath().path)"
+            guard !files.isEmpty else {
+                _ = await scanner.items(from: [], since: since, cacheIdentity: cacheIdentity, parse: Self.parseFile)
+                continue
+            }
+            sawAnyFiles = true
+            guard let entries = await scanner.items(
+                from: files,
+                since: since,
+                cacheIdentity: cacheIdentity,
+                parse: Self.parseFile
+            ), !Task.isCancelled else { continue }
+            allEntries.append(contentsOf: entries)
         }
-
-        guard let entries = await scanner.items(
-            from: files,
-            since: since,
-            cacheIdentity: cacheIdentity,
-            parse: Self.parseFile
-        ), !Task.isCancelled else { return nil }
+        guard sawAnyFiles, !Task.isCancelled else { return nil }
         return Self.aggregate(
-            entries: Self.dedup(entries), cardID: cardID, since: since, pricing: pricing,
+            entries: Self.dedup(allEntries), cardID: cardID, since: since, pricing: pricing,
             estimateCost: estimateCost
         )
     }

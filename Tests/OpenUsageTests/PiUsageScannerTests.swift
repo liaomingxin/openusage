@@ -144,7 +144,52 @@ final class PiUsageScannerTests: XCTestCase {
     func testProviderMapping() {
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "claude-agent-sdk"), "claude")
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "zhipu"), "zai")
+        XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "xai-oauth"), "grok")
         XCTAssertNil(PiProviderMapping.cardID(forPiProvider: "nvidia-nim"))
+    }
+
+    /// omp writes the same usage jsonl under `~/.omp/agent/sessions`. A card's fold-in must see
+    /// both roots (all grok usage lands on the grok card, whichever agent produced it), while the
+    /// Agent Usage screen's per-root scans keep pi and omp in separate rows.
+    func testOmpRootFoldsIntoCardsAndStaysSeparateOnAgentUsage() async throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("omp-tests-\(UUID().uuidString)", isDirectory: true)
+        let piSessions = home.appendingPathComponent(".pi/agent/sessions/-proj", isDirectory: true)
+        let ompSessions = home.appendingPathComponent(".omp/agent/sessions/-proj", isDirectory: true)
+        try FileManager.default.createDirectory(at: piSessions, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: ompSessions, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        try line(id: "pi-1", ts: "2026-07-12T10:00:00.000Z", provider: "xai", model: "grok-4.7",
+                 input: 100, output: 50, total: 150, cost: "0.5")
+            .write(to: piSessions.appendingPathComponent("s.jsonl"))
+        try line(id: "omp-1", ts: "2026-07-12T11:00:00.000Z", provider: "xai-oauth", model: "grok-4.7",
+                 input: 80, output: 40, total: 120, cost: "0.25")
+            .write(to: ompSessions.appendingPathComponent("s.jsonl"))
+
+        let scanner = PiUsageScanner(
+            environment: FakeEnvironment([:]),
+            homeDirectory: { home },
+            incrementalScanner: IncrementalJSONLScanner<PiUsageScanner.Entry>(
+                logTag: LogTag.plugin("pi-test"),
+                persistence: JSONLScanCachePersistence(
+                    namespace: "pitest", schemaVersion: 1,
+                    directory: home.appendingPathComponent("cache", isDirectory: true)
+                )
+            )
+        )
+        let now = d("2026-07-15T00:00:00.000Z")
+
+        // Card fold-in: both roots' grok usage lands on the grok card.
+        let grok = await scanner.scan(cardID: "grok", daysBack: 30, now: now, pricing: pricing)
+        XCTAssertEqual(grok?.series.daily.first?.totalTokens, 270)
+        XCTAssertEqual(grok?.series.daily.first?.costUSD ?? 0, 0.75, accuracy: 1e-9)
+
+        // Agent Usage: each root keeps its own row.
+        let omp = await scanner.scanAll(root: .omp, daysBack: 30, now: now, pricing: pricing)
+        XCTAssertEqual(omp?.series.daily.first?.totalTokens, 120)
+        XCTAssertEqual(omp?.series.daily.first?.costUSD ?? 0, 0.25, accuracy: 1e-9)
+        let pi = await scanner.scanAll(root: .pi, daysBack: 30, now: now, pricing: pricing)
+        XCTAssertEqual(pi?.series.daily.first?.totalTokens, 150)
     }
 
     func testSubscriptionProvidersLandOnTheRightCardWithoutChangingAZAIHeadline() {

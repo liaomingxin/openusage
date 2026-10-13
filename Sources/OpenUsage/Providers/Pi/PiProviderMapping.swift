@@ -19,6 +19,7 @@ enum PiProviderMapping {
         "claude-agent-sdk": "claude",
         "openai-codex": "codex",
         "xai": "grok",
+        "xai-oauth": "grok",
         "kimi-coding": "kimi",
         "cursor": "cursor",
         "zai": "zai",

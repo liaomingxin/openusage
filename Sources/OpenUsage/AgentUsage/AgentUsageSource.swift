@@ -27,7 +27,12 @@ enum AgentUsageCatalog {
                 await CodexLogUsageScanner().scan(daysBack: 30, pricing: pricing)
             },
             AgentUsageSource(id: "pi", displayName: "Pi", icon: .providerMark("pi")) { pricing in
-                await PiUsageScanner.shared.scanAll(daysBack: 30, pricing: pricing)
+                await PiUsageScanner.shared.scanAll(root: .pi, daysBack: 30, pricing: pricing)
+            },
+            AgentUsageSource(id: "omp", displayName: "omp", icon: .providerMark("grok")) { pricing in
+                // omp is a pi-family agent (~/.omp/agent/sessions, same usage jsonl) — its own row on
+                // this screen, while its provider usage folds into cards through the shared scanner.
+                await PiUsageScanner.shared.scanAll(root: .omp, daysBack: 30, pricing: pricing)
             },
             AgentUsageSource(id: "opencode", displayName: "OpenCode", icon: .providerMark("opencode")) { _ in
                 // OpenCode's hosted gateways write an authoritative cost; the scan itself prices nothing.
