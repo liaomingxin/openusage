@@ -395,6 +395,11 @@ struct TotalSpendLegend: View {
             ForEach(projection.slices) { slice in
                 legendRow(slice)
             }
+            if !projection.slices.isEmpty {
+                Divider()
+                    .opacity(0.4)
+                totalRow
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(Motion.spring, value: hoveredProviderID)
@@ -431,6 +436,52 @@ struct TotalSpendLegend: View {
         .onHover { hovering in
             hoveredProviderID = hovering ? slice.provider.id : nil
         }
+    }
+
+    private var totalRow: some View {
+        HStack(spacing: 7) {
+            Color.clear
+                .frame(width: 8, height: 8)
+            Text("Total")
+                .font(.system(size: density.supportingPointSize, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(totalRowPrimaryText)
+                .font(.system(size: density.supportingPointSize, weight: .semibold))
+                .foregroundStyle(.primary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if let tokens = totalTokenCountText {
+                Text("(\(tokens))")
+                    .font(.system(size: density.supportingPointSize))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if hovering { hoveredProviderID = nil }
+        }
+    }
+
+    private var totalRowPrimaryText: String {
+        let value = totalSpendValue(projection.centerValue, metric: projection.metric, style: legendValueStyle)
+        switch projection.metric {
+        case .cost, .tokens:
+            return "\(value) · 100%"
+        case .costPerMtok:
+            return value
+        }
+    }
+
+    private var totalTokenCountText: String? {
+        guard projection.metric != .tokens else { return nil }
+        let sum = projection.slices.reduce(0.0) { $0 + (tokenCounts[$1.provider.id] ?? 0) }
+        guard sum > 0 else { return nil }
+        return MetricFormatter.number(sum, kind: .count, style: .row)
     }
 
     /// The parenthetical token count — skipped in Tokens mode, where the amount already is tokens.
