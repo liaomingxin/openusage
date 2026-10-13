@@ -26,11 +26,26 @@ enum CursorUsageEventsError: Error, Equatable {
 
 enum CursorUsageEvents {
     static func parsePage(_ data: Data) throws -> CursorUsageEventsPage {
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let totalCount = integer(object["totalUsageEventsCount"]),
-              totalCount >= 0,
-              let rawEvents = object["usageEventsDisplay"] as? [Any]
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CursorUsageEventsError.invalidResponse
+        }
+        // `get-filtered-usage-events` is serialized by Protobuf-JSON (proto3), which omits default
+        // values (`totalUsageEventsCount = 0` and `usageEventsDisplay = []`) on an idle day,
+        // returning `{}` (or `{"totalUsageEventsCount": 0}` without `usageEventsDisplay`).
+        if object.isEmpty {
+            return CursorUsageEventsPage(events: [], totalCount: 0, rejectedEventCount: 0)
+        }
+        guard let totalCount = integer(object["totalUsageEventsCount"]),
+              totalCount >= 0
         else {
+            throw CursorUsageEventsError.invalidResponse
+        }
+        let rawEvents: [Any]
+        if let events = object["usageEventsDisplay"] as? [Any] {
+            rawEvents = events
+        } else if object["usageEventsDisplay"] == nil && totalCount == 0 {
+            rawEvents = []
+        } else {
             throw CursorUsageEventsError.invalidResponse
         }
 

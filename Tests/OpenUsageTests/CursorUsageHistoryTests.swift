@@ -57,6 +57,14 @@ final class CursorUsageEventsParserTests: XCTestCase {
             XCTAssertEqual(error as? CursorUsageEventsError, .invalidResponse)
         }
     }
+
+    func testAcceptsProto3EmptyObjectForIdleDays() throws {
+        let emptyObject = try CursorUsageEvents.parsePage(Data("{}".utf8))
+        XCTAssertEqual(emptyObject, CursorUsageEventsPage(events: [], totalCount: 0, rejectedEventCount: 0))
+
+        let zeroWithoutArray = try CursorUsageEvents.parsePage(Data(#"{"totalUsageEventsCount":0}"#.utf8))
+        XCTAssertEqual(zeroWithoutArray, CursorUsageEventsPage(events: [], totalCount: 0, rejectedEventCount: 0))
+    }
 }
 
 final class CursorUsageEventsClientTests: XCTestCase {
