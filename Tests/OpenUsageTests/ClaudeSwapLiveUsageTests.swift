@@ -320,6 +320,7 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         // stashed access token — never the refresh token — and neither has a body.
         XCTAssertEqual(http.requests.map(\.url), [
             ClaudeSwapOAuth.usageURL,
+            URL(string: ClaudeSwapOAuth.usageURL.absoluteString + "?cedar_ember=1&skip_spend=1")!,
             ClaudeSwapOAuth.profileURL
         ])
         for request in http.requests {
@@ -358,6 +359,7 @@ final class ClaudeSwapLiveUsageTests: XCTestCase {
         XCTAssertEqual(second.plan, "Max 5x")
         XCTAssertEqual(http.requests.map(\.url), [
             ClaudeSwapOAuth.usageURL,
+            URL(string: ClaudeSwapOAuth.usageURL.absoluteString + "?cedar_ember=1&skip_spend=1")!,
             ClaudeSwapOAuth.profileURL,
             ClaudeSwapOAuth.usageURL
         ])

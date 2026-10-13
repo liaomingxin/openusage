@@ -9,21 +9,31 @@ struct AgentUsageScreen: View {
     @Environment(AgentUsageStore.self) private var store
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
     @AppStorage(AgentUsageWindow.storageKey) private var windowRawValue = AgentUsageWindow.today.rawValue
+    @AppStorage("agentUsage.metric") private var metricRawValue = TotalSpendMetric.cost.rawValue
+    @State private var hoveredAgentID: String?
+
+    private static let ringColumnWidth: CGFloat = 132
+    private static let legendColumnMaxWidth: CGFloat = 360
 
     private var window: AgentUsageWindow {
         AgentUsageWindow(rawValue: windowRawValue) ?? .today
     }
 
+    private var metric: TotalSpendMetric {
+        TotalSpendMetric(rawValue: metricRawValue) ?? .cost
+    }
+
     var body: some View {
         PopoverScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                controlsRow
+                summarySection
                     .padding(.bottom, density.sectionSpacing)
                 content
                 PopoverSourceNote(text: "Scanned from local agent logs — costs are provider-reported or estimated from bundled rates")
                     .padding(.top, density.sectionSpacing)
             }
             .animation(Motion.spring, value: windowRawValue)
+            .animation(Motion.spring, value: metricRawValue)
             .animation(Motion.spring, value: store.isLoading)
             .padding(.horizontal, Theme.screenInset)
             .padding(.top, density.contentTopPadding)
@@ -33,13 +43,94 @@ struct AgentUsageScreen: View {
         .onAppear { store.refreshIfNeeded() }
     }
 
-    /// The window picker over the window's cross-agent totals — the same capsule segmented switcher
-    /// the Total Spend card uses, so the two period pickers read as one family.
-    private var controlsRow: some View {
-        HStack(alignment: .firstTextBaseline) {
-            windowPicker
-            Spacer(minLength: 12)
-            totals
+    // MARK: - Top Summary Card (Cost / Cost/MTok / Tokens)
+
+    private var summarySection: some View {
+        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
+            summaryHeader
+            summaryCard
+        }
+    }
+
+    private var summaryHeader: some View {
+        HStack(spacing: 5) {
+            metricMenu
+            if store.isLoading {
+                MotionAwareProgressView(controlSize: .mini)
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(.horizontal, Theme.sectionHeaderInset)
+        .padding(.vertical, 2)
+    }
+
+    private var metricMenu: some View {
+        Menu {
+            ForEach(TotalSpendMetric.allCases) { option in
+                Button {
+                    metricRawValue = option.rawValue
+                } label: {
+                    if option == metric {
+                        Label(option.title, systemImage: "checkmark")
+                    } else {
+                        Text(option.title)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(metric.title)
+                    .font(.system(size: density.headerPointSize, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Agent Usage Metric")
+        .accessibilityValue(metric.title)
+    }
+
+    private var summaryCard: some View {
+        summaryCardBody
+            .padding(.horizontal, Theme.cardRowInset)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .cardSurface()
+    }
+
+    @ViewBuilder
+    private var summaryCardBody: some View {
+        let total = store.report(for: window)?.totalSpend ?? TotalSpend(period: .today, slices: [])
+        let projection = total.projection(for: metric)
+        let tokenCounts = Dictionary(uniqueKeysWithValues: total.slices.map { ($0.provider.id, $0.tokenCount) })
+        if projection.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                windowPicker
+                EmptyStateView(title: metric.emptyMessage)
+                    .padding(.vertical, -8)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(alignment: .top, spacing: 18) {
+                TotalSpendRing(projection: projection, hoveredProviderID: $hoveredAgentID)
+                    .frame(width: Self.ringColumnWidth)
+                    .frame(maxHeight: .infinity, alignment: .center)
+                VStack(alignment: .leading, spacing: 12) {
+                    windowPicker
+                    TotalSpendLegend(
+                        projection: projection,
+                        tokenCounts: tokenCounts,
+                        hoveredProviderID: $hoveredAgentID
+                    )
+                }
+                .frame(maxWidth: Self.legendColumnMaxWidth, alignment: .leading)
+                Spacer(minLength: 0)
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -49,31 +140,6 @@ struct AgentUsageScreen: View {
             selection: Binding(get: { window }, set: { windowRawValue = $0.rawValue }),
             label: \.title
         )
-    }
-
-    /// The window's cross-agent totals, right-aligned beside the picker. A background refresh
-    /// (report already showing) swaps in a small progress indicator instead of blanking the figures.
-    @ViewBuilder
-    private var totals: some View {
-        if let report = store.report(for: window) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if store.isLoading {
-                    MotionAwareProgressView(controlSize: .mini)
-                }
-                VStack(alignment: .trailing, spacing: 0) {
-                    Text(MetricFormatter.number(report.totalCostUSD, kind: .dollars, style: .row))
-                        .font(.system(size: density.headerPointSize, weight: .semibold))
-                        .monospacedDigit()
-                    Text(MetricFormatter.string(
-                        for: MetricValue(number: Double(report.totalTokens), kind: .count, label: "tokens"),
-                        style: .row
-                    ))
-                    .font(.system(size: density.supportingPointSize))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                }
-            }
-        }
     }
 
     // MARK: - Content

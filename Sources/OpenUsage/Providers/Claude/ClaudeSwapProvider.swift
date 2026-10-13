@@ -68,6 +68,7 @@ final class ClaudeSwapProvider: ProviderRuntime {
         var plan: String?
     }
     private var livePlan: LivePlan?
+    private var resetGrantsCheck: ClaudeResetGrantsCheck?
 
     /// The one failure on these cards the user has to fix themselves, because the obvious remedy —
     /// refreshing the token — is exactly what a claude-swap card must never do. Written to the log and
@@ -166,7 +167,7 @@ final class ClaudeSwapProvider: ProviderRuntime {
         }
 
         do {
-            let mapped = try ClaudeUsageMapper.mapUsageResponse(
+            var mapped = try ClaudeUsageMapper.mapUsageResponse(
                 response,
                 credentials: ClaudeOAuth(
                     subscriptionType: stashed.subscriptionType, rateLimitTier: stashed.rateLimitTier
@@ -180,6 +181,9 @@ final class ClaudeSwapProvider: ProviderRuntime {
                 return nil
             }
             logLive(nil, level: .info)
+            if let resetGrants = await resolveResetGrants(stashed) {
+                mapped.lines.append(resetGrants)
+            }
             let plan = await resolveLivePlan(stashed) ?? mapped.plan
             return ProviderSnapshot.make(
                 provider: provider, plan: plan, lines: mapped.lines, refreshedAt: now(),
@@ -235,6 +239,34 @@ final class ClaudeSwapProvider: ProviderRuntime {
         }
         livePlan = LivePlan(accessTokenFingerprint: fingerprint, plan: plan)
         return plan
+    }
+
+    /// The Rate Limit Resets row for the stashed login, checked at most once an hour per access token
+    /// (mirroring `ClaudeProvider.resetGrantsLine` from #1367). Runs only after the usage call has
+    /// succeeded, so a failure here keeps the previous answer and never costs the card its live meters.
+    private func resolveResetGrants(_ stashed: ClaudeSwapStashedToken) async -> MetricLine? {
+        let fingerprint = Data(SHA256.hash(data: Data(stashed.accessToken.utf8)))
+        let now = now()
+        let previous = resetGrantsCheck?.credentialFingerprint == fingerprint ? resetGrantsCheck : nil
+        if let previous, now.timeIntervalSince(previous.checkedAt) < ClaudeProvider.resetGrantsCheckInterval {
+            return previous.line.map { ClaudeUsageMapper.droppingElapsedResetGrants($0, now: now) }
+        }
+        do {
+            let response = try await liveUsageClient.fetchResetGrants(
+                accessToken: stashed.accessToken, config: ClaudeSwapOAuth.readOnlyConfig
+            )
+            let line = try ClaudeUsageMapper.mapResetGrantsResponse(response, now: now)
+            resetGrantsCheck = ClaudeResetGrantsCheck(credentialFingerprint: fingerprint, checkedAt: now, line: line)
+            return line
+        } catch {
+            let held = previous?.line.map { ClaudeUsageMapper.droppingElapsedResetGrants($0, now: now) }
+            guard !Task.isCancelled else { return held }
+            emit("reset grants lookup failed; retrying in an hour: \(error.localizedDescription)", level: .warn)
+            resetGrantsCheck = ClaudeResetGrantsCheck(
+                credentialFingerprint: fingerprint, checkedAt: now, line: previous?.line
+            )
+            return held
+        }
     }
 
     private func profileNamesThisCard(_ profile: ClaudeAccountProfile) -> Bool {

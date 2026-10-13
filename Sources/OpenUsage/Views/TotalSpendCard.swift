@@ -250,7 +250,7 @@ struct TotalSpendRingContent: View {
 /// Hover links the ring and the legend through `hoveredProviderID`: the hovered arc grows slightly
 /// and keeps its full color while the rest fade, and the center swaps to that provider's amount and
 /// share.
-private struct TotalSpendRing: View {
+struct TotalSpendRing: View {
     let projection: TotalSpendProjection
     @Binding var hoveredProviderID: String?
 
@@ -383,7 +383,7 @@ private struct TotalSpendRing: View {
 /// 12 o'clock matches reading top-down. Each row is one line: name leading, then the amount, share,
 /// and (outside Tokens mode) that provider's token count, all monospaced so the numbers align.
 /// Hovering a row drives the ring's hover state, and the ring's arcs drive the emphasis here.
-private struct TotalSpendLegend: View {
+struct TotalSpendLegend: View {
     let projection: TotalSpendProjection
     let tokenCounts: [String: Double]
     @Binding var hoveredProviderID: String?

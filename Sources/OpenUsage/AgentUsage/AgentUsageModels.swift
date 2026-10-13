@@ -79,4 +79,19 @@ struct AgentUsageReport: Sendable {
 
     var totalCostUSD: Double { agents.reduce(0) { $0 + $1.totalCostUSD } }
     var totalTokens: Int { agents.reduce(0) { $0 + $1.totalTokens } }
+
+    /// Projects this window's agent summaries into `TotalSpend` so the Agent Usage screen's top
+    /// card can switch between Cost, Cost/MTok, and Tokens using the shared ring and legend.
+    var totalSpend: TotalSpend {
+        let slices = agents.compactMap { agent -> TotalSpendSlice? in
+            guard agent.totalCostUSD > 0 || agent.totalTokens > 0 else { return nil }
+            return TotalSpendSlice(
+                provider: Provider(id: agent.agentID, displayName: agent.displayName, icon: agent.icon),
+                amountUSD: max(agent.totalCostUSD, 0),
+                tokenCount: Double(max(agent.totalTokens, 0)),
+                estimated: true
+            )
+        }
+        return TotalSpend(period: .today, slices: slices)
+    }
 }
