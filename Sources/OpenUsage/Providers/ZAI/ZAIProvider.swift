@@ -71,9 +71,7 @@ final class ZAIProvider: ProviderRuntime {
                     estimatedCost: false,
                     sourceNote: ZAIActivityMapper.sourceNote(for: platform)
                 ),
-            .combined(id: "zai.today", provider: provider, title: "Today", isUsagePeriod: true),
-            .combined(id: "zai.yesterday", provider: provider, title: "Yesterday", isUsagePeriod: true),
-            .combined(id: "zai.last30", provider: provider, title: "Last 30 Days", isUsagePeriod: true),
+        ] + WidgetDescriptor.spendTiles(provider: provider) + [
             // MCP Tools is a window accumulation like the period rows above (`isUsagePeriod`), so its
             // value reveals the per-tool hover breakdown and an all-zero window reads as "no usage"
             // rather than a depleted balance.

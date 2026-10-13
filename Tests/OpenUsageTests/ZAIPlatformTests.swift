@@ -342,8 +342,8 @@ final class ZAILayoutAndWireTests: XCTestCase {
         // The trend can't be drawn in the menu bar, so it never offers a pin.
         let trend = ZAIProvider().widgetDescriptors.first { $0.id == "zai.trend" }
         XCTAssertEqual(trend?.pinnable, false)
-        // Z.ai prices nothing, so its period rows must not feed the Total Spend card.
-        XCTAssertFalse(ZAIProvider().widgetDescriptors.contains { $0.isSpendTile })
+        // Z.ai's period rows carry token counts that feed the Total Spend card's Tokens mode.
+        XCTAssertTrue(ZAIProvider().widgetDescriptors.contains { $0.isSpendTile })
     }
 
     func testFreshDefaultsEnableEveryRowWithTheTrendAboveTheFold() {
