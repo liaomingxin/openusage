@@ -20,6 +20,7 @@ final class AntigravityProvider: ProviderRuntime {
     let usageClient: AntigravityUsageClient
     let discovery: LanguageServerDiscovery
     let dbUsageScanner: AntigravityDbUsageScanner
+    let piScanner: PiUsageScanner
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
@@ -30,6 +31,7 @@ final class AntigravityProvider: ProviderRuntime {
         usageClient: AntigravityUsageClient = AntigravityUsageClient(),
         discovery: LanguageServerDiscovery = LanguageServerDiscovery(),
         dbUsageScanner: AntigravityDbUsageScanner = AntigravityDbUsageScanner(),
+        piScanner: PiUsageScanner = .shared,
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
@@ -37,6 +39,7 @@ final class AntigravityProvider: ProviderRuntime {
         self.usageClient = usageClient
         self.discovery = discovery
         self.dbUsageScanner = dbUsageScanner
+        self.piScanner = piScanner
         self.now = now
         self.pricing = pricing
     }
@@ -85,7 +88,13 @@ final class AntigravityProvider: ProviderRuntime {
             var usageHistory: ProviderUsageHistory?
 
             let scanPricing = await pricing()
-            if let scan = await dbUsageScanner.scan(daysBack: 30, now: refreshedAt, pricing: scanPricing) {
+            async let native = dbUsageScanner.scan(daysBack: 30, now: refreshedAt, pricing: scanPricing)
+            async let pi = piScanner.scan(cardID: provider.id, now: refreshedAt, pricing: scanPricing)
+            let (nativeScan, piScan) = await (native, pi)
+            if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
+                let note = piScan != nil
+                    ? "From your Antigravity & pi logs (estimated)"
+                    : Self.usageSourceNote
                 usageHistory = ProviderUsageHistory(
                     series: scan.series,
                     modelUsage: scan.modelUsage,
@@ -97,14 +106,14 @@ final class AntigravityProvider: ProviderRuntime {
                     now: refreshedAt,
                     unknownModelsByDay: scan.unknownModelsByDay,
                     modelUsage: scan.modelUsage,
-                    modelSourceNote: Self.usageSourceNote,
+                    modelSourceNote: note,
                     pricing: scanPricing
                 )
                 SpendTileMapper.appendUsageTrend(
                     scan.series,
                     to: &result.lines,
                     now: refreshedAt,
-                    note: Self.usageSourceNote
+                    note: note
                 )
             }
 

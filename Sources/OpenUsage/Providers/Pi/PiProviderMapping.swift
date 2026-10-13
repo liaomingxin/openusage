@@ -9,9 +9,10 @@ import Foundation
 /// equivalent are intentionally absent and left for future work:
 /// - `nvidia-nim` — no OpenUsage card.
 ///
-/// `cursor`, `google-antigravity`, and `github-copilot` stay mapped for the Agent Usage screen
-/// but no card consumes them: Cursor's headline is its account CSV, Antigravity already scans its
-/// own databases, and Copilot CLI is out of scope. Consuming them would double-count.
+/// `cursor` and `github-copilot` stay mapped for the Agent Usage screen but no card consumes them:
+/// Cursor's headline is its server usage history, and Copilot CLI is out of scope. `google-antigravity`
+/// calls Google Cloud Code directly without writing to Antigravity's IDE SQLite DB, so
+/// `AntigravityProvider` folds it in alongside its native conversation scan.
 enum PiProviderMapping {
     /// pi `provider` value → OpenUsage `Provider.id`.
     static let providerToCard: [String: String] = [

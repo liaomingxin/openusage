@@ -333,6 +333,7 @@ final class AntigravityDbUsageScannerTests: XCTestCase {
             usageClient: AntigravityUsageClient(lsHTTP: routing, http: routing),
             discovery: LanguageServerDiscovery(processRunner: EmptyProcessRunner()),
             dbUsageScanner: scanner,
+            piScanner: PiUsageScanner(homeDirectory: { fixture.url }),
             now: { fixedNow },
             pricing: { fixedPricing }
         )
