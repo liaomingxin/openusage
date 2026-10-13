@@ -75,13 +75,43 @@ struct TokenBreakdown: Codable, Sendable, Equatable {
     var cacheWrite1h: Int = 0
     var cacheRead: Int = 0
     var output: Int = 0
-    /// The request ran the model's "fast" variant (Claude logs carry a `speed` field).
+    /// The request ran the model's "fast" variant (Claude logs carry a `speed` field; omp/pi's
+    /// `message.serviceTier` maps here too).
     var isFast: Bool = false
+    /// The request ran the service's Ultrafast tier (omp/pi's `message.serviceTier: "ultrafast"`;
+    /// Codex's own logs track the same tier per turn). Priced at the ultrafast multiplier.
+    var isUltrafast: Bool = false
 
     /// Input that determines whether the request crosses the long-context threshold. Output does not
     /// select the tier, but it is billed at the selected tier once the prompt crosses the threshold.
     var promptTokens: Int { input + cacheWrite5m + cacheWrite1h + cacheRead }
     var totalTokens: Int { input + cacheWrite5m + cacheWrite1h + cacheRead + output }
+
+    /// Tier flags default to false when absent, so cached parses written before a flag existed
+    /// (or by a build that never set it) still decode instead of invalidating every scanner's cache.
+    init(
+        input: Int = 0, cacheWrite5m: Int = 0, cacheWrite1h: Int = 0, cacheRead: Int = 0,
+        output: Int = 0, isFast: Bool = false, isUltrafast: Bool = false
+    ) {
+        self.input = input
+        self.cacheWrite5m = cacheWrite5m
+        self.cacheWrite1h = cacheWrite1h
+        self.cacheRead = cacheRead
+        self.output = output
+        self.isFast = isFast
+        self.isUltrafast = isUltrafast
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        input = try c.decodeIfPresent(Int.self, forKey: .input) ?? 0
+        cacheWrite5m = try c.decodeIfPresent(Int.self, forKey: .cacheWrite5m) ?? 0
+        cacheWrite1h = try c.decodeIfPresent(Int.self, forKey: .cacheWrite1h) ?? 0
+        cacheRead = try c.decodeIfPresent(Int.self, forKey: .cacheRead) ?? 0
+        output = try c.decodeIfPresent(Int.self, forKey: .output) ?? 0
+        isFast = try c.decodeIfPresent(Bool.self, forKey: .isFast) ?? false
+        isUltrafast = try c.decodeIfPresent(Bool.self, forKey: .isUltrafast) ?? false
+    }
 }
 
 extension ModelRates {

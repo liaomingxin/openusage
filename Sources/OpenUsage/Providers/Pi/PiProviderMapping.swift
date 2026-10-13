@@ -21,6 +21,8 @@ enum PiProviderMapping {
         "xai": "grok",
         "xai-oauth": "grok",
         "kimi-coding": "kimi",
+        "kimi-code": "kimi",
+        "moonshot": "kimi",
         "cursor": "cursor",
         "zai": "zai",
         "zhipu": "zai",

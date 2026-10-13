@@ -36,11 +36,12 @@ final class PiUsageScannerTests: XCTestCase {
         id: String = "m1", ts: String = "2026-07-12T10:00:00.000Z", provider: String = "anthropic",
         model: String = "claude-opus-4-8", input: Int = 100, output: Int = 50,
         cacheRead: Int = 0, cacheWrite: Int = 0, cacheWrite1h: Int = 0, total: Int = 150,
-        cost: String? = "0.5"
+        cost: String? = "0.5", serviceTier: String? = nil
     ) -> Data {
         let costJSON = cost.map { ",\"cost\":{\"total\":\($0)}" } ?? ""
+        let tierJSON = serviceTier.map { ",\"serviceTier\":\"\($0)\"" } ?? ""
         let json = """
-        {"type":"message","id":"\(id)","timestamp":"\(ts)","message":{"role":"assistant","provider":"\(provider)","model":"\(model)","usage":{"input":\(input),"output":\(output),"cacheRead":\(cacheRead),"cacheWrite":\(cacheWrite),"cacheWrite1h":\(cacheWrite1h),"totalTokens":\(total)\(costJSON)}}}
+        {"type":"message","id":"\(id)","timestamp":"\(ts)","message":{"role":"assistant","provider":"\(provider)","model":"\(model)"\(tierJSON),"usage":{"input":\(input),"output":\(output),"cacheRead":\(cacheRead),"cacheWrite":\(cacheWrite),"cacheWrite1h":\(cacheWrite1h),"totalTokens":\(total)\(costJSON)}}}
         """
         return Data(json.utf8)
     }
@@ -145,7 +146,63 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "claude-agent-sdk"), "claude")
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "zhipu"), "zai")
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "xai-oauth"), "grok")
+        XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "moonshot"), "kimi")
+        XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "kimi-code"), "kimi")
         XCTAssertNil(PiProviderMapping.cardID(forPiProvider: "nvidia-nim"))
+    }
+
+    /// omp stamps subscription rows with `message.serviceTier`. A tiered openai-codex row must drop
+    /// omp's subscription-quota-basis carried cost (8x ultrafast) and carry the tier flags instead,
+    /// so pricing goes through the tier-aware Codex estimator at the credits basis (6x) — the same
+    /// numbers the Codex card's own logs produce. Untiered rows keep their carried total.
+    func testTieredCodexRowsDropSubscriptionBasisCarriedCost() {
+        let tiered = PiUsageScanner.parseLine(line(
+            provider: "openai-codex", model: "gpt-6.1-sol", cost: "0.163", serviceTier: "ultrafast"
+        ))
+        XCTAssertNil(tiered?.carriedCost)
+        XCTAssertTrue(tiered?.tokens.isUltrafast ?? false)
+        XCTAssertFalse(tiered?.tokens.isFast ?? true)
+
+        let fast = PiUsageScanner.parseLine(line(
+            provider: "openai-codex", model: "gpt-6.1-sol", cost: "0.05", serviceTier: "fast"
+        ))
+        XCTAssertNil(fast?.carriedCost)
+        XCTAssertTrue(fast?.tokens.isFast ?? false)
+
+        // Untiered (BYO-key API) rows keep pi's real-money carried cost.
+        let plain = PiUsageScanner.parseLine(line(provider: "openai-codex", model: "gpt-6.1-sol"))
+        XCTAssertEqual(plain?.carriedCost, 0.5)
+        // A tiered non-codex provider (none known today) keeps its carried cost — the tier drop is
+        // scoped to the basis clash we measured on codex subscriptions.
+        let tieredOther = PiUsageScanner.parseLine(line(
+            provider: "xai-oauth", model: "grok-4.7", cost: "0.02", serviceTier: "ultrafast"
+        ))
+        XCTAssertEqual(tieredOther?.carriedCost, 0.02)
+    }
+
+    /// omp sometimes prefixes the model slug with its own provider id ("openai-codex/gpt-6.1-sol",
+    /// "moonshot/kimi-k2.7-code") — the prefix is stripped at parse time so the slug prices.
+    func testProviderPrefixedModelSlugIsStripped() {
+        let entry = PiUsageScanner.parseLine(line(provider: "moonshot", model: "moonshot/kimi-k2.7-code"))
+        XCTAssertEqual(entry?.model, "kimi-k2.7-code")
+        XCTAssertEqual(entry?.cardID, "kimi")
+
+        let codex = PiUsageScanner.parseLine(line(provider: "openai-codex", model: "openai-codex/gpt-6.1-sol"))
+        XCTAssertEqual(codex?.model, "gpt-6.1-sol")
+    }
+
+    /// Cached parses written before `isUltrafast` existed must keep decoding (tier flags default
+    /// to false), so the added field doesn't invalidate every scanner's persisted cache.
+    func testTokenBreakdownDecodesLegacyJSONWithoutTierFlags() throws {
+        let legacy = Data("""
+        {"input":10,"cacheRead":5,"output":2,"isFast":true}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(TokenBreakdown.self, from: legacy)
+        XCTAssertEqual(decoded.input, 10)
+        XCTAssertEqual(decoded.cacheRead, 5)
+        XCTAssertEqual(decoded.output, 2)
+        XCTAssertTrue(decoded.isFast)
+        XCTAssertFalse(decoded.isUltrafast)
     }
 
     /// omp writes the same usage jsonl under `~/.omp/agent/sessions`. A card's fold-in must see

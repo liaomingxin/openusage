@@ -42,9 +42,10 @@ actor PiUsageScanner {
 
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("pi"),
-        // v2: unmapped-provider lines are kept (cardID falls back to the raw pi provider id) so the
-        // Agent Usage screen can see every model; v1 cached parses dropped those lines.
-        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: 2)
+        // v3: tiered codex rows drop their subscription-basis carried cost and carry the tier flags
+        // instead, and provider-prefixed model slugs are stripped at parse time; v2 caches hold the
+        // unstripped slugs and 8x-basis costs, so a reparse is required.
+        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: 3)
     )
 
     static func flushPersistentCacheWrites() async {
@@ -156,20 +157,42 @@ actor PiUsageScanner {
 
         let cacheWrite = Int(ProviderParse.number(usage["cacheWrite"]) ?? 0)
         let cacheWrite1h = Int(ProviderParse.number(usage["cacheWrite1h"]) ?? 0)
+        // omp/pi's `message.serviceTier` ("fast"/"ultrafast") — the same per-request speed tier
+        // Codex's own logs track. Absent on plain rows and on pi's BYO-key API calls.
+        let serviceTier = (message["serviceTier"] as? String)?.lowercased()
+        let tiered = serviceTier == "fast" || serviceTier == "ultrafast"
         let tokens = TokenBreakdown(
             input: Int(ProviderParse.number(usage["input"]) ?? 0),
             cacheWrite5m: max(cacheWrite - cacheWrite1h, 0),
             cacheWrite1h: cacheWrite1h,
             cacheRead: Int(ProviderParse.number(usage["cacheRead"]) ?? 0),
-            output: Int(ProviderParse.number(usage["output"]) ?? 0)
+            output: Int(ProviderParse.number(usage["output"]) ?? 0),
+            isFast: serviceTier == "fast",
+            isUltrafast: serviceTier == "ultrafast"
         )
 
-        let carriedCost = (usage["cost"] as? [String: Any]).flatMap { ProviderParse.number($0["total"]) }
+        // A speed tier only exists on subscription (OAuth) logins, where omp prices its carried cost
+        // at the subscription-quota multipliers (8x ultrafast) — a different basis than OpenUsage's
+        // credits-basis estimate (6x). Drop that carried cost and re-price through the tier-aware
+        // estimator, the same basis as Codex's own logs. Untiered rows keep pi's carried total: on
+        // BYO-key API calls it is real money at exactly the catalog rates.
+        var carriedCost = (usage["cost"] as? [String: Any]).flatMap { ProviderParse.number($0["total"]) }
+        if tiered, providerID == "openai-codex" {
+            carriedCost = nil
+        }
+
+        // omp sometimes stamps the provider into the model slug ("openai-codex/gpt-6.1-sol",
+        // "moonshot/kimi-k2.7-code") — strip that prefix so the slug resolves through the pricing
+        // engine's aliases instead of landing unpriced.
+        var model = (message["model"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if model.hasPrefix("\(providerID)/") {
+            model = String(model.dropFirst(providerID.count + 1))
+        }
         return Entry(
             id: object["id"] as? String,
             timestamp: timestamp,
             cardID: cardID,
-            model: (message["model"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            model: model,
             carriedCost: carriedCost,
             tokens: tokens,
             reportedTotalTokens: Int(ProviderParse.number(usage["totalTokens"]) ?? 0)

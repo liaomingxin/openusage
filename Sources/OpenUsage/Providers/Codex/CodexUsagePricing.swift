@@ -56,7 +56,16 @@ enum CodexUsagePricing {
     /// the resolved rates don't cover a bucket this request bills at (a custom-pricing entry that
     /// omits a field — unknown means unpriced, not free).
     static func estimatedCost(pricing: ModelPricing, model: String, tokens: TokenBreakdown) -> Double? {
-        guard let prepared = prepare(pricing: pricing, model: model) else { return nil }
+        let resolution = resolveRates(pricing: pricing, model: model)
+        guard let rates = resolution.rates else { return nil }
+        var prepared = Prepared(
+            rates: adjusted(rates, model: resolution.rateModel),
+            fastTier: (resolution.isFastAlias && resolution.hasBaseRates) || tokens.isFast || tokens.isUltrafast
+        )
+        if tokens.isUltrafast,
+           let multiplier = ultrafastMultiplier(base: datedBaseModel(resolution.rateModel)) {
+            prepared.rates.fastMultiplier = multiplier
+        }
         return cost(prepared: prepared, tokens: tokens)
     }
 
