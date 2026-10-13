@@ -310,6 +310,10 @@ final class ZAICreditRoutingTests: XCTestCase {
         let provider = ZAIProvider(
             authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment(["ZAI_API_KEY": "zai-test"])),
             usageClient: ZAIUsageClient(http: client),
+            piScanner: PiUsageScanner(homeDirectory: { URL(fileURLWithPath: "/nonexistent") }),
+            openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner(databasePaths: { [] }),
+            zcodeScanner: ZCodeUsageScanner(databasePath: { nil }),
+            hermesScanner: HermesUsageScanner(databasePath: { nil }),
             now: { ZAICreditRoutingFixtures.now }
         )
         return (provider, client)

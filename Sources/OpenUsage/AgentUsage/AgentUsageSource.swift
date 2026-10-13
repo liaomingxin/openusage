@@ -34,15 +34,26 @@ enum AgentUsageCatalog {
                 // this screen, while its provider usage folds into cards through the shared scanner.
                 await PiUsageScanner.shared.scanAll(root: .omp, daysBack: 30, pricing: pricing)
             },
-            AgentUsageSource(id: "opencode", displayName: "OpenCode", icon: .providerMark("opencode")) { _ in
-                // OpenCode's hosted gateways write an authoritative cost; the scan itself prices nothing.
-                try? await OpenCodeUsageScanner().scan(now: Date(), daysBack: 30)?.logScan
+            AgentUsageSource(id: "opencode", displayName: "OpenCode", icon: .providerMark("opencode")) { pricing in
+                let now = Date()
+                let hosted = try? await OpenCodeUsageScanner().scan(now: now, daysBack: 30)?.logScan
+                let codex = await OpenCodeCodexUsageScanner().scan(now: now, daysBack: 30, pricing: pricing)
+                let sub = await OpenCodeSubscriptionUsageScanner().scan(now: now, daysBack: 30, pricing: pricing)
+                return DailyUsageAccumulator.merged(
+                    [hosted, codex] + Array(sub.localSpend.values) + Array(sub.thisMac.values)
+                )
             },
             AgentUsageSource(id: "antigravity", displayName: "Antigravity", icon: .providerMark("antigravity")) { pricing in
                 await AntigravityDbUsageScanner().scan(daysBack: 30, pricing: pricing)
             },
             AgentUsageSource(id: "grok", displayName: "Grok", icon: .providerMark("grok")) { pricing in
                 await GrokLogUsageScanner().scan(daysBack: 30, pricing: pricing)
+            },
+            AgentUsageSource(id: "zcode", displayName: "ZCode", icon: .providerMark("zai")) { pricing in
+                await ZCodeUsageScanner().scan(now: Date(), daysBack: 30, pricing: pricing)
+            },
+            AgentUsageSource(id: "kimi-cli", displayName: "Kimi CLI", icon: .providerMark("kimi")) { pricing in
+                KimiCLIUsageScanner().scan(now: Date(), daysBack: 30, pricing: pricing)
             },
             AgentUsageSource(id: "hermes", displayName: "Hermes", icon: .providerMark("hermes")) { pricing in
                 await HermesUsageScanner().scan(daysBack: 30, pricing: pricing)

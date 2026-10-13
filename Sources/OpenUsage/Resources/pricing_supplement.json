@@ -57,6 +57,13 @@
       "cache_read_per_million": 0.26,
       "output_per_million": 4.4
     },
+    "glm-5.3-flash": {
+      "$comment": "Z.ai GLM 5.3 Flash rates (1/10th of GLM 5.3 standard tier).",
+      "input_per_million": 0.14,
+      "cache_write_per_million": 0.14,
+      "cache_read_per_million": 0.026,
+      "output_per_million": 0.44
+    },
     "grok-4.5": {
       "$comment": "Cursor + SpaceXAI first-party model. Cache write not published separately; defaults to input.",
       "input_per_million": 2.0,
@@ -799,11 +806,15 @@
       "canonical": "moonshot/kimi-k2.5"
     },
     {
-      "pattern": "^glm-5\\.2(?:-(?:high|max))?$",
+      "pattern": "(?i)^(?:(?:z-ai|zai|zhipu)[/_])?glm-5\\.2(?:-highspeed)?(?:-(?:high|max))?$",
       "canonical": "glm-5.2"
     },
     {
-      "pattern": "(?i)^(?:(?:z-ai|zai|zhipu)/)?glm-5\\.3(?:-(?:low|high|max))?$",
+      "pattern": "(?i)^(?:(?:z-ai|zai|zhipu)[/_])?glm-5\\.3-flash(?:-(?:low|medium|high|max))?$",
+      "canonical": "glm-5.3-flash"
+    },
+    {
+      "pattern": "(?i)^(?:(?:z-ai|zai|zhipu)[/_])?glm-5\\.3(?:-highspeed)?(?:-(?:low|high|max))?$",
       "canonical": "glm-5.3"
     },
     {

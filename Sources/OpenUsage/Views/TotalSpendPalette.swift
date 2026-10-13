@@ -26,6 +26,9 @@ enum TotalSpendPalette {
         "pi": hex(0xF59E0B),
         "omp": hex(0x06B6D4),
         "hermes": hex(0xEC4899)
+        ,
+        "zcode": dynamic(light: 0x2D2D2D, dark: 0xD1D1D6),
+        "kimi-cli": hex(0x0A66FF)
     ]
 
     /// Deterministic backstop hues for a provider that ships without a palette entry — keyed off the

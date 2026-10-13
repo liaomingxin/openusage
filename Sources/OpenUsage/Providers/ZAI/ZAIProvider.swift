@@ -160,7 +160,7 @@ final class ZAIProvider: ProviderRuntime {
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)
             .map { DailyUsageAccumulator.dayKey(from: $0) }
         lines = lines.map { line in
-            guard case .values(let label, let values, let color, let expiries, let unknown, var breakdown) = line
+            guard case .values(let label, var values, let color, let expiries, let unknown, var breakdown) = line
             else { return line }
             let days: Set<String>
             switch label {
@@ -171,11 +171,17 @@ final class ZAIProvider: ProviderRuntime {
             }
             let models = (scan.modelUsage?.daily ?? []).filter { days.contains($0.date) }.flatMap(\.models)
             guard !models.isEmpty else { return line }
+            let thisMacCost = models.compactMap(\.costUSD).reduce(0, +)
+            if thisMacCost > 0, !values.contains(where: { $0.kind == .dollars }) {
+                values.insert(MetricValue(number: thisMacCost, kind: .dollars, estimated: true), at: 0)
+            }
             if breakdown == nil {
                 breakdown = ModelUsageBreakdown(
                     totalTokens: Int(values.first { $0.label == "tokens" }?.number ?? 0),
-                    totalCostUSD: nil, models: [], sourceNote: "From Z.ai"
+                    totalCostUSD: thisMacCost > 0 ? thisMacCost : nil, models: [], sourceNote: "From Z.ai"
                 )
+            } else if thisMacCost > 0, breakdown?.totalCostUSD == nil {
+                breakdown?.totalCostUSD = thisMacCost
             }
             breakdown?.thisMacModels = models
             breakdown?.thisMacSourceNote = "This Mac"
