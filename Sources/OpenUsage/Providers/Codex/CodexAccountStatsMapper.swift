@@ -12,6 +12,8 @@ enum CodexAccountStatsMapper {
     static let lifetimeTokensLabel = "Lifetime Tokens"
     static let dayStreakLabel = "Day Streak"
     static let threadsLabel = "Threads"
+    static let fastAndEffortLabel = "Fast & Effort"
+    static let skillsUsedLabel = "Skills Used"
 
     /// Every renderable account row, in descriptor order. An absent field yields no row (it reads
     /// "No data") rather than a fabricated zero.
@@ -20,8 +22,10 @@ enum CodexAccountStatsMapper {
         return [
             trendLine(stats: stats, now: now, calendar: calendar),
             countLine(label: lifetimeTokensLabel, count: stats.lifetimeTokens, unit: "tokens"),
-            countLine(label: dayStreakLabel, count: stats.currentStreakDays, unit: "days"),
-            countLine(label: threadsLabel, count: stats.totalThreads, unit: "threads")
+            streakLine(current: stats.currentStreakDays, longest: stats.longestStreakDays),
+            countLine(label: threadsLabel, count: stats.totalThreads, unit: "threads"),
+            fastAndEffortLine(stats: stats),
+            skillsUsedLine(stats: stats)
         ].compactMap { $0 }
     }
 
@@ -82,6 +86,50 @@ enum CodexAccountStatsMapper {
     private static func countLine(label: String, count: Int?, unit: String) -> MetricLine? {
         guard let count else { return nil }
         return .values(label: label, values: [MetricValue(number: Double(count), kind: .count, label: unit)])
+    }
+
+    private static func streakLine(current: Int?, longest: Int?) -> MetricLine? {
+        guard let current else { return nil }
+        var values = [MetricValue(number: Double(current), kind: .count, label: "days")]
+        if let longest, longest > 0 {
+            values.append(MetricValue(number: Double(longest), kind: .count, label: "best"))
+        }
+        return .values(label: dayStreakLabel, values: values)
+    }
+
+    private static func fastAndEffortLine(stats: CodexAccountStats) -> MetricLine? {
+        var values: [MetricValue] = []
+        if let fast = stats.fastModeUsagePercent {
+            values.append(MetricValue(number: fast.rounded(), kind: .percent, label: "Fast"))
+        }
+        if let effort = stats.mostUsedReasoningEffort,
+           let effortPct = stats.mostUsedReasoningEffortPercent {
+            let label = effort.titleCased(separator: { $0 == "_" || $0 == "-" })
+            values.append(MetricValue(number: effortPct.rounded(), kind: .percent, label: label))
+        }
+        guard !values.isEmpty else { return nil }
+        return .values(label: fastAndEffortLabel, values: values)
+    }
+
+    private static func skillsUsedLine(stats: CodexAccountStats) -> MetricLine? {
+        var values: [MetricValue] = []
+        if let total = stats.totalSkillsUsed, total > 0 {
+            values.append(MetricValue(number: Double(total), kind: .count, label: "calls"))
+        }
+        if let unique = stats.uniqueSkillsUsed, unique > 0 {
+            values.append(MetricValue(number: Double(unique), kind: .count, label: "skills"))
+        }
+        guard !values.isEmpty else { return nil }
+        let breakdown: ModelUsageBreakdown? = stats.topSkills.isEmpty ? nil : ModelUsageBreakdown(
+            totalTokens: stats.totalSkillsUsed ?? stats.topSkills.reduce(0) { $0 + $1.count },
+            totalCostUSD: nil,
+            models: stats.topSkills.map {
+                ModelUsageEntry(model: $0.name, totalTokens: $0.count, costUSD: nil)
+            },
+            sourceNote: "Top skills across your OpenAI account",
+            unitLabel: "calls"
+        )
+        return .values(label: skillsUsedLabel, values: values, modelBreakdown: breakdown)
     }
 
     /// A `yyyy-MM-dd` day key back to that day's local start. The rollup's days are plain calendar

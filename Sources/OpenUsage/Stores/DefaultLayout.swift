@@ -10,13 +10,14 @@ enum DefaultLayout {
         "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claude", "antigravity.claudeWeekly",
         "antigravity.trend", "antigravity.today", "antigravity.yesterday", "antigravity.last30",
 
-        "claude.session", "claude.weekly", "claude.fable", "claude.trend",
+        "claude.session", "claude.weekly", "claude.fable", "claude.surfaceUsage", "claude.trend",
         "claude.extra", "claude.rateLimitResets", "claude.today", "claude.yesterday", "claude.last30",
 
         "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly",
         "codex.gptReserve", "codex.gptReserveWeekly", "codex.trend",
         "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
         "codex.accountTrend", "codex.lifetimeTokens", "codex.dayStreak", "codex.threads",
+        "codex.fastAndEffort", "codex.skillsUsed",
         "codex.renews",
 
         "cursor.usage", "cursor.auto", "cursor.api", "cursor.grokBot", "cursor.trend",

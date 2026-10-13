@@ -796,6 +796,42 @@ final class ClaudeProviderTests: XCTestCase {
         XCTAssertEqual(badge(snapshot.lines, "Error"), ProviderUsageErrorText.requestFailed(statusCode: 400))
     }
 
+
+    func testMapsSurfaceUsageScopedSharesAndSpendFallback() throws {
+        let json = """
+        {
+          "limits": [
+            { "kind": "session", "percent": 0, "severity": "normal", "resets_at": null, "scope": null, "is_active": false },
+            { "kind": "weekly_all", "percent": 5, "severity": "normal", "resets_at": "2026-10-16T23:00:00Z", "scope": null, "is_active": true },
+            { "kind": "weekly_scoped", "percent": 5, "severity": "normal", "resets_at": "2026-10-16T23:00:00Z", "scope": { "model": { "display_name": "Fable" } }, "is_active": false }
+          ],
+          "weekly_scoped_shares": [
+            { "limit_index": 2, "used_percent_of_weekly": 3, "allowance_percent_of_weekly": 50 }
+          ],
+          "seven_day_breakdown": {
+            "rows": [
+              { "key": "claude_code", "display_name": "Claude Code", "percent": 100 },
+              { "key": "chat", "display_name": "Chats", "percent": 0 }
+            ]
+          },
+          "spend": {
+            "enabled": true,
+            "used": { "amount_minor": 1250, "currency": "USD", "exponent": 2 },
+            "limit": 50
+          }
+        }
+        """
+        let response = HTTPResponse(statusCode: 200, headers: [:], body: Data(json.utf8))
+        let mapped = try ClaudeUsageMapper.mapUsageResponse(response, credentials: ClaudeOAuth(subscriptionType: "max"))
+        guard case .progress(_, _, _, _, _, _, _, let fableDetail) = mapped.lines.first(where: { $0.label == "Fable" }) else {
+            return XCTFail("Expected Fable progress row")
+        }
+        XCTAssertEqual(fableDetail, "3% of weekly (50% cap)")
+        XCTAssertEqual(values(mapped.lines, "Surface Usage")?.map(\.number), [100])
+        XCTAssertEqual(values(mapped.lines, "Surface Usage")?.map(\.label), ["Claude Code"])
+        XCTAssertEqual(Self.progress(mapped.lines, "Extra usage spent")?.used, 12.5)
+        XCTAssertEqual(Self.progress(mapped.lines, "Extra usage spent")?.limit, 50)
+    }
     private func configuredAuthStore(
         files: FakeFiles,
         keychain: KeychainAccessing = FakeKeychain(),

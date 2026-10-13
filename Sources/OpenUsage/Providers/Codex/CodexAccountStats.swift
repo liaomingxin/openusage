@@ -21,7 +21,14 @@ struct CodexAccountStats: Equatable, Sendable {
     var tokensByDay: [String: Int]
     var lifetimeTokens: Int?
     var currentStreakDays: Int?
+    var longestStreakDays: Int?
     var totalThreads: Int?
+    var fastModeUsagePercent: Double?
+    var mostUsedReasoningEffort: String?
+    var mostUsedReasoningEffortPercent: Double?
+    var totalSkillsUsed: Int?
+    var uniqueSkillsUsed: Int?
+    var topSkills: [CodexSkillInvocation]
     /// `metadata.stats_as_of` as a `yyyy-MM-dd` day key: the last day the rollup counted. Nothing after
     /// it is known yet.
     var statsAsOf: String?
@@ -30,20 +37,41 @@ struct CodexAccountStats: Equatable, Sendable {
         tokensByDay: [String: Int] = [:],
         lifetimeTokens: Int? = nil,
         currentStreakDays: Int? = nil,
+        longestStreakDays: Int? = nil,
         totalThreads: Int? = nil,
+        fastModeUsagePercent: Double? = nil,
+        mostUsedReasoningEffort: String? = nil,
+        mostUsedReasoningEffortPercent: Double? = nil,
+        totalSkillsUsed: Int? = nil,
+        uniqueSkillsUsed: Int? = nil,
+        topSkills: [CodexSkillInvocation] = [],
         statsAsOf: String? = nil
     ) {
         self.tokensByDay = tokensByDay
         self.lifetimeTokens = lifetimeTokens
         self.currentStreakDays = currentStreakDays
+        self.longestStreakDays = longestStreakDays
         self.totalThreads = totalThreads
+        self.fastModeUsagePercent = fastModeUsagePercent
+        self.mostUsedReasoningEffort = mostUsedReasoningEffort
+        self.mostUsedReasoningEffortPercent = mostUsedReasoningEffortPercent
+        self.totalSkillsUsed = totalSkillsUsed
+        self.uniqueSkillsUsed = uniqueSkillsUsed
+        self.topSkills = topSkills
         self.statsAsOf = statsAsOf
     }
 
     /// True when nothing usable came back — every row would be absent, so the caller can skip mapping.
     var isEmpty: Bool {
-        tokensByDay.isEmpty && lifetimeTokens == nil && currentStreakDays == nil && totalThreads == nil
+        tokensByDay.isEmpty && lifetimeTokens == nil && currentStreakDays == nil && longestStreakDays == nil
+            && totalThreads == nil && fastModeUsagePercent == nil && mostUsedReasoningEffort == nil
+            && totalSkillsUsed == nil && uniqueSkillsUsed == nil && topSkills.isEmpty
     }
+}
+
+struct CodexSkillInvocation: Equatable, Sendable {
+    var name: String
+    var count: Int
 }
 
 enum CodexAccountStatsParser {
@@ -88,7 +116,14 @@ enum CodexAccountStatsParser {
             tokensByDay: tokensByDay(stats["daily_usage_buckets"]),
             lifetimeTokens: count(stats["lifetime_tokens"]),
             currentStreakDays: count(stats["current_streak_days"]),
+            longestStreakDays: count(stats["longest_streak_days"]),
             totalThreads: count(stats["total_threads"]),
+            fastModeUsagePercent: percent(stats["fast_mode_usage_percentage"]),
+            mostUsedReasoningEffort: text(stats["most_used_reasoning_effort"]),
+            mostUsedReasoningEffortPercent: percent(stats["most_used_reasoning_effort_percentage"]),
+            totalSkillsUsed: count(stats["total_skills_used"]),
+            uniqueSkillsUsed: count(stats["unique_skills_used"]),
+            topSkills: topSkills(stats["top_invocations"]),
             statsAsOf: dayKey(metadata?["stats_as_of"])
         )
     }
@@ -111,6 +146,26 @@ enum CodexAccountStatsParser {
     private static func count(_ value: Any?) -> Int? {
         guard let number = ProviderParse.number(value), number >= 0 else { return nil }
         return Int(number.rounded(.down))
+    }
+
+    private static func percent(_ value: Any?) -> Double? {
+        guard let number = ProviderParse.number(value), number.isFinite, number >= 0 else { return nil }
+        return ProviderParse.clampPercent(number)
+    }
+
+    private static func text(_ value: Any?) -> String? {
+        (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
+    private static func topSkills(_ value: Any?) -> [CodexSkillInvocation] {
+        guard let entries = value as? [Any] else { return [] }
+        return entries.compactMap { raw -> CodexSkillInvocation? in
+            guard let entry = raw as? [String: Any],
+                  let name = text(entry["skill_name"]) ?? text(entry["plugin_name"]),
+                  let calls = count(entry["usage_count"]), calls > 0
+            else { return nil }
+            return CodexSkillInvocation(name: name, count: calls)
+        }
     }
 
     /// A `yyyy-MM-dd` day key from an upstream date string. The payload's dates are already plain

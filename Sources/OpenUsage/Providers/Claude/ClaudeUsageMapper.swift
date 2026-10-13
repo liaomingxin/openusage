@@ -25,7 +25,8 @@ enum ClaudeUsageMapper {
 
         var lines: [MetricLine] = []
         appendWindows(body, to: &lines)
-        appendExtraUsage(body["extra_usage"], to: &lines)
+        appendSurfaceUsage(body["seven_day_breakdown"], to: &lines)
+        appendExtraUsage(body["extra_usage"], fallbackSpend: body["spend"], to: &lines)
 
         return ClaudeMappedUsage(
             plan: formatPlan(subscriptionType: credentials.subscriptionType, rateLimitTier: credentials.rateLimitTier),
@@ -68,8 +69,10 @@ enum ClaudeUsageMapper {
 
     /// Labels of the lines `mapUsageResponse` produces from the live usage endpoint (everything else on a
     /// Claude snapshot is recomputed locally or is a rate-limit notice).
+    static let surfaceUsageLabel = "Surface Usage"
+
     static let liveLimitLabels: Set<String> = [
-        "Session", "Weekly", "Sonnet", "Fable", "Extra usage spent", "Rate Limit Resets"
+        "Session", "Weekly", "Sonnet", "Fable", surfaceUsageLabel, "Extra usage spent", "Rate Limit Resets"
     ]
 
     /// Snapshot shown when the usage endpoint rate-limits us and there is no last-good usage to fall back
@@ -184,12 +187,18 @@ enum ClaudeUsageMapper {
     /// `seven_day_<model>` keys, plus the two things only it knows — `is_active` (which window is
     /// currently the binding one) and `severity` (Anthropic's own escalation for that window).
     private struct LimitEntry {
+        var index: Int
         var kind: String
         var percent: Double
         var resetsAt: Date?
         var severity: String?
         var isActive: Bool
         var modelName: String?
+    }
+
+    private struct ScopedShare {
+        var usedPercentOfWeekly: Double?
+        var allowancePercentOfWeekly: Double?
     }
 
     /// The usage windows, driven by `limits[]` with the legacy top-level keys as the second source.
@@ -202,6 +211,7 @@ enum ClaudeUsageMapper {
     /// no row; that is an absent window, not a failure.
     private static func appendWindows(_ body: [String: Any], to lines: inout [MetricLine]) {
         let limits = parseLimits(body["limits"])
+        let scopedShares = parseScopedShares(body["weekly_scoped_shares"])
 
         appendWindow(limits.first { $0.kind == LimitKind.session }, legacy: body["five_hour"],
                      label: sessionLabel, periodDurationMs: sessionPeriodMs, to: &lines)
@@ -213,7 +223,10 @@ enum ClaudeUsageMapper {
         var scopedModels: Set<String> = []
         for entry in limits where entry.kind == LimitKind.weeklyScoped {
             guard let model = entry.modelName, scopedModels.insert(model).inserted else { continue }
-            lines.append(progressLine(entry, label: model, periodDurationMs: weeklyPeriodMs))
+            lines.append(progressLine(
+                entry, label: model, periodDurationMs: weeklyPeriodMs,
+                scopedShare: scopedShares[entry.index]
+            ))
         }
         if !scopedModels.contains(sonnetLabel) {
             appendWindow(nil, legacy: body["seven_day_sonnet"],
@@ -250,16 +263,39 @@ enum ClaudeUsageMapper {
         ))
     }
 
-    private static func progressLine(_ entry: LimitEntry, label: String, periodDurationMs: Int) -> MetricLine {
-        .progress(
+    private static func progressLine(
+        _ entry: LimitEntry,
+        label: String,
+        periodDurationMs: Int,
+        scopedShare: ScopedShare? = nil
+    ) -> MetricLine {
+        let parts = [
+            bindingDetail(isActive: entry.isActive, severity: entry.severity),
+            scopedShareDetail(scopedShare)
+        ].compactMap { $0 }
+        return .progress(
             label: label,
             used: entry.percent,
             limit: 100,
             format: .percent,
             resetsAt: entry.resetsAt,
             periodDurationMs: periodDurationMs,
-            detail: bindingDetail(isActive: entry.isActive, severity: entry.severity)
+            detail: parts.isEmpty ? nil : parts.joined(separator: " · ")
         )
+    }
+
+    private static func scopedShareDetail(_ share: ScopedShare?) -> String? {
+        guard let share else { return nil }
+        switch (share.usedPercentOfWeekly, share.allowancePercentOfWeekly) {
+        case (let used?, let cap?) where cap > 0:
+            return "\(Int(used.rounded()))% of weekly (\(Int(cap.rounded()))% cap)"
+        case (nil, let cap?) where cap > 0:
+            return "\(Int(cap.rounded()))% weekly cap"
+        case (let used?, _):
+            return "\(Int(used.rounded()))% of weekly"
+        default:
+            return nil
+        }
     }
 
     /// The caption under a window's bar when Anthropic reports that window as the binding one — the
@@ -285,7 +321,7 @@ enum ClaudeUsageMapper {
     /// window we can't meter rather than a broken response.
     private static func parseLimits(_ value: Any?) -> [LimitEntry] {
         guard let array = value as? [Any] else { return [] }
-        return array.compactMap { element in
+        return array.enumerated().compactMap { index, element in
             guard let object = element as? [String: Any],
                   let kind = text(object["kind"]),
                   let percent = ProviderParse.number(object["percent"])
@@ -294,6 +330,7 @@ enum ClaudeUsageMapper {
             }
             let model = (object["scope"] as? [String: Any])?["model"] as? [String: Any]
             return LimitEntry(
+                index: index,
                 kind: kind,
                 percent: percent,
                 resetsAt: resetDate(object["resets_at"]),
@@ -304,30 +341,84 @@ enum ClaudeUsageMapper {
         }
     }
 
+    private static func parseScopedShares(_ value: Any?) -> [Int: ScopedShare] {
+        guard let array = value as? [Any] else { return [:] }
+        var result: [Int: ScopedShare] = [:]
+        for case let object as [String: Any] in array {
+            guard let rawIndex = ProviderParse.number(object["limit_index"]) else { continue }
+            result[Int(rawIndex)] = ScopedShare(
+                usedPercentOfWeekly: ProviderParse.number(object["used_percent_of_weekly"]),
+                allowancePercentOfWeekly: ProviderParse.number(object["allowance_percent_of_weekly"])
+            )
+        }
+        return result
+    }
+
+    private static func appendSurfaceUsage(_ value: Any?, to lines: inout [MetricLine]) {
+        guard let object = value as? [String: Any],
+              let rows = object["rows"] as? [[String: Any]]
+        else { return }
+        let used = rows.compactMap { row -> (name: String, percent: Double)? in
+            guard let name = text(row["display_name"]),
+                  let percent = ProviderParse.number(row["percent"]),
+                  percent > 0
+            else { return nil }
+            return (name, ProviderParse.clampPercent(percent))
+        }.sorted {
+            if $0.percent != $1.percent { return $0.percent > $1.percent }
+            return $0.name < $1.name
+        }
+        guard !used.isEmpty else { return }
+        lines.append(.values(
+            label: surfaceUsageLabel,
+            values: used.map { MetricValue(number: $0.percent, kind: .percent, label: $0.name) }
+        ))
+    }
+
     /// A trimmed non-empty string, or `nil` for a missing, non-string, or blank value.
     private static func text(_ value: Any?) -> String? {
         (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
-    private static func appendExtraUsage(_ value: Any?, to lines: inout [MetricLine]) {
-        guard let object = value as? [String: Any],
-              object["is_enabled"] as? Bool == true,
-              let usedCents = ProviderParse.number(object["used_credits"])
+    private static func appendExtraUsage(_ value: Any?, fallbackSpend: Any? = nil, to lines: inout [MetricLine]) {
+        if let object = value as? [String: Any],
+           object["is_enabled"] as? Bool == true,
+           let usedCents = ProviderParse.number(object["used_credits"]) {
+            let used = ProviderParse.centsToDollars(usedCents)
+            if let limitCents = ProviderParse.number(object["monthly_limit"]), limitCents > 0 {
+                lines.append(.progress(
+                    label: "Extra usage spent",
+                    used: used,
+                    limit: ProviderParse.centsToDollars(limitCents),
+                    format: .dollars
+                ))
+            } else if used > 0 {
+                lines.append(.values(label: "Extra usage spent", values: [MetricValue(number: used, kind: .dollars)]))
+            }
+            return
+        }
+        guard let spend = fallbackSpend as? [String: Any],
+              spend["enabled"] as? Bool == true,
+              let usedObj = spend["used"] as? [String: Any],
+              let amountMinor = ProviderParse.number(usedObj["amount_minor"])
         else {
             return
         }
-
-        let used = ProviderParse.centsToDollars(usedCents)
-        if let limitCents = ProviderParse.number(object["monthly_limit"]), limitCents > 0 {
+        let exponent = ProviderParse.number(usedObj["exponent"]) ?? 2
+        let divisor = pow(10.0, exponent)
+        let used = divisor > 0 ? amountMinor / divisor : amountMinor
+        let limitValue = (spend["limit"] as? [String: Any]).flatMap { ProviderParse.number($0["amount_minor"]).map { $0 / divisor } }
+            ?? (spend["cap"] as? [String: Any]).flatMap { ProviderParse.number($0["amount_minor"]).map { $0 / divisor } }
+            ?? ProviderParse.number(spend["limit"])
+            ?? ProviderParse.number(spend["cap"])
+        if let limitValue, limitValue > 0 {
             lines.append(.progress(
                 label: "Extra usage spent",
                 used: used,
-                limit: ProviderParse.centsToDollars(limitCents),
+                limit: limitValue,
                 format: .dollars
             ))
         } else if used > 0 {
-            // No monthly cap: an unbounded spend, carried raw so it formats through `MetricFormatter`
-            // (compact like the spend tiles, e.g. "$1.2K spent") instead of a baked full-currency string.
             lines.append(.values(label: "Extra usage spent", values: [MetricValue(number: used, kind: .dollars)]))
         }
     }

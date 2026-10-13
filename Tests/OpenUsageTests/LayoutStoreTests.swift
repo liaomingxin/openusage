@@ -660,12 +660,13 @@ final class LayoutStoreTests: XCTestCase {
         let store = LayoutStore(registry: registry, defaults: makeDefaults("RecommendedDefaults"), storageKey: "layout")
 
         XCTAssertEqual(Set(store.placed.map(\.descriptorID)), Set([
-            "claude.session", "claude.weekly", "claude.fable", "claude.trend",
+            "claude.session", "claude.weekly", "claude.fable", "claude.surfaceUsage", "claude.trend",
             "claude.extra", "claude.rateLimitResets", "claude.today", "claude.yesterday", "claude.last30",
             "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly",
             "codex.gptReserve", "codex.gptReserveWeekly", "codex.trend",
             "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
             "codex.accountTrend", "codex.lifetimeTokens", "codex.dayStreak", "codex.threads",
+            "codex.fastAndEffort", "codex.skillsUsed",
             "codex.renews",
             "devin.daily", "devin.weekly", "devin.extra",
             "grok.weekly", "grok.trend",
@@ -695,12 +696,14 @@ final class LayoutStoreTests: XCTestCase {
         // Claude's core meters keep Fable directly below Weekly; optional Sonnet and spend-history
         // rows go below the caret.
         XCTAssertEqual(primaryByProvider["claude"], [
-            "claude.session", "claude.weekly", "claude.fable", "claude.extra", "claude.trend"
+            "claude.session", "claude.weekly", "claude.fable", "claude.surfaceUsage", "claude.extra", "claude.trend"
         ])
         XCTAssertEqual(expandedByProvider["claude"], [
             "claude.sonnet", "claude.rateLimitResets", "claude.today", "claude.yesterday", "claude.last30"
         ])
-        XCTAssertEqual(primaryByProvider["codex"], ["codex.session", "codex.weekly", "codex.trend"])
+        XCTAssertEqual(primaryByProvider["codex"], [
+            "codex.session", "codex.weekly", "codex.trend", "codex.fastAndEffort", "codex.skillsUsed"
+        ])
         // Spark (the optional model-specific limits) leads the On Demand section, followed by the
         // hidden GPT Reserve window, then credits.
         XCTAssertEqual(expandedByProvider["codex"], [
@@ -1293,7 +1296,7 @@ final class LayoutStoreTests: XCTestCase {
             expanded.filter { $0.hasPrefix(extraCodexID + ".") },
             codexRows.map { extraCodexID + $0.dropFirst("codex".count) }
         )
-        XCTAssertEqual(claudeRows.count, 9, "the Claude row set this test pins is the one AppContainer copies")
+        XCTAssertEqual(claudeRows.count, 10, "the Claude row set this test pins is the one AppContainer copies")
 
         // …and the same holds once the store turns those defaults into placed widgets.
         let store = LayoutStore(
@@ -1304,8 +1307,8 @@ final class LayoutStoreTests: XCTestCase {
         )
         let placedIDs = store.placed.map(\.descriptorID)
         XCTAssertEqual(placedIDs.count, Set(placedIDs).count, "placed must not carry a descriptor twice")
-        XCTAssertEqual(placedIDs.filter { $0.hasPrefix(extraClaudeID + ".") }.count, 9)
-        XCTAssertEqual(placedIDs.filter { $0.hasPrefix("claude.") }.count, 9)
+        XCTAssertEqual(placedIDs.filter { $0.hasPrefix(extraClaudeID + ".") }.count, 10)
+        XCTAssertEqual(placedIDs.filter { $0.hasPrefix("claude.") }.count, 10)
     }
 
     private func makeStore(_ name: String) -> LayoutStore {

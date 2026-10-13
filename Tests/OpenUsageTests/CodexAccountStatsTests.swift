@@ -9,7 +9,14 @@ final class CodexAccountStatsParserTests: XCTestCase {
 
         XCTAssertEqual(stats.lifetimeTokens, 1_588_515_077)
         XCTAssertEqual(stats.currentStreakDays, 11)
+        XCTAssertEqual(stats.longestStreakDays, 11)
         XCTAssertEqual(stats.totalThreads, 514)
+        XCTAssertEqual(stats.fastModeUsagePercent ?? 0, 63.92, accuracy: 0.001)
+        XCTAssertEqual(stats.mostUsedReasoningEffort, "xhigh")
+        XCTAssertEqual(stats.mostUsedReasoningEffortPercent ?? 0, 41.45, accuracy: 0.001)
+        XCTAssertEqual(stats.totalSkillsUsed, 322)
+        XCTAssertEqual(stats.uniqueSkillsUsed, 58)
+        XCTAssertEqual(stats.topSkills, [CodexSkillInvocation(name: "redacted-skill", count: 51)])
         XCTAssertEqual(stats.statsAsOf, "2026-08-26")
         XCTAssertEqual(stats.tokensByDay["2026-08-21"], 6_500_000)
         // Sparse by design: a day inside the covered range simply isn't in the payload.
@@ -112,11 +119,16 @@ final class CodexAccountStatsMapperTests: XCTestCase {
         let lines = CodexAccountStatsMapper.lines(stats: stats, now: day("2026-08-27"))
 
         XCTAssertEqual(lines.map(\.label),
-                       ["Account Trend", "Lifetime Tokens", "Day Streak", "Threads"])
+                       ["Account Trend", "Lifetime Tokens", "Day Streak", "Threads", "Fast & Effort", "Skills Used"])
         XCTAssertEqual(values(lines, "Lifetime Tokens")?.first?.number, 1_588_515_077)
         XCTAssertEqual(values(lines, "Lifetime Tokens")?.first?.label, "tokens")
-        XCTAssertEqual(values(lines, "Day Streak")?.first?.number, 11)
+        XCTAssertEqual(values(lines, "Day Streak")?.map(\.number), [11, 11])
+        XCTAssertEqual(values(lines, "Day Streak")?.map(\.label), ["days", "best"])
         XCTAssertEqual(values(lines, "Threads")?.first?.number, 514)
+        XCTAssertEqual(values(lines, "Fast & Effort")?.map(\.number), [64, 41])
+        XCTAssertEqual(values(lines, "Fast & Effort")?.map(\.label), ["Fast", "Xhigh"])
+        XCTAssertEqual(values(lines, "Skills Used")?.map(\.number), [322, 58])
+        XCTAssertEqual(values(lines, "Skills Used")?.map(\.label), ["calls", "skills"])
         // Tokens only: nothing here may ever carry a dollar value into a spend tile.
         XCTAssertFalse(lines.contains { line in
             guard case .values(_, let values, _, _, _, _) = line else { return false }
@@ -172,7 +184,7 @@ final class CodexAccountStatsMapperTests: XCTestCase {
 
         XCTAssertNil(chart(lines, "Account Trend"))
         // The plain counts still render — one absent field never blanks the others.
-        XCTAssertEqual(lines.map(\.label), ["Lifetime Tokens", "Day Streak", "Threads"])
+        XCTAssertEqual(lines.map(\.label), ["Lifetime Tokens", "Day Streak", "Threads", "Fast & Effort", "Skills Used"])
     }
 
     func testNoTrendWhenTheRollupIsOlderThanTheWindow() throws {

@@ -108,6 +108,8 @@ final class ClaudeSwapProvider: ProviderRuntime {
                 .exportingLimit("fable", unit: "percent"),
             .percent(id: "\(provider.id).sonnet", provider: provider, title: "Sonnet")
                 .exportingLimit("sonnet", unit: "percent"),
+            .combined(id: "\(provider.id).surfaceUsage", provider: provider, title: "Surface Usage",
+                      metricLabel: ClaudeUsageMapper.surfaceUsageLabel),
             .boundedDollars(id: "\(provider.id).extra", provider: provider, title: "Extra Usage",
                             metricLabel: "Extra usage spent", limit: 100, valueWord: "spent")
                 .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars)),

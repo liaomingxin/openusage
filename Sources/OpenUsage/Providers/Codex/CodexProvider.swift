@@ -105,9 +105,11 @@ final class CodexProvider: ProviderRuntime {
             .values(id: metricID("lifetimeTokens"), provider: provider, title: "Lifetime Tokens",
                     selection: .kind(.count)),
             .values(id: metricID("dayStreak"), provider: provider, title: "Day Streak",
-                    selection: .kind(.count)),
+                    selection: .all),
             .values(id: metricID("threads"), provider: provider, title: "Threads",
                     selection: .kind(.count)),
+            .combined(id: metricID("fastAndEffort"), provider: provider, title: "Fast & Effort"),
+            .combined(id: metricID("skillsUsed"), provider: provider, title: "Skills Used", isUsagePeriod: true),
             // Account metadata rather than usage, so it sits last (and On Demand by default). Extra
             // account cards inherit this descriptor and fill it from their own auth file's claim.
             .subscriptionRenewal(provider: provider)
