@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor
 final class CodexProvider: ProviderRuntime {
+
     let provider: Provider
 
     let authStore: CodexAuthStore
@@ -39,7 +40,7 @@ final class CodexProvider: ProviderRuntime {
             icon: .providerMark("codex"),
             links: [
                 .init(label: "Status", url: "https://status.openai.com/"),
-                .init(label: "Dashboard", url: "https://chatgpt.com/codex/settings/usage")
+                .init(label: "Dashboard", url: "https://chatgpt.com/settings/usage")
             ]
         )
         self.authStore = authStore
@@ -122,7 +123,13 @@ final class CodexProvider: ProviderRuntime {
             return true
         }
         let keychain = await loadOffMainActor { [authStore] in authStore.loadKeychainAuth() }
-        return keychain?.hasUsableAccessToken == true
+        if let keychain { return keychain.hasUsableAccessToken }
+        // A Keychain login macOS hasn't let OpenUsage read yet is still a login on this Mac. An account
+        // card can't tell whose login it is without reading it.
+        guard authStore.scopedAuthPath == nil else { return false }
+        return await loadOffMainActor { [authStore] in
+            authStore.keychain.genericPasswordExists(service: CodexAuthStore.keychainService) == true
+        }
     }
 
     func refresh() async -> ProviderSnapshot {
@@ -208,7 +215,7 @@ final class CodexProvider: ProviderRuntime {
         async let pi = scansLocalLogs
             ? PiUsageScanner.shared.scan(
                 cardID: provider.id, now: now(), pricing: pricing,
-                estimateCost: { CodexUsagePricing.estimatedCost(pricing: pricing, model: $0, tokens: $1) }
+                estimateCost: { CodexUsagePricing.estimatedCost(pricing: pricing, model: $0, tokens: $1, at: $2) }
             )
             : nil
         async let openCode = scansLocalLogs
@@ -362,7 +369,10 @@ final class CodexProvider: ProviderRuntime {
         // continue. This is also the only call site of authStore.save, so a genuinely undecodable
         // payload (CodexAuthError.invalidAuthPayload) now surfaces in the log instead of vanishing.
         do {
-            try authStore.save(authState)
+            let rotated = authState
+            try await loadOffMainActor { [authStore, rotated] in
+                try authStore.save(rotated)
+            }
         } catch {
             AppLog.error(LogTag.auth("codex"), "failed to persist rotated credentials; using the refreshed token for this session only: \(error.localizedDescription)")
         }

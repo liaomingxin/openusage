@@ -54,10 +54,9 @@ struct DashboardContentView: View {
                 .padding(.bottom, density.sectionSpacing)
         }
         if layout.displayGroups.isEmpty {
-            EmptyStateView(
-                title: "Nothing to Show",
-                message: "Turn on Customize to choose what to show."
-            )
+            EmptyDashboardView {
+                withAnimation(Motion.modeSwitch) { layout.screen = .customize }
+            }
         } else {
             WidgetGroupedListView(
                 reorderSpaceName: reorderSpaceName,

@@ -33,7 +33,7 @@ enum DefaultLayout {
         "kimi.session", "kimi.weekly",
         "kimi.today", "kimi.yesterday", "kimi.last30",
 
-        "ollama.session", "ollama.weekly", "ollama.monthly", "ollama.last4Weeks",
+        "ollama.session", "ollama.weekly", "ollama.monthly", "ollama.purchasedCredits",
 
         "opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend",
         "opencode.today", "opencode.yesterday", "opencode.last30",
@@ -74,7 +74,9 @@ enum DefaultLayout {
         "codex.session", "codex.weekly",
         "cursor.auto", "cursor.api",
         "copilot.premium",
-        "ollama.session", "ollama.weekly",
+        // Ollama: Monthly is the current plans' meter. Legacy plans' Session and Weekly stay unpinned so
+        // they don't spend the two-star cap on rows a current plan never shows.
+        "ollama.monthly",
         "openrouter.credits",
         "zai.session", "zai.weekly",
         "kimi.session", "kimi.weekly"
@@ -115,10 +117,8 @@ enum DefaultLayout {
         // Grok: the Weekly meter and Usage Trend stay above the fold; the pay-as-you-go badge, the
         // spend tiles, and the per-product split of the weekly pool sit below the caret.
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30", "grok.productUsage",
-        // Ollama: Session, Weekly, and Monthly stay above the fold. Monthly starts unpinned. The
-        // rolling four-week spend total (always $0.00 on a subscription, real only for pay-as-you-go)
-        // sits below the caret.
-        "ollama.last4Weeks",
+        // Ollama: the plan meters stay above the fold; purchased credits sit below the caret.
+        "ollama.purchasedCredits",
         // OpenCode: the three Go caps (Session/Weekly/Monthly) and Usage Trend stay above the fold —
         // matching every other provider — with the spend tiles (Today/Yesterday/Last 30 Days) below.
         "opencode.today", "opencode.yesterday", "opencode.last30",

@@ -19,11 +19,17 @@ final class OpenCodeAuthStoreTests: XCTestCase {
         files: TextFileAccessing = FakeFiles(),
         credentials: [String: String] = [:],
         credentialTimes: [String: String] = [:],
-        failing: Set<String> = []
+        failing: Set<String> = [],
+        openCode1Tables: Set<String> = []
     ) -> OpenCodeAuthStore {
         openCodeAuthStore(
             files: files,
-            sqlite: OpenCodeFakeSQLite(failing: failing, credentials: credentials, credentialTimes: credentialTimes)
+            sqlite: OpenCodeFakeSQLite(
+                failing: failing,
+                credentials: credentials,
+                credentialTimes: credentialTimes,
+                openCode1CredentialTables: openCode1Tables
+            )
         )
     }
 
@@ -32,6 +38,13 @@ final class OpenCodeAuthStoreTests: XCTestCase {
         try store.openAICredential(databasePath: stable)
     }
 
+    func testOpenCode1EmptyCredentialTableStillReadsCodexOAuthFromAuthFile() throws {
+        let store = credentialStore(
+            files: FakeFiles(["/oc/auth.json": #"{"openai":{"type":"oauth","access":"access","refresh":"refresh"}}"#]),
+            openCode1Tables: [stable]
+        )
+        XCTAssertTrue(try openAICredential(store).isOAuth)
+    }
     func testReadsGoKey() throws {
         XCTAssertEqual(try store(#"{"opencode-go":{"type":"api","key":"sk-abc"}}"#).goAPIKey(), "sk-abc")
     }
@@ -150,6 +163,12 @@ final class OpenCodeAuthStoreTests: XCTestCase {
         XCTAssertTrue(sql.contains("(active IS NULL OR active = 1)"), sql)
         XCTAssertTrue(sql.contains("ORDER BY active DESC, time_updated DESC, id DESC"), sql)
         XCTAssertTrue(sql.contains("json_array"), sql)
+    }
+
+    func testCredentialsImportedProbeTargetsImportMigration() {
+        let sql = OpenCodeAuthStore.credentialsImportedSQL
+        XCTAssertTrue(sql.contains("FROM migration"), sql)
+        XCTAssertTrue(sql.contains("20260805200742_import_legacy_credentials"), sql)
     }
 
     func testEachChannelDatabaseIsJudgedByItsOwnCredential() throws {
