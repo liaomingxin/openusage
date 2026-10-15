@@ -63,7 +63,7 @@ actor ClaudeLogUsageScanner {
         logTag: LogTag.plugin("claude"),
         // v2: accept records whose nested `usage.iterations[].model` is null (#1253); cached
         // parses from v1 silently dropped them, so every file must re-parse once.
-        persistence: JSONLScanCachePersistence(namespace: "claude", schemaVersion: 2)
+        persistence: JSONLScanCachePersistence(namespace: "claude", schemaVersion: 3)
     )
 
     static func flushPersistentCacheWrites() async {
@@ -112,7 +112,7 @@ actor ClaudeLogUsageScanner {
         let roots = claudeRoots()
         guard !roots.isEmpty else {
             _ = await scanner.items(
-                from: [], since: since, cacheIdentity: cacheIdentity, parse: Self.parseFile
+                from: [], since: since, cacheIdentity: cacheIdentity, tailParser: Self.tailParser
             )
             return nil
         }
@@ -124,7 +124,7 @@ actor ClaudeLogUsageScanner {
         guard !Task.isCancelled else { return nil }
         guard !files.isEmpty else {
             _ = await scanner.items(
-                from: [], since: since, cacheIdentity: cacheIdentity, parse: Self.parseFile
+                from: [], since: since, cacheIdentity: cacheIdentity, tailParser: Self.tailParser
             )
             return nil
         }
@@ -134,7 +134,7 @@ actor ClaudeLogUsageScanner {
             from: files,
             since: since,
             cacheIdentity: cacheIdentity,
-            parse: Self.parseFile
+            tailParser: Self.tailParser
         ), !Task.isCancelled else { return nil }
         return Self.aggregate(entries: Self.dedup(entries), since: since, pricing: pricing)
     }
@@ -384,6 +384,8 @@ actor ClaudeLogUsageScanner {
     }
 
     // MARK: - Line parsing
+
+    static let tailParser = JSONLTailParser<Entry>.stateless { parseFile($0) }
 
     /// Parse every usage line of one session file. Entries keep their raw timestamps — the date
     /// window is applied at aggregation so a cached parse stays valid as the window slides.

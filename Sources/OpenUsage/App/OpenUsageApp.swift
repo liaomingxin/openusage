@@ -2,6 +2,7 @@ import AppKit
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let processStartedAt = ProcessInfo.processInfo.systemUptime
     private var container: AppContainer?
     private var statusItemController: StatusItemController?
     private var firstLaunchWindow: FirstLaunchWindowController?
@@ -128,6 +129,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startDashboard(_ container: AppContainer) {
         container.startRefreshing()
         statusItemController = StatusItemController(container: container, updater: updater)
+        let launchDurationMS = Int((ProcessInfo.processInfo.systemUptime - processStartedAt) * 1_000)
+        AppLog.info(.lifecycle, "launch to status item ready: \(launchDurationMS) ms")
         // Starts background update checks (release build only; dormant under preview/`swift run`).
         updater.start()
     }

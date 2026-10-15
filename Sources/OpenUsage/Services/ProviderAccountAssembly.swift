@@ -119,13 +119,19 @@ struct ProviderAccountAssembly {
         guard !families.isEmpty || !extraCodex.isEmpty || !claudeSwap.isEmpty else {
             return ProviderAccountAssembly(identityKeysByCard: [:])
         }
-        return make(
-            observer: DefaultAccountObserver(),
+        let assemblyStartedAt = ProcessInfo.processInfo.systemUptime
+        let assembly = make(
+            observer: DefaultAccountObserver(
+                environment: ProcessEnvironmentReader(blocksOnShellCapture: false)
+            ),
             accountsStore: ProviderAccountsStore(defaults: defaults),
             families: families,
             extraCodex: extraCodex,
             claudeSwap: claudeSwap
         )
+        let assemblyDurationMS = Int((ProcessInfo.processInfo.systemUptime - assemblyStartedAt) * 1_000)
+        AppLog.info(.config, "account assembly duration: \(assemblyDurationMS) ms")
+        return assembly
     }
 
     /// The environment variable that relocates each family's default home — the fact whose
