@@ -428,7 +428,7 @@
       "canonical": "grok-4.6"
     },
     {
-      "$comment": "Cursor event list prices reported in #1229 track Grok 4.6 Fast for default and base for automation. grok-bot-cua uses Grok 4.7 base at the maintainer's direction.",
+      "$comment": "Cursor event list prices reported in #1229 track Grok 4.6 Fast for default and base for automation. grok-bot-cua and grok-bot-knowledge-work use Grok 4.7 base.",
       "pattern": "^grok-bot-default$",
       "canonical": "grok-4.6-fast"
     },
@@ -438,6 +438,10 @@
     },
     {
       "pattern": "^grok-bot-cua$",
+      "canonical": "grok-4.7"
+    },
+    {
+      "pattern": "^grok-bot-knowledge-work$",
       "canonical": "grok-4.7"
     },
     {
