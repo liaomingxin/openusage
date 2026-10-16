@@ -60,9 +60,31 @@ struct OpenCodeAuthStore: Sendable {
         OpenCodePaths.authFilePath(dataDirectory: dataDirectory)
     }
 
-    /// `oauth` or `api` for one provider entry in `auth.json`, or nil when that provider is absent.
-    /// A custom base URL is not an official login.
+    /// `oauth` or `api` for one provider entry in OpenCode 2's `credential` table (or `auth.json`
+    /// before import), or nil when that provider is absent. A custom base URL is not an official login.
     func credentialKind(providerID: String) throws -> String? {
+        let safeID = providerID.replacingOccurrences(of: "'", with: "''")
+        let sql = """
+            SELECT value FROM credential
+            WHERE integration_id = '\(safeID)' AND (active IS NULL OR active = 1)
+            ORDER BY active DESC, time_updated DESC, id DESC
+            LIMIT 1;
+            """
+        let paths = (try? (databasePaths?() ?? OpenCodePaths.databaseFiles(in: dataDirectory))) ?? []
+        var hasImportedDB = false
+        for path in paths {
+            guard (try? credentialsImported(path: path)) == true else { continue }
+            hasImportedDB = true
+            if let raw = try? sqlite.queryValue(path: path, sql: sql)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+               let data = raw.data(using: .utf8),
+               let entry = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+                if entry["baseURL"] != nil || entry["baseUrl"] != nil { return nil }
+                if let type = entry["type"] as? String {
+                    return type == "key" ? "api" : type
+                }
+            }
+        }
+        if hasImportedDB { return nil }
         guard let object = try authObject(),
               let entry = object[providerID] as? [String: Any]
         else { return nil }
