@@ -13,6 +13,7 @@ struct OpenCodeAuthStore: Sendable {
     var environment: EnvironmentReading
     var homeDirectory: @Sendable () -> URL
     var sqlite: SQLiteAccessing
+    var databasePaths: (@Sendable () throws -> [String])?
 
     /// The current `openai` row of one database. Ordering mirrors OpenCode (`active DESC,
     /// time_updated DESC, id DESC`); the filter admits NULL-flagged imports. `json(value)` embeds
@@ -25,17 +26,30 @@ struct OpenCodeAuthStore: Sendable {
         LIMIT 1;
         """
 
+    /// The current OpenCode Go / OpenCode Console credential (`opencode-go` API key or `opencode`
+    /// Console OAuth `access` token / API `key`). Both authenticate `GET /zen/go/v1/usage`.
+    static let credentialSQLGoKey = """
+        SELECT coalesce(json_extract(value,'$.key'), json_extract(value,'$.access'))
+        FROM credential
+        WHERE integration_id IN ('opencode-go', 'opencode') AND (active IS NULL OR active = 1)
+        ORDER BY CASE WHEN integration_id = 'opencode-go' THEN 0 ELSE 1 END, active DESC, time_updated DESC, id DESC
+        LIMIT 1;
+        """
+
     static let credentialsImportedSQL = "SELECT 1 FROM migration WHERE id = '20260805200742_import_legacy_credentials' LIMIT 1;"
+
     init(
         files: TextFileAccessing = LocalTextFileAccessor(),
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         homeDirectory: @escaping @Sendable () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
-        sqlite: SQLiteAccessing = SQLiteCLIAccessor()
+        sqlite: SQLiteAccessing = SQLiteCLIAccessor(),
+        databasePaths: (@Sendable () throws -> [String])? = nil
     ) {
         self.files = files
         self.environment = environment
         self.homeDirectory = homeDirectory
         self.sqlite = sqlite
+        self.databasePaths = databasePaths
     }
 
     var dataDirectory: String {
@@ -62,11 +76,41 @@ struct OpenCodeAuthStore: Sendable {
     /// file that can't be read or parsed throws `credentialsUnreadable` so broken storage is never
     /// mistaken for logout; an absent file is the normal "not logged in" `nil`.
     func goAPIKey() throws -> String? {
+        let paths: [String]
+        do {
+            paths = try databasePaths?() ?? OpenCodePaths.databaseFiles(in: dataDirectory)
+        } catch {
+            throw OpenCodeUsageError.credentialsUnreadable(detail: error.localizedDescription)
+        }
+        var hasCredentialTable = false
+        var failure: Error?
+        for path in paths {
+            do {
+                guard try credentialsImported(path: path) else { continue }
+                let value = try sqlite.queryValue(path: path, sql: Self.credentialSQLGoKey)
+                hasCredentialTable = true
+                if let key = value?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+                    return key
+                }
+            } catch where Self.isMissingTable(error) {
+                continue
+            } catch {
+                failure = error
+            }
+        }
+        if let failure {
+            throw OpenCodeUsageError.credentialsUnreadable(detail: failure.localizedDescription)
+        }
+        if hasCredentialTable { return nil }
         guard let object = try authObject() else { return nil }
-        guard let entry = object["opencode-go"] as? [String: Any],
-              let key = entry["key"] as? String
-        else { return nil }
-        return key.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        for providerKey in ["opencode-go", "opencode"] {
+            if let entry = object[providerKey] as? [String: Any],
+               let token = ((entry["key"] as? String) ?? (entry["access"] as? String))?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+                return token
+            }
+        }
+        return nil
     }
 
     /// The current `openai` credential: whether it is ChatGPT/Codex OAuth, and when its row was

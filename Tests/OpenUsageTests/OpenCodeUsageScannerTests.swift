@@ -138,13 +138,15 @@ func openCodeRow(_ iso: String, _ cost: String, _ tokens: Int, _ model: String, 
 /// and Codex test that needs one.
 func openCodeAuthStore(
     files: TextFileAccessing = FakeFiles(),
-    sqlite: SQLiteAccessing = OpenCodeFakeSQLite()
+    sqlite: SQLiteAccessing = OpenCodeFakeSQLite(),
+    databasePaths: [String] = []
 ) -> OpenCodeAuthStore {
     OpenCodeAuthStore(
         files: files,
         environment: FakeEnvironment(["OPENCODE_DATA_DIR": "/oc"]),
         homeDirectory: { URL(fileURLWithPath: "/nonexistent") },
-        sqlite: sqlite
+        sqlite: sqlite,
+        databasePaths: { databasePaths }
     )
 }
 
