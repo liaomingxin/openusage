@@ -200,6 +200,8 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         XCTAssertEqual(snapshot.plan, "Pro")
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
         XCTAssertEqual(snapshot.lines.map { used($0) }, [25, 10, 60, 0])
+        let summaryReq = try? XCTUnwrap(routing.requests.first { $0.url.path.contains("retrieveUserQuotaSummary") })
+        XCTAssertEqual(summaryReq?.headers["User-Agent"], AntigravityUsageClient.cloudCodeUserAgent)
         XCTAssertFalse(routing.requests.contains { $0.url.path.contains("fetchAvailableModels") },
                        "a parsed summary must not touch the legacy model endpoints")
     }

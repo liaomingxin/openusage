@@ -299,7 +299,7 @@ final class AntigravityProvider: ProviderRuntime {
         // even one with zero usable buckets — is the answer and must never fall into the legacy chain
         // below, which fabricates "fully used" from missing quota info. A 404 (build without the RPC)
         // reads as `.unavailable` and falls through.
-        switch await usageClient.cloudCode(path: AntigravityUsageClient.quotaSummaryPath, token: token, userAgent: "antigravity", body: [:]) {
+        switch await usageClient.cloudCode(path: AntigravityUsageClient.quotaSummaryPath, token: token, userAgent: AntigravityUsageClient.cloudCodeUserAgent, body: [:]) {
         case .authFailed:
             return .authFailed
         case .ok(let data):
@@ -312,7 +312,7 @@ final class AntigravityProvider: ProviderRuntime {
         }
 
         // Legacy: fetchAvailableModels — the full Antigravity model set (Gemini + Claude + GPT-OSS).
-        switch await usageClient.cloudCode(path: AntigravityUsageClient.fetchModelsPath, token: token, userAgent: "antigravity", body: [:]) {
+        switch await usageClient.cloudCode(path: AntigravityUsageClient.fetchModelsPath, token: token, userAgent: AntigravityUsageClient.cloudCodeUserAgent, body: [:]) {
         case .authFailed:
             return .authFailed
         case .ok(let data):

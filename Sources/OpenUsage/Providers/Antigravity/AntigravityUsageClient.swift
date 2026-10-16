@@ -29,6 +29,10 @@ struct AntigravityUsageClient: Sendable {
     static let retrieveQuotaPath = "/v1internal:retrieveUserQuota"
     static let quotaSummaryPath = "/v1internal:retrieveUserQuotaSummary"
     static let googleOAuthURL = "https://oauth2.googleapis.com/token"
+    /// Cloud Code only includes the "Gemini Models" group (`gemini-5h` / `gemini-weekly`) in
+    /// `retrieveUserQuotaSummary` when the `antigravity` User-Agent carries a version >= the Gemini
+    /// quota-pool release; bare `"antigravity"` returns only `"Claude and GPT models"`.
+    static let cloudCodeUserAgent = "antigravity/2.23.1"
     // Google OAuth "installed application" client credentials, extracted verbatim from the Antigravity
     // app bundle — the same pair the shipped app and the legacy Tauri plugin use. For installed-app OAuth
     // clients Google does not treat the "secret" as confidential (it ships in every copy of the client),
