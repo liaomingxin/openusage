@@ -72,23 +72,36 @@ struct ProviderAccountAssembly {
     let claudeCards: [ClaudeAccountCard]
     /// Extra Claude cards discovered this launch in claude-swap's stash (never the active account).
     let claudeSwapCards: [ClaudeSwapCard]
+    /// Manually configured Kimi cards. Their UUIDs remain stable across token refreshes and relaunches.
+    let kimiAccounts: [KimiAccountConfiguration]
+    /// Additional Grok and Cursor identities discovered in OMP, excluding the native logins.
+    let ompAccounts: [OMPOAuthAccount]
 
     init(
         identityKeysByCard: [String: String],
         extraCodexCards: [CodexExtraCard] = [],
         claudeCards: [ClaudeAccountCard] = [],
-        claudeSwapCards: [ClaudeSwapCard] = []
+        claudeSwapCards: [ClaudeSwapCard] = [],
+        kimiAccounts: [KimiAccountConfiguration] = [],
+        ompAccounts: [OMPOAuthAccount] = []
     ) {
         self.identityKeysByCard = identityKeysByCard
         self.extraCodexCards = extraCodexCards
         self.claudeCards = claudeCards
         self.claudeSwapCards = claudeSwapCards
+        self.kimiAccounts = kimiAccounts
+        self.ompAccounts = ompAccounts
     }
 
     /// `waitsForLoginShell`: true for the menu-bar app (a Finder/Dock launch inherits no shell
     /// exports, so the pass leans on the login-shell layers), false for the one-shot CLI (a terminal
     /// launch's process environment already carries the user's exports).
-    static func make(defaults: UserDefaults = .standard, waitsForLoginShell: Bool) -> ProviderAccountAssembly {
+    static func make(
+        defaults: UserDefaults = .standard,
+        waitsForLoginShell: Bool,
+        kimiAccounts: [KimiAccountConfiguration]? = nil
+    ) -> ProviderAccountAssembly {
+        let kimiAccounts = kimiAccounts ?? KimiAccountsStore().accounts
         // The identity read needs the login shell's exports (CLAUDE_CONFIG_DIR/CODEX_HOME name the
         // default homes), and it reads them through the very same reader the provider auth stores
         // use — `ProcessEnvironmentReader`, which pins identity-relevant keys to the persisted
@@ -102,14 +115,15 @@ struct ProviderAccountAssembly {
         let shellFactsReadable = !waitsForLoginShell
             || LoginShellEnvironment.shared.capturedSuccessfully
             || ShellEnvironmentSnapshotStore.launchSnapshot != nil
+        let defaultHomeFamilies = ProviderAccountID.families.subtracting(["kimi", "grok", "cursor"])
         let families = shellFactsReadable
-            ? ProviderAccountID.families
-            : ProviderAccountID.families.filter { family in
+            ? defaultHomeFamilies
+            : defaultHomeFamilies.filter { family in
                 guard let key = Self.homeOverrideKeys[family] else { return false }
                 return ProcessInfo.processInfo.environment[key]?.nilIfEmpty != nil
             }
-        if families.count < ProviderAccountID.families.count {
-            AppLog.info(.config, "account identity read skipped for \(ProviderAccountID.families.subtracting(families).sorted().joined(separator: ", ")): login shell cold and no shell-environment snapshot exists yet")
+        if families.count < defaultHomeFamilies.count {
+            AppLog.info(.config, "account identity read skipped for \(defaultHomeFamilies.subtracting(families).sorted().joined(separator: ", ")): login shell cold and no shell-environment snapshot exists yet")
         }
         // Extra Codex dumps live at ~/.cli-proxy-api and claude-swap's stash at ~/.claude-swap-backup,
         // neither of which moves with CODEX_HOME / CLAUDE_CONFIG_DIR — so both are safe to read even
@@ -118,6 +132,7 @@ struct ProviderAccountAssembly {
         let claudeSwap = ClaudeSwapDiscovery().extraCredentials()
         guard !families.isEmpty || !extraCodex.isEmpty || !claudeSwap.isEmpty else {
             return ProviderAccountAssembly(identityKeysByCard: [:])
+                .includingKimiAccounts(kimiAccounts).includingOMPAccounts()
         }
         let assemblyStartedAt = ProcessInfo.processInfo.systemUptime
         let assembly = make(
@@ -131,7 +146,7 @@ struct ProviderAccountAssembly {
         )
         let assemblyDurationMS = Int((ProcessInfo.processInfo.systemUptime - assemblyStartedAt) * 1_000)
         AppLog.info(.config, "account assembly duration: \(assemblyDurationMS) ms")
-        return assembly
+        return assembly.includingKimiAccounts(kimiAccounts).includingOMPAccounts()
     }
 
     /// The environment variable that relocates each family's default home — the fact whose

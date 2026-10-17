@@ -2,14 +2,7 @@ import Foundation
 
 @MainActor
 final class GrokProvider: ProviderRuntime {
-    let provider = Provider(
-        id: "grok",
-        displayName: "Grok",
-        icon: .providerMark("grok"),
-        links: [
-            .init(label: "Usage", url: "https://grok.com/?_s=usage")
-        ]
-    )
+    let provider: Provider
 
     let authStore: GrokAuthStore
     let usageClient: GrokUsageClient
@@ -18,6 +11,7 @@ final class GrokProvider: ProviderRuntime {
     let openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
+    let scansLocalLogs: Bool
 
     init(
         authStore: GrokAuthStore = GrokAuthStore(),
@@ -26,8 +20,20 @@ final class GrokProvider: ProviderRuntime {
         piScanner: PiUsageScanner = .shared,
         openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner = OpenCodeSubscriptionUsageScanner(),
         now: @escaping @Sendable () -> Date = Date.init,
-        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
+        id: String = "grok",
+        accountLabel: String? = nil,
+        scansLocalLogs: Bool = true
     ) {
+        self.provider = Provider(
+            id: id,
+            familyName: "Grok",
+            accountLabel: accountLabel,
+            icon: .providerMark("grok"),
+            links: [
+                .init(label: "Usage", url: "https://grok.com/?_s=usage")
+            ]
+        )
         self.authStore = authStore
         self.usageClient = usageClient
         self.logUsageScanner = logUsageScanner
@@ -35,13 +41,14 @@ final class GrokProvider: ProviderRuntime {
         self.openCodeSubscriptionScanner = openCodeSubscriptionScanner
         self.now = now
         self.pricing = pricing
+        self.scansLocalLogs = scansLocalLogs
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
-            .percent(id: "grok.weekly", provider: provider, title: "Weekly", metricLabel: "Weekly limit")
+            .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly", metricLabel: "Weekly limit")
                 .exportingLimit("weekly", unit: "percent"),
-            .badge(id: "grok.payAsYouGo", provider: provider, title: "Extra Usage", metricLabel: "Pay as you go"),
+            .badge(id: "\(provider.id).payAsYouGo", provider: provider, title: "Extra Usage", metricLabel: "Pay as you go"),
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .machineLocal,
@@ -53,13 +60,13 @@ final class GrokProvider: ProviderRuntime {
             // The shared pool split by product, from the same billing response the Weekly meter uses.
             // One row for the whole breakdown rather than a metric per product: the product set is
             // undocumented and grows, and this way a new one renders with no code change.
-            .values(id: "grok.productUsage", provider: provider, title: GrokUsageMapper.productUsageLabel,
+            .values(id: "\(provider.id).productUsage", provider: provider, title: GrokUsageMapper.productUsageLabel,
                     metricLabel: GrokUsageMapper.productUsageLabel, selection: .kind(.percent))
         ]
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same source as `refresh()`: ~/.grok/auth.json with at least one keyed entry.
+        // Read the selected OMP row, or the default CLI auth file, without trying another source.
         await loadOffMainActor { [authStore] in
             ((try? authStore.loadAuthCandidates()) ?? []).isEmpty == false
         }
@@ -74,6 +81,21 @@ final class GrokProvider: ProviderRuntime {
     }
 
     private func loadAndProbe() async throws -> ProviderSnapshot {
+        if authStore.ompAccount != nil {
+            let candidates = try await loadOffMainActor { [authStore] in
+                try authStore.loadAuthCandidates()
+            }
+            guard var state = candidates.first else {
+                throw OMPOAuthError.unavailable("Grok")
+            }
+            if let rawExpiry = state.entry.expiresAt,
+               let expiresAt = OpenUsageISO8601.date(from: rawExpiry),
+               now() >= expiresAt {
+                throw OMPOAuthError.sessionExpired("Grok")
+            }
+            return try await probe(state: &state, accessToken: state.token)
+        }
+
         let candidates = try authStore.loadAuthCandidates()
         var sawExpiredCandidate = false
 
@@ -117,35 +139,37 @@ final class GrokProvider: ProviderRuntime {
             mapped = try GrokUsageMapper.mapCreditsConfig(creditsResponse)
         }
 
-        let plan = await fetchPlanName(accessToken: state.token)
+        let plan = try await fetchPlanName(accessToken: state.token)
 
         // Local spend tiles from completed session turns. Recorded Grok costs win when available;
         // older turns without a carried cost use the shared pricing store.
         var usageHistory: ProviderUsageHistory?
-        let scanPricing = await pricing()
-        let nativeScan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: scanPricing)
-        let piScan = await piScanner.scan(cardID: provider.id, now: now(), pricing: scanPricing)
-        let openCodeScan = await openCodeSubscriptionScanner.scan(now: now(), pricing: scanPricing).localSpend["grok"]
-        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan, openCodeScan]) {
-            var sources = ["Grok logs"]
-            if piScan != nil { sources.append("pi") }
-            if openCodeScan != nil { sources.append("OpenCode") }
-            let note = "From your \(sources.joined(separator: " and ")) (estimated)"
-            usageHistory = ProviderUsageHistory(
-                series: scan.series,
-                modelUsage: scan.modelUsage,
-                unknownModelsByDay: scan.unknownModelsByDay
-            )
-            SpendTileMapper.appendTokenUsage(
-                scan.series,
-                to: &mapped.lines,
-                now: now(),
-                unknownModelsByDay: scan.unknownModelsByDay,
-                modelUsage: scan.modelUsage,
-                modelSourceNote: note,
-                pricing: scanPricing
-            )
-            SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
+        if scansLocalLogs {
+            let scanPricing = await pricing()
+            let nativeScan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: scanPricing)
+            let piScan = await piScanner.scan(cardID: provider.id, now: now(), pricing: scanPricing)
+            let openCodeScan = await openCodeSubscriptionScanner.scan(now: now(), pricing: scanPricing).localSpend["grok"]
+            if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan, openCodeScan]) {
+                var sources = ["Grok logs"]
+                if piScan != nil { sources.append("pi") }
+                if openCodeScan != nil { sources.append("OpenCode") }
+                let note = "From your \(sources.joined(separator: " and ")) (estimated)"
+                usageHistory = ProviderUsageHistory(
+                    series: scan.series,
+                    modelUsage: scan.modelUsage,
+                    unknownModelsByDay: scan.unknownModelsByDay
+                )
+                SpendTileMapper.appendTokenUsage(
+                    scan.series,
+                    to: &mapped.lines,
+                    now: now(),
+                    unknownModelsByDay: scan.unknownModelsByDay,
+                    modelUsage: scan.modelUsage,
+                    modelSourceNote: note,
+                    pricing: scanPricing
+                )
+                SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
+            }
         }
 
         return ProviderSnapshot.make(
@@ -159,6 +183,19 @@ final class GrokProvider: ProviderRuntime {
     }
 
     private func fetchCreditsConfigWithRetry(accessToken: String, state: inout GrokAuthState) async throws -> HTTPResponse {
+        if authStore.ompAccount != nil {
+            let response: HTTPResponse
+            do {
+                response = try await usageClient.fetchCreditsConfig(accessToken: accessToken)
+            } catch {
+                throw GrokUsageError.connectionFailed
+            }
+            guard !ProviderAuthRetry.isAuthFailure(response) else {
+                throw OMPOAuthError.sessionExpired("Grok")
+            }
+            return response
+        }
+
         var working = state
         defer { state = working }
         return try await ProviderAuthRetry.fetch(
@@ -176,7 +213,8 @@ final class GrokProvider: ProviderRuntime {
     }
 
     private func refreshAccessToken(state: inout GrokAuthState) async -> String? {
-        guard let refreshToken = authStore.refreshToken(for: state.entry) else {
+        guard authStore.ompAccount == nil,
+              let refreshToken = authStore.refreshToken(for: state.entry) else {
             return nil
         }
 
@@ -240,11 +278,16 @@ final class GrokProvider: ProviderRuntime {
         return now().addingTimeInterval(60 * 60)
     }
 
-    private func fetchPlanName(accessToken: String) async -> String? {
+    private func fetchPlanName(accessToken: String) async throws -> String? {
+        let response: HTTPResponse
         do {
-            return GrokUsageMapper.planName(from: try await usageClient.fetchSettings(accessToken: accessToken))
+            response = try await usageClient.fetchSettings(accessToken: accessToken)
         } catch {
             return nil
         }
+        if authStore.ompAccount != nil, ProviderAuthRetry.isAuthFailure(response) {
+            throw OMPOAuthError.sessionExpired("Grok")
+        }
+        return GrokUsageMapper.planName(from: response)
     }
 }

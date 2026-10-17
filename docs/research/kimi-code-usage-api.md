@@ -4,6 +4,13 @@ Research + live verification of the Kimi Code CLI's subscription-usage query, do
 2026-08-25. Kimi Code shipped as an OpenUsage provider (`Sources/OpenUsage/Providers/Kimi/`) the same day — this note is the
 protocol reference behind it, in the same spirit as the Codex reset-credit notes.
 
+> Updated 2026-10-17: the earlier OAuth-only conclusion was incorrect. A live request with a Kimi
+> Coding Plan API key succeeds with either `x-api-key` or `Authorization: Bearer`; no CLI login is
+> needed for that path. Current responses include `usages.limit_5h`, `limit_month_total`, and
+> `limit_month_code` with `used_ratio` and `reset_time`, plus `booster_wallet`. Legacy accounts can
+> still return `usage` and `limits` counters. OpenUsage now supports both authentication methods and
+> response forms; see [Kimi Code](../providers/kimi.md) for adding account cards.
+
 Sources: static reverse engineering of the `kimi` 0.38.0 binary (Node SEA
 single-executable, `packages/oauth/src/managed-usage.ts` and friends extracted
 from the embedded bundle), plus a live end-to-end query against a real
@@ -13,8 +20,8 @@ logged-in account (identifiers below are redacted).
 
 Moonshot's coding-agent CLI (`kimi`, "The Starting Point for Next-Gen Agents"),
 installed under `~/.kimi-code/` with the binary at `~/.kimi-code/bin/kimi`.
-Auth is OAuth-only for the managed `managed:kimi-code` provider; there is no
-API-key path for subscription usage. The CLI surfaces usage via the `/usage`
+The managed `managed:kimi-code` CLI provider uses OAuth. The same subscription usage endpoint also
+accepts Coding Plan API keys. The CLI surfaces usage via the `/usage`
 slash command (TUI) and the "Plan Usage" submenu (local Web UI at
 `kimi web`); both funnel into one service method that makes exactly one
 upstream HTTP call.
@@ -159,8 +166,8 @@ A first pass at the provider contract, for whenever this gets implemented:
 | Call | Method & URL | Auth |
 |---|---|---|
 | Refresh | `POST https://auth.kimi.com/api/oauth/token` | refresh-token grant + device headers |
-| Usage | `GET https://api.kimi.com/coding/v1/usages` | `Bearer <access_token>` only |
-| User info | `GET https://api.kimi.com/coding/v1/me` (returns `user_id`, nickname/avatar, membership; used for the CLI's account menu) | same |
+| Usage | `GET https://api.kimi.com/coding/v1/usages` | OAuth `Bearer <access_token>` or Coding Plan `x-api-key` |
+| User info | `GET https://api.kimi.com/coding/v1/me` (returns `user_id`, nickname/avatar, membership; used for the CLI's account menu) | `Bearer <access_token>` |
 
 ## Caveats for implementation
 

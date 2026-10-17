@@ -2,13 +2,7 @@ import Foundation
 
 @MainActor
 final class KimiProvider: ProviderRuntime {
-    let provider = Provider(
-        id: "kimi",
-        displayName: "Kimi Code",
-        icon: .providerMark("kimi")
-        // No `links:` — Kimi Code's usage view lives in the CLI (`/usage`, `kimi web` local UI);
-        // Moonshot ships no public usage dashboard to link to yet.
-    )
+    let provider: Provider
 
     let authStore: KimiAuthStore
     let usageClient: KimiUsageClient
@@ -17,6 +11,7 @@ final class KimiProvider: ProviderRuntime {
     let openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner
     let pricing: @Sendable () async -> ModelPricing
     let now: @Sendable () -> Date
+    let scansLocalLogs: Bool
 
     init(
         authStore: KimiAuthStore = KimiAuthStore(),
@@ -25,8 +20,14 @@ final class KimiProvider: ProviderRuntime {
         cliScanner: KimiCLIUsageScanner = KimiCLIUsageScanner(),
         openCodeSubscriptionScanner: OpenCodeSubscriptionUsageScanner = OpenCodeSubscriptionUsageScanner(),
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        id: String = "kimi",
+        accountLabel: String? = nil,
+        scansLocalLogs: Bool = true
     ) {
+        self.provider = Provider(
+            id: id, familyName: "Kimi Code", accountLabel: accountLabel, icon: .providerMark("kimi")
+        )
         self.authStore = authStore
         self.usageClient = usageClient
         self.piScanner = piScanner
@@ -34,6 +35,7 @@ final class KimiProvider: ProviderRuntime {
         self.openCodeSubscriptionScanner = openCodeSubscriptionScanner
         self.pricing = pricing
         self.now = now
+        self.scansLocalLogs = scansLocalLogs
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
@@ -42,15 +44,21 @@ final class KimiProvider: ProviderRuntime {
             // whole-percent rounding), so any touched window reads above 0 — `used == 0` really does
             // mean the rolling 5-hour window is untouched. The signal is additionally gated on a
             // future `resetsAt`, so a payload without a reset time renders exactly as it does today.
-            .percent(id: "kimi.session", provider: provider, title: "Session",
+            .percent(id: "\(provider.id).session", provider: provider, title: "Session",
                      metricLabel: "Session", sessionStartSignal: .zeroUsage)
                 .exportingLimit("session", unit: "percent"),
-            .percent(id: "kimi.weekly", provider: provider, title: "Weekly",
+            .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly",
                      metricLabel: "Weekly")
                 .exportingLimit("weekly", unit: "percent"),
+            .percent(id: "\(provider.id).monthlyTotal", provider: provider, title: "Monthly Total",
+                     metricLabel: "Monthly Total")
+                .exportingLimit("monthlyTotal", unit: "percent"),
+            .percent(id: "\(provider.id).monthlyCoding", provider: provider, title: "Monthly Coding",
+                     metricLabel: "Monthly Coding")
+                .exportingLimit("monthlyCoding", unit: "percent"),
             // Pay-as-you-go booster balance; absent on subscription accounts, so seeded off by
             // default and below the caret for the pay-as-you-go users who enable it.
-            .dollarBalance(id: "kimi.booster", provider: provider, title: "Booster",
+            .dollarBalance(id: "\(provider.id).booster", provider: provider, title: "Booster",
                            metricLabel: "Booster", valueWord: "left")
                 .exportingLimit("booster", kind: .balance, unit: "usd",
                                 source: .value(kind: .dollars))
@@ -58,44 +66,34 @@ final class KimiProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same loader as `refresh()`: the kimi CLI's credential file with a refresh token.
-        await loadOffMainActor { [authStore] in authStore.loadCredentials() } != nil
+        await loadOffMainActor { [authStore] in
+            authStore.usesAPIKey ? authStore.loadAPIKey() != nil : authStore.loadCredentials() != nil
+        }
     }
 
     func refresh() async -> ProviderSnapshot {
-        guard var credentials = await loadOffMainActor({ [authStore] in authStore.loadCredentials() }) else {
-            return ProviderSnapshot.error(provider: provider, error: KimiAuthError.notLoggedIn)
-        }
-        let region = await loadOffMainActor { [authStore] in authStore.region() }
-        let deviceID = await loadOffMainActor { [authStore] in authStore.deviceID() }
-
         do {
-            // 15-minute access tokens: refresh eagerly when at/near expiry so the usage call never
-            // starts from a token we know is dead.
-            if authStore.needsRefresh(credentials) {
-                credentials = try await refreshCredentials(credentials, deviceID: deviceID)
-            }
-
-            let response = try await fetchUsageWithRetry(
-                credentials: &credentials, region: region, deviceID: deviceID
-            )
+            let response = try await fetchUsage()
             var mapped = try KimiUsageMapper.map(response, now: now())
-            let priced = await pricing()
-            let piScan = await piScanner.scan(cardID: provider.id, now: now(), pricing: priced)
-            let cliScan = cliScanner.scan(now: now(), pricing: priced)
-            let openCodeScan = await openCodeSubscriptionScanner.scan(now: now(), pricing: priced).localSpend[provider.id]
-            if let scan = DailyUsageAccumulator.merged([piScan, cliScan, openCodeScan]) {
-                SpendTileMapper.appendTokenUsage(
-                    scan.series, to: &mapped.lines, now: now(),
-                    unknownModelsByDay: scan.unknownModelsByDay,
-                    modelUsage: scan.modelUsage,
-                    modelSourceNote: "From your Kimi Code logs (estimated)",
-                    pricing: priced
-                )
-                mapped.lines.removeAll { $0.label == "No data" }
+            var history: LogUsageScan?
+            if scansLocalLogs {
+                let priced = await pricing()
+                let piScan = await piScanner.scan(cardID: provider.id, now: now(), pricing: priced)
+                let cliScan = cliScanner.scan(now: now(), pricing: priced)
+                let openCodeScan = await openCodeSubscriptionScanner.scan(now: now(), pricing: priced).localSpend[provider.id]
+                history = DailyUsageAccumulator.merged([piScan, cliScan, openCodeScan])
+                if let history {
+                    SpendTileMapper.appendTokenUsage(
+                        history.series, to: &mapped.lines, now: now(),
+                        unknownModelsByDay: history.unknownModelsByDay,
+                        modelUsage: history.modelUsage,
+                        modelSourceNote: "From your Kimi Code logs (estimated)",
+                        pricing: priced
+                    )
+                    mapped.lines.removeAll { $0.label == "No data" }
+                }
             }
             MetricLine.appendNoDataIfNeeded(&mapped.lines)
-            let history = DailyUsageAccumulator.merged([piScan, cliScan, openCodeScan])
             return ProviderSnapshot.make(
                 provider: provider,
                 plan: mapped.plan,
@@ -110,6 +108,37 @@ final class KimiProvider: ProviderRuntime {
         } catch {
             return ProviderSnapshot.error(provider: provider, error: error)
         }
+    }
+
+    private func fetchUsage() async throws -> HTTPResponse {
+        let region = await loadOffMainActor { [authStore] in authStore.region() }
+        if authStore.usesAPIKey {
+            guard let key = await loadOffMainActor({ [authStore] in authStore.loadAPIKey() }) else {
+                throw KimiAccountAuthError.missingAPIKey
+            }
+            let response: HTTPResponse
+            do {
+                response = try await usageClient.fetchUsage(apiKey: key, region: region)
+            } catch {
+                throw KimiUsageError.connectionFailed
+            }
+            if ProviderAuthRetry.isAuthFailure(response) {
+                throw KimiAccountAuthError.rejectedAPIKey
+            }
+            return response
+        }
+
+        guard var credentials = await loadOffMainActor({ [authStore] in authStore.loadCredentials() }) else {
+            throw KimiAuthError.notLoggedIn
+        }
+        let deviceID = await loadOffMainActor { [authStore] in authStore.deviceID() }
+        // Access tokens last 15 minutes; renew before sending one known to be expired.
+        if authStore.needsRefresh(credentials) {
+            credentials = try await refreshCredentials(credentials, deviceID: deviceID)
+        }
+        return try await fetchUsageWithRetry(
+            credentials: &credentials, region: region, deviceID: deviceID
+        )
     }
 
     /// The shared attempt → on 401 refresh → retry-once sequence. The closure owns the provider-
@@ -138,10 +167,9 @@ final class KimiProvider: ProviderRuntime {
         )
     }
 
-    /// Mints a fresh access token and writes the rotated pair back to the credential file the
-    /// `kimi` CLI reads. A failed save is logged loudly and the refreshed token still serves this
-    /// refresh — but the next one must not reuse the stale refresh token, so it fails visibly
-    /// (`invalid_grant` → "log in again") rather than silently looping.
+    /// Mints a fresh access token and writes the rotated pair back to the default CLI credential
+    /// file. A failed save is logged; the current request can still use the new token, while a
+    /// later invalid_grant is surfaced rather than falling back to another account.
     private func refreshCredentials(
         _ credentials: KimiCredentials,
         deviceID: String?
@@ -162,7 +190,7 @@ final class KimiProvider: ProviderRuntime {
         do {
             try authStore.save(updated)
         } catch {
-            AppLog.error(LogTag.auth("kimi"), "failed to persist rotated credentials; using the refreshed token for this session only: \(error.localizedDescription)")
+            AppLog.error(LogTag.auth(provider.id), "failed to persist rotated credentials; using the refreshed token for this session only: \(error.localizedDescription)")
         }
         return updated
     }

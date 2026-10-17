@@ -39,11 +39,9 @@ enum KimiAuthError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Reads the credentials the [Kimi Code](https://www.kimi.com) CLI (`kimi`) already placed on this
-/// machine. Kimi's subscription-usage API is OAuth-only — there is no API-key path — so OpenUsage
-/// reuses the CLI's login instead of asking the user for a token, exactly like the Codex provider
-/// reads `~/.codex/auth.json`. The region file selects the API host (`cn` → api.kimi.com,
-/// `global` → api.kimi.ai); the device ID rides along on auth-server calls only.
+/// Reads the default CLI OAuth credentials, or an additional card's app-managed API key.
+/// API-key cards never read the CLI's credentials or device ID. The region selects the usage API
+/// host (`cn` → api.kimi.com, `global` → api.kimi.ai).
 struct KimiAuthStore: Sendable {
     static let kimiHome = "~/.kimi-code"
     static let credentialsPath = kimiHome + "/credentials/kimi-code.json"
@@ -55,32 +53,52 @@ struct KimiAuthStore: Sendable {
 
     var files: TextFileAccessing
     var now: @Sendable () -> Date
+    let apiKeyPath: String?
+    let regionOverride: String?
 
     init(
         files: TextFileAccessing = LocalTextFileAccessor(),
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        apiKeyPath: String? = nil,
+        regionOverride: String? = nil
     ) {
         self.files = files
         self.now = now
+        self.apiKeyPath = apiKeyPath
+        self.regionOverride = regionOverride
     }
+
+    var usesAPIKey: Bool { apiKeyPath != nil }
 
     /// The stored credential, or `nil` when the file is missing/unreadable or carries no refresh
     /// token — without one there is no way to mint fresh access tokens, which is the same bar
     /// `refresh()` and `hasLocalCredentials()` apply (they share this loader).
     func loadCredentials() -> KimiCredentials? {
-        guard files.exists(Self.credentialsPath),
+        guard !usesAPIKey,
+              files.exists(Self.credentialsPath),
               let text = try? files.readText(Self.credentialsPath),
               let credentials = Self.parse(text),
-              credentials.refreshToken?.isEmpty == false
+              credentials.refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         else {
             return nil
         }
         return credentials
     }
 
-    /// Persists rotated credentials back to the same file the `kimi` CLI reads, so its refreshes and
-    /// ours never race past each other on a stale refresh token.
+    /// Reads only this card's app-managed key file, never environment variables or another login.
+    func loadAPIKey() -> String? {
+        guard let apiKeyPath,
+              files.exists(apiKeyPath),
+              let text = try? files.readText(apiKeyPath)
+        else {
+            return nil
+        }
+        return UserAPIKeyStore.keyFromConfigText(text)
+    }
+
+    /// Persists rotated credentials only to the default CLI source. API-key cards cannot write it.
     func save(_ credentials: KimiCredentials) throws {
+        guard !usesAPIKey else { throw KimiAuthError.invalidAuthPayload }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(credentials),
@@ -101,6 +119,10 @@ struct KimiAuthStore: Sendable {
 
     /// `cn` (the default) or `global` — selects the usage API host.
     func region() -> String {
+        if let regionOverride {
+            let trimmed = regionOverride.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return trimmed.isEmpty ? "cn" : trimmed
+        }
         guard files.exists(Self.regionPath),
               let raw = try? files.readText(Self.regionPath)
         else {
@@ -110,9 +132,9 @@ struct KimiAuthStore: Sendable {
         return trimmed.isEmpty ? "cn" : trimmed
     }
 
-    /// The stable UUID the CLI sends as `X-Msh-Device-Id` on auth-server calls. Optional: a missing
-    /// file still allows a refresh (the header is simply omitted).
+    /// The CLI's device ID belongs only to its default OAuth account.
     func deviceID() -> String? {
+        guard !usesAPIKey else { return nil }
         guard files.exists(Self.deviceIDPath),
               let raw = try? files.readText(Self.deviceIDPath)
         else {
@@ -124,5 +146,27 @@ struct KimiAuthStore: Sendable {
 
     static func parse(_ text: String) -> KimiCredentials? {
         ProviderParse.decodeJSONWithHexFallback(text, as: KimiCredentials.self)
+    }
+}
+
+/// Additional API-key cards provide guidance independent of the default CLI login.
+enum KimiAccountAuthError: Error, LocalizedError, Equatable, CategorizedError {
+    case missingAPIKey
+    case rejectedAPIKey
+
+    var errorDescription: String? {
+        switch self {
+        case .missingAPIKey:
+            return "This card's Kimi API key is missing or invalid. Replace the account's key in Customize."
+        case .rejectedAPIKey:
+            return "Kimi rejected this card's API key. Replace it in Customize with a Kimi Coding Plan key, not a Moonshot Open Platform key."
+        }
+    }
+
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .missingAPIKey: .notLoggedIn
+        case .rejectedAPIKey: .authInvalid
+        }
     }
 }

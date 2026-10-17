@@ -2,15 +2,7 @@ import Foundation
 
 @MainActor
 final class CursorProvider: ProviderRuntime {
-    let provider = Provider(
-        id: "cursor",
-        displayName: "Cursor",
-        icon: .providerMark("cursor"),
-        links: [
-            .init(label: "Status", url: "https://status.cursor.com/"),
-            .init(label: "Dashboard", url: "https://www.cursor.com/dashboard")
-        ]
-    )
+    let provider: Provider
 
     let authStore: CursorAuthStore
     let usageClient: CursorUsageClient
@@ -25,8 +17,20 @@ final class CursorProvider: ProviderRuntime {
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
         spendHistoryBudget: TimeInterval = 20,
-        usageHistoryStore: CursorUsageHistoryStore = CursorUsageHistoryStore()
+        usageHistoryStore: CursorUsageHistoryStore = CursorUsageHistoryStore(),
+        id: String = "cursor",
+        accountLabel: String? = nil
     ) {
+        self.provider = Provider(
+            id: id,
+            familyName: "Cursor",
+            accountLabel: accountLabel,
+            icon: .providerMark("cursor"),
+            links: [
+                .init(label: "Status", url: "https://status.cursor.com/"),
+                .init(label: "Dashboard", url: "https://www.cursor.com/dashboard")
+            ]
+        )
         self.authStore = authStore
         self.usageClient = usageClient
         self.now = now
@@ -37,20 +41,20 @@ final class CursorProvider: ProviderRuntime {
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
-            .percent(id: "cursor.usage", provider: provider, title: "Total Usage", metricLabel: "Total usage")
+            .percent(id: "\(provider.id).usage", provider: provider, title: "Total Usage", metricLabel: "Total usage")
                 .exportingLimit("totalUsage", unit: "percent"),
-            .percent(id: "cursor.auto", provider: provider, title: "Cursor Models")
+            .percent(id: "\(provider.id).auto", provider: provider, title: "Cursor Models")
                 .exportingLimit("autoUsage", unit: "percent"),
-            .percent(id: "cursor.api", provider: provider, title: "Other Models")
+            .percent(id: "\(provider.id).api", provider: provider, title: "Other Models")
                 .exportingLimit("apiUsage", unit: "percent"),
-            .percent(id: "cursor.grokBot", provider: provider, title: "Grok Bot", metricLabel: "Grok Bot usage")
+            .percent(id: "\(provider.id).grokBot", provider: provider, title: "Grok Bot", metricLabel: "Grok Bot usage")
                 .exportingLimit("grokBot", unit: "percent"),
-            .boundedDollars(id: "cursor.onDemand", provider: provider, title: "Extra Usage", metricLabel: "On-demand", limit: 100, valueWord: "spent")
+            .boundedDollars(id: "\(provider.id).onDemand", provider: provider, title: "Extra Usage", metricLabel: "On-demand", limit: 100, valueWord: "spent")
                 .exportingLimit("onDemand", unit: "usd", source: .progressOrValue(kind: .dollars)),
-            .boundedCount(id: "cursor.requests", provider: provider, title: "Requests", limit: 500,
+            .boundedCount(id: "\(provider.id).requests", provider: provider, title: "Requests", limit: 500,
                           suffix: "requests", periodDurationMs: CursorUsageMapper.billingPeriodMs)
                 .exportingLimit("requests", unit: "requests"),
-            .dollarBalance(id: "cursor.credits", provider: provider, title: "Credits", valueWord: "left")
+            .dollarBalance(id: "\(provider.id).credits", provider: provider, title: "Credits", valueWord: "left")
                 .exportingLimit("credits", kind: .balance, unit: "usd", source: .value(kind: .dollars)),
             .usageTrend(provider: provider)
                 .exportingHistory(
@@ -68,16 +72,23 @@ final class CursorProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same source as `refresh()`: any auth state (state DB or keychain) counts.
+        // Probe only the selected source; an OMP card must never borrow the native login.
         await loadOffMainActor { [authStore] in authStore.loadAuthState() } != nil
     }
 
     func refresh() async -> ProviderSnapshot {
-        guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
-            return ProviderSnapshot.error(provider: provider, error: CursorAuthError.notLoggedIn)
-        }
-
         do {
+            let state: CursorAuthState
+            if authStore.ompAccount != nil {
+                state = try await loadOffMainActor { [authStore] in
+                    try authStore.loadOMPAuthState()
+                }
+            } else {
+                guard let nativeState = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
+                    throw CursorAuthError.notLoggedIn
+                }
+                state = nativeState
+            }
             return try await probe(authState: state)
         } catch {
             return ProviderSnapshot.error(provider: provider, error: error)
@@ -88,7 +99,11 @@ final class CursorProvider: ProviderRuntime {
         var authState = initialState
         var accessToken = authState.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
 
-        if authStore.needsRefresh(accessToken) {
+        if authState.source == .omp, let expiresAt = authState.expiresAt, expiresAt <= now() {
+            throw OMPOAuthError.sessionExpired("Cursor")
+        }
+
+        if authState.source != .omp, authStore.needsRefresh(accessToken) {
             do {
                 if let refreshed = try await refreshAccessToken(authState: authState) {
                     authState.accessToken = refreshed
@@ -104,6 +119,9 @@ final class CursorProvider: ProviderRuntime {
         }
 
         guard let accessToken else {
+            if authState.source == .omp {
+                throw OMPOAuthError.unavailable("Cursor")
+            }
             throw CursorAuthError.notLoggedIn
         }
 
@@ -228,6 +246,19 @@ final class CursorProvider: ProviderRuntime {
     }
 
     private func fetchUsageWithRetry(accessToken: String, authState: inout CursorAuthState) async throws -> HTTPResponse {
+        if authState.source == .omp {
+            let response: HTTPResponse
+            do {
+                response = try await usageClient.fetchUsage(accessToken: accessToken)
+            } catch {
+                throw CursorUsageError.connectionFailed
+            }
+            if ProviderAuthRetry.isAuthFailure(response) {
+                throw OMPOAuthError.sessionExpired("Cursor")
+            }
+            return response
+        }
+
         var working = authState
         defer { authState = working }
         return try await ProviderAuthRetry.fetch(
@@ -247,6 +278,9 @@ final class CursorProvider: ProviderRuntime {
     }
 
     private func refreshAccessToken(authState: CursorAuthState) async throws -> String? {
+        guard authState.source != .omp else {
+            throw OMPOAuthError.readOnly
+        }
         guard let refreshToken = authState.refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
             return nil
         }

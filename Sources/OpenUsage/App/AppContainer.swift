@@ -19,6 +19,8 @@ final class AppContainer {
     /// `APIKeyManaging`. Each matching Customize provider detail shows an API Key section and writes
     /// changes through the capability. Empty when no installed provider needs a user key.
     let apiKeyProviders: [any APIKeyManaging]
+    /// Explicit Kimi account sources; edits apply on the next launch, like other account discovery.
+    let kimiAccountsStore: KimiAccountsStore
     /// Quota pace notification preferences (three independent triggers). Drives the Settings section
     /// and is read by `WidgetDataStore.evaluateNotifications`.
     let notificationSettings: NotificationSettingsStore
@@ -69,13 +71,18 @@ final class AppContainer {
         self.shellEnvironmentSnapshotTask = ShellEnvironmentSnapshotStore(defaults: .standard).startRefreshTask()
         // The launch account pass: which account is signed in at each family's default home. Feeds
         // the snapshot cache's account stamp and reconciles the account registry.
-        let accountAssembly = ProviderAccountAssembly.make(waitsForLoginShell: true)
+        let kimiAccountsStore = KimiAccountsStore()
+        let accountAssembly = ProviderAccountAssembly.make(
+            waitsForLoginShell: true, kimiAccounts: kimiAccountsStore.accounts
+        )
 
         let providers = ProviderCatalog.make(
             extraCodexCards: accountAssembly.extraCodexCards,
             claudeCards: accountAssembly.claudeCards,
             claudeSwapCards: accountAssembly.claudeSwapCards,
-            claudeIdentityKeys: accountAssembly.identityKeysByCard
+            claudeIdentityKeys: accountAssembly.identityKeysByCard,
+            kimiAccounts: accountAssembly.kimiAccounts,
+            ompAccounts: accountAssembly.ompAccounts
         )
         let registry = WidgetRegistry.from(providers)
         let apiKeyProviders = providers.compactMap { $0 as? any APIKeyManaging }
@@ -135,6 +142,7 @@ final class AppContainer {
         self.registry = registry
         self.enablement = enablement
         self.apiKeyProviders = apiKeyProviders
+        self.kimiAccountsStore = kimiAccountsStore
         self.notificationSettings = notificationSettings
         self.layout = layout
         self.dataStore = dataStore

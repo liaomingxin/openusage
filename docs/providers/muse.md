@@ -21,3 +21,13 @@ OpenUsage reads the login already saved by `muse login`:
 ## Endpoints
 
 - `POST https://api.meta.ai/muse-code/key` with `Authorization: Bearer <access_token>` and `x-api-version: 1.0.0`.
+
+## When Quotas Are Unavailable
+
+Muse can return a successful response with an active subscription and plan name but no `subs_usage`
+while the 5-hour window is idle. Session and Weekly then show **No data**, even if the weekly pool
+has usage. This is not a login failure, and OpenUsage does not invent an unused allowance.
+Local token counts and estimated spend remain available.
+
+Quota reporting usually resumes when normal Muse activity starts another session window.
+See the [upstream report](https://github.com/steipete/CodexBar/issues/4002).

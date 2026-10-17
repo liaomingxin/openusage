@@ -4,11 +4,13 @@ struct CursorAuthState: Hashable, Sendable {
     enum Source: Hashable, Sendable {
         case sqlite
         case keychain
+        case omp
     }
 
     var accessToken: String?
     var refreshToken: String?
     var source: Source
+    var expiresAt: Date? = nil
 }
 
 enum CursorAuthError: Error, LocalizedError, Equatable {
@@ -40,18 +42,28 @@ struct CursorAuthStore: Sendable {
     var sqlite: SQLiteAccessing
     var keychain: KeychainAccessing
     var now: @Sendable () -> Date
+    let ompAccount: OMPOAuthAccount?
+    private let ompStore: OMPOAuthStore
 
     init(
         sqlite: SQLiteAccessing = SQLiteCLIAccessor(),
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        ompAccount: OMPOAuthAccount? = nil,
+        ompStore: OMPOAuthStore = OMPOAuthStore()
     ) {
         self.sqlite = sqlite
         self.keychain = keychain
         self.now = now
+        self.ompAccount = ompAccount
+        self.ompStore = ompStore
     }
 
     func loadAuthState() -> CursorAuthState? {
+        if ompAccount != nil {
+            return try? loadOMPAuthState()
+        }
+
         let sqliteAccessToken = readStateValue(Self.accessTokenKey)
         let sqliteRefreshToken = readStateValue(Self.refreshTokenKey)
         let sqliteMembershipType = readStateValue(Self.membershipTypeKey)?
@@ -94,6 +106,19 @@ struct CursorAuthStore: Sendable {
         return nil
     }
 
+    func loadOMPAuthState() throws -> CursorAuthState {
+        guard let ompAccount else {
+            throw OMPOAuthError.unavailable("Cursor")
+        }
+        let credential = try ompStore.credential(for: ompAccount)
+        return CursorAuthState(
+            accessToken: credential.accessToken,
+            refreshToken: nil,
+            source: .omp,
+            expiresAt: credential.expiresAt
+        )
+    }
+
     func needsRefresh(_ accessToken: String?) -> Bool {
         guard let accessToken,
               let expiresAt = Self.tokenExpiration(accessToken)
@@ -104,11 +129,16 @@ struct CursorAuthStore: Sendable {
     }
 
     func saveAccessToken(_ accessToken: String, source: CursorAuthState.Source) throws {
+        guard ompAccount == nil else {
+            throw OMPOAuthError.readOnly
+        }
         switch source {
         case .sqlite:
             try writeStateValue(Self.accessTokenKey, accessToken)
         case .keychain:
             try keychain.writeGenericPassword(service: Self.keychainAccessTokenService, value: accessToken)
+        case .omp:
+            throw OMPOAuthError.readOnly
         }
     }
 

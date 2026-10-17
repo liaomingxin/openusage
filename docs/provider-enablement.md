@@ -23,6 +23,12 @@ This check happens **once per provider**. After that, the provider is yours to m
 
 A newly discovered extra Codex account (a second ChatGPT login) is treated the same way: it appears once, on the launch that first sees its credential file, and then stays under your toggle. So is a Claude account managed by [claude-swap](providers/claude.md#claude-swap-accounts), which appears on the launch that first sees its stashed config snapshot.
 
+Additional [Kimi accounts](providers/kimi.md#add-an-account) follow the same rule after restart.
+Each is added by entering its Coding Plan API key directly in Customize.
+
+Grok and Cursor accounts already signed in through OMP are discovered automatically at launch.
+Accounts matching the native login are not duplicated; other accounts follow the same enablement rule.
+
 ## Your choices always stick
 
 Everything you set in Customize — providers on or off, metric layout, menu-bar stars — carries across updates untouched. The only thing an update may ever change is turning **on** a provider you have never seen before, and only when you actually have that tool installed.

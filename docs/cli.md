@@ -18,7 +18,7 @@ writes successful results to the same cache. Credentials are used locally and ne
 
 A provider argument names providers by plain string matching, exactly like the
 [local HTTP API](local-http-api.md): an exact provider ID names that provider, and a family ID
-(`claude`, `codex`) names every account card of that family — with one account that's exactly the one
+(`claude`, `codex`, `cursor`, `grok`, `kimi`) names every account card of that family — with one account that's exactly the one
 card, so existing usage keeps working unchanged as multi-account support arrives. The output envelope
 contains every matched provider; an ID that names nothing exits with an error. There is no aliasing
 or account-picking logic.

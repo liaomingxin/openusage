@@ -9,7 +9,9 @@ enum ProviderCatalog {
         extraCodexCards: [CodexExtraCard] = [],
         claudeCards: [ClaudeAccountCard] = [],
         claudeSwapCards: [ClaudeSwapCard] = [],
-        claudeIdentityKeys: [String: String] = [:]
+        claudeIdentityKeys: [String: String] = [:],
+        kimiAccounts: [KimiAccountConfiguration] = [],
+        ompAccounts: [OMPOAuthAccount] = []
     ) -> [ProviderRuntime] {
         // Default provider order (see AGENTS.md "## Providers"): the three established providers first,
         // then every other provider alphabetically by display name. Extra account cards sit immediately
@@ -65,13 +67,41 @@ enum ProviderCatalog {
                 scansLocalLogs: false
             )
         }
+        providers.append(CursorProvider())
+        for account in ompAccounts where account.family == "cursor" {
+            providers.append(CursorProvider(
+                authStore: CursorAuthStore(ompAccount: account),
+                id: account.cardID,
+                accountLabel: account.accountLabel
+            ))
+        }
         providers += [
-            CursorProvider(),
             AntigravityProvider(),
             CopilotProvider(defaults: defaults),
             DevinProvider(),
-            GrokProvider(),
-            KimiProvider(),
+            GrokProvider()
+        ]
+        for account in ompAccounts where account.family == "grok" {
+            providers.append(GrokProvider(
+                authStore: GrokAuthStore(ompAccount: account),
+                id: account.cardID,
+                accountLabel: account.accountLabel,
+                scansLocalLogs: false
+            ))
+        }
+        providers.append(KimiProvider())
+        providers += kimiAccounts.map { account in
+            KimiProvider(
+                authStore: KimiAuthStore(
+                    apiKeyPath: account.credentialPath,
+                    regionOverride: account.region
+                ),
+                id: account.cardID,
+                accountLabel: account.label,
+                scansLocalLogs: false
+            )
+        }
+        providers += [
             MuseProvider(),
             OllamaProvider(),
             OpenCodeProvider(),

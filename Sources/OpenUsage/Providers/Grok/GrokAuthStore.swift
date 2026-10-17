@@ -51,16 +51,39 @@ struct GrokAuthStore: Sendable {
 
     var files: TextFileAccessing
     var now: @Sendable () -> Date
+    let ompAccount: OMPOAuthAccount?
+    private let ompStore: OMPOAuthStore
 
     init(
         files: TextFileAccessing = LocalTextFileAccessor(),
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        ompAccount: OMPOAuthAccount? = nil,
+        ompStore: OMPOAuthStore = OMPOAuthStore()
     ) {
         self.files = files
         self.now = now
+        self.ompAccount = ompAccount
+        self.ompStore = ompStore
     }
 
     func loadAuthCandidates() throws -> [GrokAuthState] {
+        if let ompAccount {
+            let credential = try ompStore.credential(for: ompAccount)
+            let entry = GrokAuthEntry(
+                key: credential.accessToken,
+                expiresAt: credential.expiresAt.map { OpenUsageISO8601.string(from: $0) }
+            )
+            let entryKey = "omp::\(ompAccount.credentialID)"
+            return [
+                GrokAuthState(
+                    auth: [entryKey: entry],
+                    entryKey: entryKey,
+                    entry: entry,
+                    token: credential.accessToken
+                )
+            ]
+        }
+
         guard files.exists(Self.authPath),
               let text = try? files.readText(Self.authPath),
               let auth = Self.parseAuth(text)
@@ -80,6 +103,8 @@ struct GrokAuthStore: Sendable {
     }
 
     func save(_ state: GrokAuthState) throws {
+        guard ompAccount == nil else { throw OMPOAuthError.readOnly }
+
         // Refuse to overwrite a present-but-unreadable/corrupt auth.json by rebuilding it from
         // in-memory state — that would silently drop OTHER accounts' entries. A genuinely absent file
         // (first write) is seeded from in-memory state instead.

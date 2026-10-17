@@ -18,7 +18,7 @@ and the exact format printed by the `openusage` CLI.
 
 Returns the same envelope containing every provider the ID names. It works for disabled providers too.
 Matching is plain string comparison: an exact provider ID names that provider, and a family ID
-(`claude`, `codex`) names every account card of that family — with one account that's exactly the one
+(`claude`, `codex`, `cursor`, `grok`, `kimi`) names every account card of that family — with one account that's exactly the one
 card. There is no aliasing or "pick the right account" logic; the same request always names the same
 providers.
 
@@ -114,6 +114,7 @@ is still 0 because OpenCode reports whole percentages.
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
 | Devin | `daily`, `weekly`, `extraUsageBalance` |
 | Grok | `weekly` |
+| Kimi Code | `session`, `weekly`, `monthlyTotal`, `monthlyCoding`, `booster` |
 | Ollama | `session`, `weekly`, `monthly` |
 | OpenCode | `session`, `weekly`, `monthly` |
 | OpenRouter | `credits`, `balance`, `keyLimit` |

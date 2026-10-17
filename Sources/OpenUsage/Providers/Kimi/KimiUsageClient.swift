@@ -77,14 +77,27 @@ struct KimiUsageClient: Sendable {
         )
     }
 
-    /// The subscription usage meter. One call, no body, Bearer-only — the plural `usages` is not a
-    /// typo (singular 404s). Host follows the CLI's region file.
+    /// The subscription usage meter. The plural `usages` is not a typo (singular 404s).
+    /// OAuth credentials use Bearer authentication; the configured region selects the host.
     func fetchUsage(accessToken: String, region: String) async throws -> HTTPResponse {
         try await http.send(HTTPRequest(
             method: "GET",
             url: usageURL(region: region),
             headers: [
                 "Authorization": "Bearer \(accessToken)",
+                "Accept": "application/json"
+            ],
+            timeout: 10
+        ))
+    }
+
+    /// Coding Plan keys use the same meter without any OAuth token exchange or fallback.
+    func fetchUsage(apiKey: String, region: String) async throws -> HTTPResponse {
+        try await http.send(HTTPRequest(
+            method: "GET",
+            url: usageURL(region: region),
+            headers: [
+                "x-api-key": apiKey,
                 "Accept": "application/json"
             ],
             timeout: 10

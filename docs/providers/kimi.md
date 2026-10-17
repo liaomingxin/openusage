@@ -8,9 +8,11 @@ quotas the `kimi` CLI reports with its `/usage` command.
 | Metric | Meaning |
 |---|---|
 | Session | 5-hour rolling window quota (percentage) |
-| Weekly | The headline weekly allowance (percentage), with its reset countdown |
-| Booster | Pay-as-you-go booster wallet balance (only on non-subscription accounts) |
-| Today / Yesterday / Last 30 Days | Local tokens and estimated cost from the Kimi Code CLI, pi's `kimi-coding` provider, and OpenCode's official Kimi login. On Demand, not pinned |
+| Weekly | Weekly allowance for legacy plans, with its reset countdown |
+| Monthly Total | Shared monthly membership quota; enabled and always visible by default, not pinned |
+| Monthly Coding | Monthly coding quota; enabled and always visible by default, not pinned |
+| Booster | Extra Usage wallet balance when the API supplies it |
+| Today / Yesterday / Last 30 Days | Local tokens and estimated cost from the Kimi Code CLI, pi's `kimi-coding` provider, and OpenCode's official Kimi login. Only the default card includes these machine-local totals |
 
 When Kimi reports your membership level, OpenUsage shows it beside the provider name (e.g.
 "Advanced").
@@ -21,26 +23,32 @@ first message. The Weekly meter always shows a normal reset countdown.
 
 ## Where credentials come from
 
-Kimi Code's usage API is OAuth-only — there is no API-key path — so OpenUsage reuses the login the
-`kimi` CLI already made. It reads:
+The default card reuses the login the `kimi` CLI already made. It reads:
 
 - `~/.kimi-code/credentials/kimi-code.json` — the OAuth tokens the CLI stores after `/login`
 - `~/.kimi-code/region` — selects the API host (`cn` → api.kimi.com, `global` → api.kimi.ai)
 - `~/.kimi-code/device_id` — sent on token refreshes, mirroring the CLI
 
-Access tokens live 15 minutes. OpenUsage refreshes them before they expire and writes the rotated
-tokens back to the same file the CLI reads, so both stay in sync. If the session can't be refreshed
-(the CLI logged in elsewhere and rotated the token), the provider asks you to run `kimi` and log in
-again — the same remedy the CLI itself suggests.
+The default CLI card refreshes its OAuth tokens and writes them back to the CLI's own credentials.
+Additional cards use only the API key entered in OpenUsage; they never refresh or fall back to the
+default CLI login.
 
-## Setup
+## Add an account
 
-1. Install the [Kimi Code CLI](https://www.kimi.com) and log in once (`kimi` → `/login`).
-2. Subscribe to a Kimi for Coding plan.
-3. Open OpenUsage — the Kimi Code card appears automatically (the credential probe finds the CLI's
-   login) and shows Session/Weekly on first launch.
+The default CLI card needs no setup beyond installing Kimi Code and running `/login` once.
+For additional cards:
 
-No key entry, no login inside OpenUsage.
+1. Open **Customize → Kimi Code → Kimi Accounts → Add Account…**.
+2. Paste a key from the **Kimi Code Console**, not the Moonshot Open Platform. A name is optional.
+3. Leave the region as **China**, or select **Global** for an international account, then click **Add Account**.
+4. Restart OpenUsage. Each added key gets its own card beside the automatic CLI card.
+
+The cards share Kimi's metric layout, but have independent menu-bar pins, refreshes, and cached quotas.
+Extra cards do not copy the default card's local spend history. The CLI accepts `openusage kimi` for all
+Kimi cards or `openusage kimi@<id>` for one card.
+
+OpenUsage saves each key privately for you. No file creation, file selection, or OAuth JSON import is
+needed. Removing a card deletes its saved key. Additions and removals take effect after restart.
 
 ## Endpoints called
 
@@ -59,10 +67,12 @@ No key entry, no login inside OpenUsage.
 
 ## Notes
 
-- Numbers arrive as strings over the wire; parsing accepts both strings and numbers, exactly like
-  the CLI.
-- The weekly meter defaults to a 7-day period when the response omits its window — the same default
-  the CLI applies.
+- Current responses contain `usages` ratios and reset times; legacy responses contain `usage` and
+  `limits` counters. Both forms work. Missing monthly or weekly pools are not invented.
+- If a summary ratio incorrectly reports zero while the matching legacy counter shows usage,
+  OpenUsage keeps the nonzero counter.
+- The legacy weekly meter defaults to a 7-day period when its response omits the window. Monthly
+  resets are shown without assuming that every billing month has 30 days.
 - The booster wallet's fixed-point millionth amounts are converted to dollars.
 - Windows other than the 5-hour session in `limits[]` (daily caps and the like) exist in the API
   but aren't metered yet; `parallel.limit` (concurrent-request cap) isn't shown either.

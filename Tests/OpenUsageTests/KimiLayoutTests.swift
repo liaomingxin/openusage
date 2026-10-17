@@ -16,6 +16,11 @@ final class KimiLayoutTests: XCTestCase {
             store.pinnedGroups.flatMap { $0.metrics.map(\.id) },
             ["kimi.session", "kimi.weekly"]
         )
+        for id in ["kimi.monthlyTotal", "kimi.monthlyCoding"] {
+            XCTAssertTrue(store.isMetricEnabled(id))
+            XCTAssertFalse(store.expandedMetricIDs.contains(id))
+            XCTAssertFalse(store.pinnedGroups.flatMap { $0.metrics.map(\.id) }.contains(id))
+        }
         for id in ["kimi.today", "kimi.yesterday", "kimi.last30"] {
             XCTAssertTrue(store.isMetricEnabled(id))
             XCTAssertTrue(store.expandedMetricIDs.contains(id))

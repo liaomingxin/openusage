@@ -93,7 +93,7 @@ git push origin main
 | `Sources/OpenUsage/Providers/Codex/CodexProvider.swift` | 上游改本地日志扫描（如 fallback pricing；v0.7.11 起改成 native / pi / **OpenCode** 三路 `async let` 并发），fork 的额外账号卡带动态 `id`/`accountLabel` 并设 `scansLocalLogs: false` | 用上游的并发写法，但**每一路**都用 `scansLocalLogs` 门控（上游以后再加本地来源也一样）；仅默认 home 扫本机数据，额外卡不得继承。回归测试：`CodexExtraCardCatalogTests.testExtraCardSkipsOpenCodeCodexUsage` |
 | `Sources/OpenUsage/Services/ProviderAccountAssembly.swift` | **最难的一个。** 上游加 Claude 多账号卡（`ClaudeAccountCard`、Desktop 组织发现），fork 加 Codex 额外卡（`CodexExtraCard`、`mergedObservations`）和 claude-swap 卡（`ClaudeSwapCard`），两边改同一批函数 | **三边都留**：一个 `make(observer:accountsStore:families:extraCodex:claudeSwap:desktop:listDesktopOrganizationDirectories:)`，先塞额外 Codex observation，再塞 claude-swap 槽位 observation（family 是 `claude`），再跑 Claude Desktop 组织发现，然后**只 reconcile 一次**（走 `mergedObservations`，同一身份合成一条记录），最后三份卡各建一份。上游原来的两处 early return 要改成「发现流程的判断条件」，否则那些分支会漏掉额外卡 |
 | `Sources/OpenUsage/Services/ProviderAccountAssembly.swift`（体量） | 已经 430+ 行、装着三套卡片模型，上游一改这里必冲突 | 冲突太痛时把「发卡」那段（`reconcile` 之后到 `return` 之间）抽成 `ProviderAccountCards` 辅助类型，冲突面就只剩观测拼装那几行；现在还在 ~500 行门槛内，先不动 |
-| `Sources/OpenUsage/App/AppContainer.swift`、`Sources/OpenUsage/Services/UsageReader.swift` | `ProviderCatalog.make(...)` 调用点，两边各加各的参数 | 四个参数一起传：`extraCodexCards:` + `claudeCards:` + `claudeSwapCards:` + `claudeIdentityKeys:`；`UsageReader` 里保留上游把 `ProviderEnablementStore(defaults:)` 放在 registry 之后的位置 |
+| `Sources/OpenUsage/App/AppContainer.swift`、`Sources/OpenUsage/Services/UsageReader.swift` | `ProviderCatalog.make(...)` 调用点，两边各加各的参数 | 同时传递 `extraCodexCards:`、`claudeCards:`、`claudeSwapCards:`、`claudeIdentityKeys:`、`kimiAccounts:` 和 `ompAccounts:`；Kimi 与 OMP 卡在启动时组装，app 和 CLI 必须拿到相同的卡片集合；`UsageReader` 保留 `ProviderEnablementStore(defaults:)` 在 registry 之后的位置 |
 | `Tests/OpenUsageTests/LocalLimitsAPITests.swift` | 上游新增 provider 的 key 清单 | expected 字典里补上两边的条目 |
 | `README.md`、`docs/README.md` | 上游新增 provider 的列表项（字母序紧挨 Kimi，如 Ollama） | 两边都留，按字母序 |
 | 上游新增的测试里 `guard case .progress(...)`（**不报冲突，编译才报**，每次同步几乎都会遇到） | fork 给 `MetricLine.progress` 加了第 8 个关联值 `detail`，上游测试按 7 个解构，报 `failed to produce diagnostic` / `type 'Equatable' has no member` | 在模式末尾补一个 `_` |
@@ -107,10 +107,13 @@ git push origin main
 
 ## 当前 fork 独有的东西（合并上游时的自查清单）
 
-- `Sources/OpenUsage/Providers/Kimi/`：Kimi Code provider（OAuth 读 `~/.kimi-code/`，Session/Weekly/Booster）
+- `Sources/OpenUsage/Providers/Kimi/`：默认卡自动读取 Kimi CLI OAuth；额外卡直接填写 Coding Plan API Key，支持 Session / legacy Weekly / Monthly Total / Monthly Coding / Booster。月度两行默认启用、Always Visible、不固定到菜单栏。
 - `DefaultLayout.swift`、`ProviderCatalog.swift`、`ErrorCategory.swift`、`LocalLimitsAPITests.swift`、`ProviderMarksTests.swift` 里的 kimi 条目
 - `docs/providers/kimi.md`、`docs/research/kimi-code-usage-api.md`
 - Codex 多账号：扫描 `~/.cli-proxy-api/codex-*.json`，额外 ChatGPT 登录各自一张卡（`codex@<hash>`），布局跟默认 Codex 卡绑定
+- OMP 的 Grok Build / Cursor 多账号：`OMPOAuthStore` 只读 `~/.omp/agent/agent.db` 的启用 OAuth 记录，`OMPAccountDiscovery` 按账号 ID 与原生登录去重；额外卡使用稳定的 `grok@<hash>` / `cursor@<hash>`。
+  - 不读取或刷新 OMP refresh token，不写 OMP 数据库；令牌过期由 OMP 更新。
+  - Grok 额外卡不扫描本机日志，避免重复累计花费；Cursor 的服务端历史按 user ID 隔离。
 - **claude-swap 多账号（fork 独有，未来必冲突）**：扫描 `~/.claude-swap-backup/configs/.claude-config-<N>-<email>.json`
   （cswap 的备份快照，隐藏文件），非当前登录的账号各自一张卡（`claude@<hash>`）。数值**两层**：
   - **实时层（首选）**：从 keychain service `claude-swap`、account `account-<slot>-<email>`

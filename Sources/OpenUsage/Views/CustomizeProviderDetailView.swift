@@ -39,6 +39,9 @@ struct CustomizeProviderDetailView: View {
                         .map(\.id)
                         .filter { ProviderAccountID.family(of: $0) == "codex" })
                 }
+                if ProviderAccountID.family(of: providerID) == "kimi" {
+                    KimiAccountsSection(store: container.kimiAccountsStore)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .animation(Motion.spring, value: layout.expandedMetricIDs)

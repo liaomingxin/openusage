@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.7.15-beta.1-kimi.3
+
+### New Features
+- Add Kimi account cards by entering a Coding Plan API key directly; account names are optional. By @liaomingxin.
+- Show Kimi Monthly Total and Monthly Coding quotas. By @liaomingxin.
+- Discover additional Grok Build and Cursor accounts from OMP automatically, deduplicating native logins. By @liaomingxin.
+
+### Bug Fixes
+- Keep account credentials and cached quotas isolated, without duplicating Grok machine-local spend. By @liaomingxin.
+- Keep real Kimi counters when a summary ratio incorrectly reports zero. By @liaomingxin.
+
+### Heads-up
+- OMP credentials remain read-only; refresh those logins in OMP.
+- Muse may omit Session/Weekly quota while its 5-hour window is idle; local token statistics remain available.
+- Personal fork build: not notarized; no official Sparkle update feed.
+
+**Full Changelog**: [v0.7.15-beta.1-kimi.2...v0.7.15-beta.1-kimi.3](https://github.com/liaomingxin/openusage/compare/v0.7.15-beta.1-kimi.2...v0.7.15-beta.1-kimi.3)
+
 ## v0.7.15-beta.1
 
 ### New Features

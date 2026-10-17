@@ -5,12 +5,9 @@ struct KimiMappedUsage: Equatable, Sendable {
     var lines: [MetricLine]
 }
 
-/// Normalizes the Kimi Code subscription-usage response (`GET …/coding/v1/usages`) into metric lines.
-/// Kimi reports raw used/limit counts, which convert to the percent meters every provider uses
-/// (`.percent` carries 0...100 with `limit: 100`). All numbers arrive as strings — the CLI accepts
-/// string-or-number, and so does `ProviderParse.number`. `usage` is the headline weekly allowance;
-/// `limits[]` carries fine-grained windows, of which the 5-hour entry is the session meter — the
-/// same shape Codex reports. See docs/research/kimi-code-usage-api.md for the protocol reference.
+/// Normalizes both current ratio-based quotas and legacy counter-based Kimi Code responses.
+/// The current API exposes separate monthly total and coding pools; legacy plans also have a
+/// weekly pool. Missing windows stay absent rather than appearing as unused allowances.
 enum KimiUsageMapper {
     static let weeklyPeriodMs = MetricPeriod.weekMs
     static let sessionPeriodMs = MetricPeriod.sessionMs
@@ -22,27 +19,63 @@ enum KimiUsageMapper {
             requestFailed: { KimiUsageError.requestFailed($0) }
         )
 
-        guard let body = ProviderParse.jsonObject(response.body) else {
+        guard let envelope = ProviderParse.jsonObject(response.body) else {
             throw KimiUsageError.invalidResponse
         }
-
+        let body = (envelope["data"] as? [String: Any])?["quota"] as? [String: Any] ?? envelope
+        let usages = body["usages"] as? [String: Any] ?? [:]
         var lines: [MetricLine] = []
-        if let usage = body["usage"] as? [String: Any] {
-            if let line = weeklyLine(usage: usage) {
-                lines.append(line)
-            }
+        let session = sessionLine(body: body)
+        let weekly = (body["usage"] as? [String: Any]).flatMap(weeklyLine)
+        if let line = quotaLine(
+            label: "Session", summary: usages["limit_5h"] ?? usages["limit5h"],
+            legacy: session, periodMs: sessionPeriodMs
+        ) {
+            lines.append(line)
         }
-        if let session = sessionLine(body: body) {
-            lines.append(session)
+        if let line = quotaLine(
+            label: "Weekly", summary: usages["limit_7d"] ?? usages["limit7d"],
+            legacy: weekly, periodMs: weeklyPeriodMs
+        ) {
+            lines.append(line)
+        }
+        if let total = quotaLine(
+            label: "Monthly Total", summary: usages["limit_month_total"], legacy: nil, periodMs: nil
+        ) {
+            lines.append(total)
+        }
+        if let coding = quotaLine(
+            label: "Monthly Coding", summary: usages["limit_month_code"], legacy: nil, periodMs: nil
+        ) {
+            lines.append(coding)
         }
         if let booster = boosterLine(body: body) {
             lines.append(booster)
         }
-
         return KimiMappedUsage(plan: planName(body), lines: lines)
     }
 
     // MARK: - Windows
+
+    private static func quotaLine(
+        label: String, summary: Any?, legacy: MetricLine?, periodMs: Int?
+    ) -> MetricLine? {
+        guard let summary = summary as? [String: Any],
+              let ratio = ProviderParse.number(summary["used_ratio"] ?? summary["usedRatio"]),
+              ratio.isFinite, (0...1).contains(ratio)
+        else { return legacy }
+        // Some accounts receive zeroed summary ratios alongside live counters. Never turn a
+        // demonstrably used pool into "Not started" just because that summary is stale.
+        if ratio == 0, case .progress(_, let used, _, _, _, _, _, _) = legacy, used > 0 {
+            return legacy
+        }
+        let reset = summary["reset_time"] ?? summary["resetAt"]
+        return .progress(
+            label: label, used: ratio * 100, limit: 100, format: .percent,
+            resetsAt: (reset as? String).flatMap(OpenUsageISO8601.date(from:)),
+            periodDurationMs: periodMs
+        )
+    }
 
     /// `usage` is the headline allowance. When the response omits its window the CLI assumes a week —
     /// we default `periodDurationMs` the same way rather than guessing from `resetTime` alone. A
@@ -104,10 +137,9 @@ enum KimiUsageMapper {
 
     // MARK: - Pay-as-you-go wallet
 
-    /// `boosterWallet` is absent on subscription accounts; when present it is the pay-as-you-go
-    /// balance. Amounts are fixed-point millionths of a cent (`/1e6` → cents, `/100` → dollars).
+    /// Amounts are fixed-point millionths of a cent; a disabled/empty wallet has no amount to show.
     private static func boosterLine(body: [String: Any]) -> MetricLine? {
-        guard let wallet = body["boosterWallet"] as? [String: Any],
+        guard let wallet = (body["booster_wallet"] ?? body["boosterWallet"]) as? [String: Any],
               let balance = wallet["balance"] as? [String: Any],
               let leftMicro = ProviderParse.number(balance["amountLeft"])
         else {

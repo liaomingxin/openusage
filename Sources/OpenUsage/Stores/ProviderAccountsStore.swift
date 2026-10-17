@@ -7,7 +7,7 @@ import Foundation
 /// `family@<hash8>` from its identity key.
 enum ProviderAccountID {
     /// The family ids that participate in the account-first model.
-    static let families: Set<String> = ["claude", "codex"]
+    static let families: Set<String> = ["claude", "codex", "kimi", "grok", "cursor"]
 
     /// `claude@ab12cd34` — a stable, non-reversible id derived from the account's identity key.
     static func make(family: String, identityKey: String) -> String {
