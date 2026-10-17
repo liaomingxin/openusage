@@ -1,6 +1,6 @@
 {
   "$comment": "OpenUsage pricing supplement. Prices Cursor-native models that no public catalog carries, supplies fast-variant multipliers the catalogs omit, and maps provider log/CSV model slugs to canonical pricing keys (LiteLLM keys, models.dev ids, or entries in this file). Cursor Router rows name the routed model in prose instead of a slug ('Opus 5 (Auto Balanced)'), so those labels get alias rules too. Published to gh-pages by .github/workflows/pricing-supplement.yml on every change, so installed apps pick edits up within about an hour - no release needed. Rates are USD per million tokens. Sources: https://cursor.com/docs/models-and-pricing.md for Cursor-native entries; https://platform.claude.com/docs/en/about-claude/pricing for Claude Fable 5.1; https://www.anthropic.com/claude-sonnet-5-5 for Claude Sonnet 5.5; https://developers.openai.com/api/docs/models/daybreak-blue-latest and https://developers.openai.com/api/docs/pricing for Daybreak aliases and rates; https://docs.z.ai/guides/overview/pricing for GLM 5.3; https://docs.x.ai/developers/pricing for Grok 4.7 Fast.",
-  "updated_at": "2026-10-09T21:55:00Z",
+  "updated_at": "2026-10-16T23:28:55Z",
   "pricing": {
     "auto": {
       "input_per_million": 1.25,
@@ -218,10 +218,11 @@
       "output_per_million": 20.0
     },
     "gemini-4-argon": {
+      "$comment": "Google Gemini 4 Argon introductory API rates through 2026-11-30 (https://ai.google.dev/gemini-api/docs/pricing), also listed by Cursor. From 2026-12-01 Google lists $4 input / $20 output / $0.20 cache read; update this entry when those rates take effect. Bundled catalogs do not carry Argon yet. Only implicit caching is supported; cache write uses the existing input-rate default.",
       "input_per_million": 2.0,
       "cache_write_per_million": 2.0,
-      "cache_read_per_million": 0.2,
-      "output_per_million": 12.0
+      "cache_read_per_million": 0.1,
+      "output_per_million": 10.0
     },
     "gpt-6-astra": {
       "$comment": "OpenAI GPT-6 Astra official rates (developers.openai.com/api/docs/models/gpt-6-astra). Cache write is 1.25x input; cache read is 0.1x. Fast mode is 2x. Public catalogs have not added it yet.",
@@ -609,7 +610,7 @@
       "canonical": "gemini-3.1-pro-preview"
     },
     {
-      "pattern": "^gemini-4-argon(?:-preview)?(?:-(?:none|n|minimal|low|medium|high|xhigh))?(?:-preview)?$",
+      "pattern": "^gemini-4-argon(?:-(?:trial|preview))?(?:-(?:none|n|minimal|low|medium|high|xhigh))?(?:-(?:trial|preview))?$",
       "canonical": "gemini-4-argon"
     },
     {
@@ -980,6 +981,11 @@
     {
       "pattern": "(?i)^Kimi K3 \\(Auto[^)]*\\)$",
       "canonical": "kimi-k3"
+    }
+    ,
+    {
+      "pattern": "(?i)^Gemini 4 Argon(?: \\((?:None|Low|Medium|High|XHigh|Trial|Preview)\\))?$",
+      "canonical": "gemini-4-argon"
     }
   ],
   "fallback_models": {

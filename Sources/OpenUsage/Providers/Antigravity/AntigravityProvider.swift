@@ -327,7 +327,7 @@ final class AntigravityProvider: ProviderRuntime {
         // Fallback: loadCodeAssist (plan + project) → retrieveUserQuota (Gemini-only buckets).
         var plan: String?
         var project: String?
-        switch await usageClient.cloudCode(path: AntigravityUsageClient.loadCodeAssistPath, token: token, userAgent: "agy", body: [:]) {
+        switch await usageClient.cloudCode(path: AntigravityUsageClient.loadCodeAssistPath, token: token, userAgent: AntigravityUsageClient.cloudCodeUserAgent, body: [:]) {
         case .authFailed: return .authFailed
         case .ok(let data):
             plan = AntigravityUsageMapper.parseLoadCodeAssistPlan(data)
@@ -355,7 +355,7 @@ final class AntigravityProvider: ProviderRuntime {
     }
 
     private func loadPlan(token: String) async -> String? {
-        if case .ok(let data) = await usageClient.cloudCode(path: AntigravityUsageClient.loadCodeAssistPath, token: token, userAgent: "agy", body: [:]) {
+        if case .ok(let data) = await usageClient.cloudCode(path: AntigravityUsageClient.loadCodeAssistPath, token: token, userAgent: AntigravityUsageClient.cloudCodeUserAgent, body: [:]) {
             return AntigravityUsageMapper.parseLoadCodeAssistPlan(data)
         }
         return nil

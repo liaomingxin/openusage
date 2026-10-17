@@ -245,7 +245,7 @@ private enum ZAICreditRoutingFixtures {
 
     static let creditModelDetailJSON = #"""
     {"data":{"timezone":"Asia/Shanghai",
-      "modelUsage":{"xTime":["2026-08-29 03:00:00"],
+      "modelUsage":{"xTime":["2026-08-29 20:00:00"],
         "totalUsage":{"totalTokens":69374046},
         "modelDataList":[{"modelName":"GLM-5.3","totalTokensUsage":[69374046]}]}},
      "success":true}
@@ -258,7 +258,7 @@ private enum ZAICreditRoutingFixtures {
     """#
 
     static let legacyModelUsageJSON = #"""
-    {"data":{"x_time":["2026-08-29 03:00"],"tokensUsage":[4218893],"modelCallCount":[380],
+    {"data":{"x_time":["2026-08-29 20:00"],"tokensUsage":[4218893],"modelCallCount":[380],
       "totalUsage":{"totalTokensUsage":4218893,"totalModelCallCount":380},
       "modelDataList":[{"modelName":"GLM-5.3","tokensUsage":[4218893]}]},"success":true}
     """#
@@ -270,9 +270,9 @@ private enum ZAICreditRoutingFixtures {
      "success":true}
     """#
 
-    /// A fixed clock inside 2026-08-29 (03:30 Beijing) so every fixture day key resolves inside the
-    /// trend window on the Mac's own calendar.
-    static let now = Date(timeIntervalSince1970: 1_787_945_400)
+    /// A fixed clock inside 2026-08-29 (20:30 Beijing / 12:30 UTC) so every fixture day key resolves
+    /// to 2026-08-29 on the Mac's own calendar across timezones.
+    static let now = Date(timeIntervalSince1970: 1_788_006_600)
 
     static func response(_ json: String) -> HTTPResponse {
         HTTPResponse(statusCode: 200, headers: [:], body: Data(json.utf8))
