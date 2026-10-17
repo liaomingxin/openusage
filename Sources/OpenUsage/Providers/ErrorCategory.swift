@@ -297,3 +297,24 @@ extension AntigravityError: CategorizedError {
         }
     }
 }
+
+extension MuseAuthError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .notLoggedIn: .notLoggedIn
+        case .sessionExpired: .authExpired
+        case .keychainAccessDenied: .credentialAccess
+        }
+    }
+}
+
+extension MuseUsageError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .connectionFailed: .network
+        case .invalidResponse: .decoding
+        case .requestFailed(let status): ErrorCategory.http(status)
+        case .paymentRequired: .notAvailable
+        }
+    }
+}

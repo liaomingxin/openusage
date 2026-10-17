@@ -34,6 +34,9 @@ enum DefaultLayout {
         "kimi.session", "kimi.weekly",
         "kimi.today", "kimi.yesterday", "kimi.last30",
 
+
+        "muse.session", "muse.weekly",
+        "muse.today", "muse.yesterday", "muse.last30", "muse.trend",
         "ollama.session", "ollama.weekly", "ollama.monthly", "ollama.purchasedCredits",
 
         "opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend",

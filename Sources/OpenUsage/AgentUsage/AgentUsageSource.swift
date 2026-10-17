@@ -55,6 +55,9 @@ enum AgentUsageCatalog {
             AgentUsageSource(id: "kimi-cli", displayName: "Kimi CLI", icon: .providerMark("kimi")) { pricing in
                 KimiCLIUsageScanner().scan(now: Date(), daysBack: 30, pricing: pricing)
             },
+            AgentUsageSource(id: "muse", displayName: "Muse Code", icon: .providerMark("muse")) { pricing in
+                MuseCLIUsageScanner().scan(now: Date(), daysBack: 30, pricing: pricing)
+            },
             AgentUsageSource(id: "hermes", displayName: "Hermes", icon: .providerMark("hermes")) { pricing in
                 await HermesUsageScanner().scan(daysBack: 30, pricing: pricing)
             },

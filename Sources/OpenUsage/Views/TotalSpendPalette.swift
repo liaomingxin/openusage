@@ -20,6 +20,7 @@ enum TotalSpendPalette {
         "amp": hex(0xF34E3F),
         "factory": dynamic(light: 0x48484A, dark: 0xC7C7CC),
         "kimi": hex(0x0A66FF),
+        "muse": hex(0x0081FB),
         "minimax": hex(0xF5433C),
         "zai": dynamic(light: 0x2D2D2D, dark: 0xD1D1D6),
         "claude-code": hex(0xDE7356),
