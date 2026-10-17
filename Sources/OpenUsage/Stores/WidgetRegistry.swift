@@ -19,6 +19,8 @@ struct WidgetRegistry: Sendable {
     /// (a stable `filter` walk), so `descriptors(for:)` returns the exact sequence the UI metric order
     /// depends on.
     private let descriptorsByProvider: [String: [WidgetDescriptor]]
+    let limitDescriptorsByProvider: [String: [WidgetDescriptor]]
+    let historyDescriptorsByProvider: [String: UsageHistoryDescriptor]
 
     init(providers: [Provider], descriptors: [WidgetDescriptor]) {
         self.providers = providers
@@ -36,6 +38,13 @@ struct WidgetRegistry: Sendable {
             byProvider[descriptor.providerID, default: []].append(descriptor)
         }
         self.descriptorsByProvider = byProvider
+        self.limitDescriptorsByProvider = byProvider.mapValues {
+            $0.filter { !$0.limitResources.isEmpty }
+        }
+        self.historyDescriptorsByProvider = byProvider.compactMapValues { descriptors in
+            let resources = descriptors.compactMap(\.historyResource)
+            return resources.first { $0.scope == .machineLocal } ?? resources.first
+        }
     }
 
     func descriptor(id: String) -> WidgetDescriptor? { descriptorsByID[id] }
@@ -63,22 +72,6 @@ struct WidgetRegistry: Sendable {
         return result
     }
 
-    var limitDescriptorsByProvider: [String: [WidgetDescriptor]] {
-        descriptorsByProvider.mapValues { $0.filter { !$0.limitResources.isEmpty } }
-    }
-
-    /// Each provider's history classification. Everything downstream of this — preserving the last-good
-    /// history, the iCloud sync document, the cross-Mac merge — operates on the machine-local scan a
-    /// snapshot carries in `usageHistory`, so a provider that declares more than one resource (Codex
-    /// has an account-wide trend beside its local one) resolves to the machine-local one regardless of
-    /// declaration order. Falling back to the first declared keeps providers with only an account-wide
-    /// source (Cursor, Z.ai) classified exactly as before.
-    var historyDescriptorsByProvider: [String: UsageHistoryDescriptor] {
-        descriptorsByProvider.compactMapValues { descriptors in
-            let resources = descriptors.compactMap(\.historyResource)
-            return resources.first { $0.scope == .machineLocal } ?? resources.first
-        }
-    }
 
     @MainActor
     static func from(_ runtimes: [ProviderRuntime]) -> WidgetRegistry {
