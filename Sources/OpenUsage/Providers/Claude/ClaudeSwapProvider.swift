@@ -251,21 +251,21 @@ final class ClaudeSwapProvider: ProviderRuntime {
         let now = now()
         let previous = resetGrantsCheck?.credentialFingerprint == fingerprint ? resetGrantsCheck : nil
         if let previous, now.timeIntervalSince(previous.checkedAt) < ClaudeProvider.resetGrantsCheckInterval {
-            return previous.line.map { ClaudeUsageMapper.droppingElapsedResetGrants($0, now: now) }
+            return previous.status?.line(now: now)
         }
         do {
             let response = try await liveUsageClient.fetchResetGrants(
                 accessToken: stashed.accessToken, config: ClaudeSwapOAuth.readOnlyConfig
             )
-            let line = try ClaudeUsageMapper.mapResetGrantsResponse(response, now: now)
-            resetGrantsCheck = ClaudeResetGrantsCheck(credentialFingerprint: fingerprint, checkedAt: now, line: line)
-            return line
+            let status = try ClaudeUsageMapper.mapResetGrantStatus(response)
+            resetGrantsCheck = ClaudeResetGrantsCheck(credentialFingerprint: fingerprint, checkedAt: now, status: status)
+            return status?.line(now: now)
         } catch {
-            let held = previous?.line.map { ClaudeUsageMapper.droppingElapsedResetGrants($0, now: now) }
+            let held = previous?.status?.line(now: now)
             guard !Task.isCancelled else { return held }
             emit("reset grants lookup failed; retrying in an hour: \(error.localizedDescription)", level: .warn)
             resetGrantsCheck = ClaudeResetGrantsCheck(
-                credentialFingerprint: fingerprint, checkedAt: now, line: previous?.line
+                credentialFingerprint: fingerprint, checkedAt: now, status: previous?.status
             )
             return held
         }

@@ -72,7 +72,6 @@ struct WidgetRegistry: Sendable {
         return result
     }
 
-
     @MainActor
     static func from(_ runtimes: [ProviderRuntime]) -> WidgetRegistry {
         let providers = runtimes.map(\.provider)

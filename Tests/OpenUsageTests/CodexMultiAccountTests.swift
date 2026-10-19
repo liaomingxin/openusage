@@ -410,16 +410,3 @@ final class CodexExtraLayoutTests: XCTestCase {
         )
     }
 }
-
-@MainActor
-final class CodexResetClaimRouterTests: XCTestCase {
-    func testUnknownCardFailsWithoutTouchingAnotherService() async {
-        let router = CodexResetClaimRouter(services: [:])
-        let outcome = await router.claim(
-            providerID: "codex@missing",
-            creditExpiringAt: Date(),
-            redeemRequestID: UUID().uuidString
-        )
-        XCTAssertEqual(outcome, .failed)
-    }
-}

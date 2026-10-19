@@ -9,6 +9,8 @@ struct CursorAuthState: Hashable, Sendable {
 
     var accessToken: String?
     var refreshToken: String?
+    /// Lowercased `cursorAuth/stripeMembershipType` from the Cursor state DB when present.
+    var membershipType: String?
     var source: Source
     var expiresAt: Date? = nil
 }
@@ -92,6 +94,7 @@ struct CursorAuthStore: Sendable {
                 return CursorAuthState(
                     accessToken: keychainAccessToken,
                     refreshToken: keychainRefreshToken,
+                    membershipType: nil,
                     source: .keychain
                 )
             }
@@ -99,6 +102,7 @@ struct CursorAuthStore: Sendable {
             return CursorAuthState(
                 accessToken: sqliteAccessToken,
                 refreshToken: sqliteRefreshToken,
+                membershipType: sqliteMembershipType,
                 source: .sqlite
             )
         }

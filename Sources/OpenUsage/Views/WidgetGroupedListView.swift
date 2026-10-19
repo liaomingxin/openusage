@@ -26,6 +26,8 @@ struct WidgetGroupedListView: View {
     @AppStorage(DashboardGroupingSetting.groupByFamilyKey) private var groupByFamily = true
     @AppStorage(DashboardColumnsSetting.key) private var columnsSetting = DashboardColumnsSetting.two
 
+    @Environment(\.resetClaims) private var resetClaims
+
     var body: some View {
         let clusters = ProviderFamilyCluster.clusters(from: filteredGroups, groupByFamily: groupByFamily)
         let columns = MasonryLayout.assignColumns(
@@ -356,6 +358,7 @@ struct WidgetGroupedListView: View {
             condensedTop: condensedTop,
             providerID: providerID
         )
+            .environment(\.resetClaim, resetClaims[providerID])
             .contentShape(Rectangle())
             .opacity(activeMetricID == descriptor.id ? 0 : 1)
             .highPriorityGesture(metricDragGesture(for: descriptor, providerID: providerID))

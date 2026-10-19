@@ -31,7 +31,7 @@ struct WidgetRowView: View {
     @State private var modelHover = HoverPopoverState()
     /// Backs the resets popover's claim flow; `nil` outside the live dashboard (previews, share
     /// renders), which renders the timeline read-only.
-    @Environment(\.codexResetClaim) private var codexResetClaim
+    @Environment(\.resetClaim) private var resetClaim
 
     /// Both row fonts come from the density setting: point sizes — not just padding — are what make
     /// Compact read as a denser mode. The sizes are explicit because semantic
@@ -390,19 +390,14 @@ struct WidgetRowView: View {
                         count: data.resetCreditCount, expiries: data.expiriesAt,
                         onHoverChange: { inside in modelHover.detailHover(inside) },
                         onPinChange: { pinned in modelHover.setPinned(pinned) },
-                        // Only Codex cards can spend a reset. Claude's row is read-only, and so is any
-                        // render without a router (previews, share cards).
-                        claim: {
-                            guard let router = codexResetClaim, let providerID,
-                                  ProviderAccountID.family(of: providerID) == "codex" else { return nil }
-                            return { expiry, redeemRequestID in
-                                await router.claim(
-                                    providerID: providerID,
-                                    creditExpiringAt: expiry,
-                                    redeemRequestID: redeemRequestID
-                                )
-                            }
-                        }()
+                        // Rows without a claimable service (previews, share renders, a Claude account
+                        // with no next grant) show the read-only timeline.
+                        claim: resetClaim.flatMap { service in
+                            service.isClaimable ? { expiry, redeemRequestID in
+                                await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID)
+                            } : nil
+                        },
+                        confirmDetail: resetClaim?.confirmDetail
                     )
                 }
             }
