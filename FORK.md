@@ -112,8 +112,9 @@ git push origin main
 - `docs/providers/kimi.md`、`docs/research/kimi-code-usage-api.md`
 - Codex 多账号：扫描 `~/.cli-proxy-api/codex-*.json`，额外 ChatGPT 登录各自一张卡（`codex@<hash>`），布局跟默认 Codex 卡绑定
 - OMP 的 Grok Build / Cursor 多账号：`OMPOAuthStore` 只读 `~/.omp/agent/agent.db` 的启用 OAuth 记录，`OMPAccountDiscovery` 按账号 ID 与原生登录去重；额外卡使用稳定的 `grok@<hash>` / `cursor@<hash>`。
-  - 不读取或刷新 OMP refresh token，不写 OMP 数据库；令牌过期由 OMP 更新。
+  - 不直接读取或写 OMP refresh token；当 6 小时 Grok access token 过期时，通过后台调用 `omp usage --provider xai-oauth --no-extensions --json` 交由 OMP 自身租约锁安全续期后重读。
   - Grok 额外卡不扫描本机日志，避免重复累计花费；Cursor 的服务端历史按 user ID 隔离。
+  - 多订阅前端增强：双层可拖动 iOS 液态玻璃状态栏（`SecondaryMenuBarStripView`）、按厂商聚合卡片与单行配额矩阵（`ProviderFamilyCard`）、顶部 `All/Quotas/Alerts` 透镜与 3 列宽屏模式、全平台默认卡邮箱/账号标识自动解析。
 - **claude-swap 多账号（fork 独有，未来必冲突）**：扫描 `~/.claude-swap-backup/configs/.claude-config-<N>-<email>.json`
   （cswap 的备份快照，隐藏文件），非当前登录的账号各自一张卡（`claude@<hash>`）。数值**两层**：
   - **实时层（首选）**：从 keychain service `claude-swap`、account `account-<slot>-<email>`

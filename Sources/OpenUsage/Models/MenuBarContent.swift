@@ -1,10 +1,13 @@
 import Foundation
 
-/// Resolved, ordered, capped data for the menu-bar strip, built from the pinned metrics and their live
-/// values. The renderers consume this: `groups` drives the Text style (one segment per pinned provider,
-/// each with its 1–2 pinned metrics), `bars` drives the Bars style (the first four bounded metrics — any
-/// with a fill, not just percentages — in order). `isEmpty` means render the plain app icon.
+/// Resolved, ordered data for the menu-bar strip, built from the pinned metrics and their live
+/// values. The Text style splits `groups` across the primary and secondary rows (one segment per
+/// pinned provider, each with its 1–2 pinned metrics); `bars` drives the Bars style (the first four
+/// bounded metrics — any with a fill, not just percentages — in order). `isEmpty` means render the
+/// plain app icon.
 struct MenuBarContent: Equatable {
+    static let maxPrimaryGroups = 4
+
     /// One resolved pinned metric.
     struct Metric: Equatable {
         let id: String          // descriptor id
@@ -29,6 +32,12 @@ struct MenuBarContent: Equatable {
     let groups: [Group]
     /// Bounded metrics (those with a fill) for the Bars style, flattened in order and capped to four.
     let bars: [Metric]
+
+    var primaryGroups: [Group] { Array(groups.prefix(Self.maxPrimaryGroups)) }
+    var secondaryGroups: [Group] { Array(groups.dropFirst(Self.maxPrimaryGroups)) }
+    var hasSecondaryRow: Bool { !secondaryGroups.isEmpty }
+    var primaryContent: MenuBarContent { MenuBarContent(groups: primaryGroups, bars: bars) }
+    var secondaryContent: MenuBarContent { MenuBarContent(groups: secondaryGroups, bars: []) }
 
     /// Nothing is pinned, every pinned provider is disabled, or no pinned metric has data yet — the
     /// menu bar falls back to the app icon.
@@ -58,16 +67,44 @@ enum MenuBarContentBuilder {
     /// The strip is dynamic: a pinned metric without data is dropped (one of two pins renders alone at
     /// full size), and a provider with no data-carrying pins contributes no icon at all. Pins are
     /// membership; the strip shows whatever subset is real right now.
-    static func build(groups: [ProviderMetrics], data: (WidgetDescriptor) -> WidgetData) -> MenuBarContent {
-        let resolvedGroups = groups.compactMap { group -> MenuBarContent.Group? in
-            let metrics = group.metrics.map { resolve($0, data($0)) }.filter(\.hasData)
-            guard !metrics.isEmpty else { return nil }
-            return MenuBarContent.Group(
+    /// When family coalescing is enabled, each family keeps its most urgent, then active and
+    /// constrained account. Family order and exact-priority ties follow the original pin order.
+    static func build(
+        groups: [ProviderMetrics],
+        coalesceByFamily: Bool = false,
+        data: (WidgetDescriptor) -> WidgetData
+    ) -> MenuBarContent {
+        var resolvedGroups: [MenuBarContent.Group] = []
+        var familyRepresentatives: [String: (index: Int, priority: RepresentativePriority)] = [:]
+        for group in groups {
+            var metrics: [MenuBarContent.Metric] = []
+            var priority = RepresentativePriority()
+            for descriptor in group.metrics {
+                let value = data(descriptor)
+                guard value.hasData else { continue }
+                metrics.append(resolve(descriptor, value))
+                if coalesceByFamily { priority.include(value) }
+            }
+            guard !metrics.isEmpty else { continue }
+            let resolvedGroup = MenuBarContent.Group(
                 providerID: group.provider.id,
-                displayName: group.provider.displayName,
+                displayName: coalesceByFamily ? group.provider.familyName : group.provider.displayName,
                 icon: group.provider.icon,
                 metrics: metrics
             )
+            guard coalesceByFamily else {
+                resolvedGroups.append(resolvedGroup)
+                continue
+            }
+            let family = ProviderAccountID.family(of: group.provider.id)
+            if let representative = familyRepresentatives[family] {
+                guard priority.outranks(representative.priority) else { continue }
+                resolvedGroups[representative.index] = resolvedGroup
+                familyRepresentatives[family] = (representative.index, priority)
+            } else {
+                familyRepresentatives[family] = (resolvedGroups.count, priority)
+                resolvedGroups.append(resolvedGroup)
+            }
         }
         // Bars show any *bounded* metric (it has a fill), not just percentages. Unbounded values (raw
         // spend/credits, no limit) have no fill and are dropped.
@@ -76,6 +113,32 @@ enum MenuBarContentBuilder {
             .filter(\.isBounded)
             .prefix(maxBars)
         return MenuBarContent(groups: resolvedGroups, bars: Array(bars))
+    }
+
+    private struct RepresentativePriority {
+        var severityRank = 0
+        var isActive = false
+        var lowestRemainingFraction = 1.0
+
+        mutating func include(_ data: WidgetData) {
+            isActive = isActive || data.used > 0.0001
+            guard data.isBounded else { return }
+            let rank: Int
+            switch data.meterState().severity {
+            case .critical: rank = 3
+            case .warning: rank = 2
+            case .normal: rank = 1
+            case nil: rank = 0
+            }
+            severityRank = max(severityRank, rank)
+            lowestRemainingFraction = min(lowestRemainingFraction, data.remainingFraction)
+        }
+
+        func outranks(_ other: Self) -> Bool {
+            if severityRank != other.severityRank { return severityRank > other.severityRank }
+            if isActive != other.isActive { return isActive }
+            return lowestRemainingFraction < other.lowestRemainingFraction
+        }
     }
 
     private static func resolve(_ descriptor: WidgetDescriptor, _ data: WidgetData) -> MenuBarContent.Metric {

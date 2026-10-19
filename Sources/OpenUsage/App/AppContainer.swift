@@ -82,7 +82,8 @@ final class AppContainer {
             claudeSwapCards: accountAssembly.claudeSwapCards,
             claudeIdentityKeys: accountAssembly.identityKeysByCard,
             kimiAccounts: accountAssembly.kimiAccounts,
-            ompAccounts: accountAssembly.ompAccounts
+            ompAccounts: accountAssembly.ompAccounts,
+            defaultAccountLabels: accountAssembly.defaultAccountLabels
         )
         let registry = WidgetRegistry.from(providers)
         let apiKeyProviders = providers.compactMap { $0 as? any APIKeyManaging }

@@ -28,6 +28,9 @@ final class StatusItemImageUpdater {
     private let apply: (NSImage) -> Void
     private var applyGate = ApplyGate()
 
+    var isSecondaryExpanded: () -> Bool = { false }
+    var onContentUpdated: ((MenuBarContent) -> Void)?
+
     /// - Parameter apply: sets the rendered image onto the status-item button.
     init(container: AppContainer, apply: @escaping (NSImage) -> Void) {
         self.container = container
@@ -36,14 +39,16 @@ final class StatusItemImageUpdater {
 
     /// Render now and re-arm on the next observable change.
     func update() {
+        var updatedContent = MenuBarContent(groups: [], bars: [])
         let image = withObservationTracking {
-            renderButtonImage()
+            renderButtonImage(into: &updatedContent)
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.scheduleDelayedUpdate()
             }
         }
         applyGate.apply(image, using: apply)
+        onContentUpdated?(updatedContent)
     }
 
     /// The observation callback fires only once until `update()` reads and re-arms it. Waiting here lets
@@ -57,11 +62,12 @@ final class StatusItemImageUpdater {
     }
 
     /// The pinned-metrics strip in the chosen style, or the app icon when nothing is pinned.
-    private func renderButtonImage() -> NSImage {
+    private func renderButtonImage(into updatedContent: inout MenuBarContent) -> NSImage {
         // Screen-share privacy: while a capture is active (and the setting is on), the strip is
         // replaced with the wordmark so a shared screen never carries usage numbers. Read inside the
         // observation closure so the render re-arms on capture-state changes too.
         if container.privacy.concealUsage {
+            updatedContent = MenuBarContent(groups: [], bars: [])
             return MenuBarStripRenderer.privacyImage
                 ?? MenuBarIcon.image
                 ?? MenuBarStripRenderer.fallbackIcon
@@ -70,8 +76,12 @@ final class StatusItemImageUpdater {
             groups: container.layout.pinnedGroups,
             data: { container.dataStore.data(for: $0) }
         )
-        return MenuBarStripRenderer.image(for: content, style: container.layout.menuBarStyle)
-            ?? MenuBarIcon.image
-            ?? MenuBarStripRenderer.fallbackIcon
+        updatedContent = content
+        if container.layout.menuBarStyle == .bars {
+            return MenuBarStripRenderer.image(for: content, style: .bars)
+                ?? MenuBarIcon.image
+                ?? MenuBarStripRenderer.fallbackIcon
+        }
+        return MenuBarIcon.image ?? MenuBarStripRenderer.fallbackIcon
     }
 }

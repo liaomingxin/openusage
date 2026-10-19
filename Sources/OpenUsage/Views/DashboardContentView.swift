@@ -15,6 +15,8 @@ struct DashboardContentView: View {
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
     @AppStorage(TotalSpendSetting.key) private var showTotalSpend = true
+    @AppStorage(DashboardFilterMode.key) private var filterMode = DashboardFilterMode.all
+    @AppStorage(DashboardGroupingSetting.groupByFamilyKey) private var groupByFamily = true
 
     var body: some View {
         PopoverScrollView {
@@ -33,6 +35,10 @@ struct DashboardContentView: View {
                         .padding(.bottom, density.sectionSpacing)
                         .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
+                if !layout.displayGroups.isEmpty {
+                    dashboardControlBar
+                        .padding(.bottom, density.sectionSpacing)
+                }
                 widgetContent
             }
             .animation(Motion.spring, value: container.onboarding.isCustomizeHintPending)
@@ -45,11 +51,47 @@ struct DashboardContentView: View {
         .scrollPosition($scrollPosition)
     }
 
+    private var hasMultiAccountFamily: Bool {
+        var families: Set<String> = []
+        for group in layout.displayGroups {
+            if !families.insert(ProviderAccountID.family(of: group.provider.id)).inserted { return true }
+        }
+        return false
+    }
+
+    private var dashboardControlBar: some View {
+        HStack(spacing: 0) {
+            CapsuleSegmentedPicker(
+                options: DashboardFilterMode.allCases,
+                selection: $filterMode,
+                label: \.label
+            )
+            Spacer(minLength: 8)
+            if hasMultiAccountFamily {
+                Button {
+                    withAnimation(Motion.spring) { groupByFamily.toggle() }
+                } label: {
+                    Label(
+                        groupByFamily ? "Grouped" : "Separate",
+                        systemImage: groupByFamily ? "rectangle.stack.fill" : "square.grid.2x2"
+                    )
+                    .font(.system(size: density.captionPointSize, weight: .medium))
+                    .foregroundStyle(groupByFamily ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.quaternary, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Group accounts by provider family")
+                .accessibilityValue(groupByFamily ? "Grouped" : "Separate")
+            }
+        }
+    }
+
     @ViewBuilder
     private var widgetContent: some View {
-        // The cross-provider Total Spend ring stays visible whenever the user allows it and an enabled
-        // provider can track spend, even before fresh data arrives or when every metric row is hidden.
-        if showTotalSpend, layout.hasSpendCapableProvider {
+        // Spend remains reachable before fresh metrics arrive, except in the alerts-only lens.
+        if showTotalSpend, layout.hasSpendCapableProvider, filterMode != .alerts {
             TotalSpendCard()
                 .padding(.bottom, density.sectionSpacing)
         }

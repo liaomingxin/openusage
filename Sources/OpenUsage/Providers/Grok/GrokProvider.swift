@@ -81,8 +81,8 @@ final class GrokProvider: ProviderRuntime {
     }
 
     private func loadAndProbe() async throws -> ProviderSnapshot {
-        if authStore.ompAccount != nil {
-            let candidates = try await loadOffMainActor { [authStore] in
+        if let ompAccount = authStore.ompAccount {
+            var candidates = try await loadOffMainActor { [authStore] in
                 try authStore.loadAuthCandidates()
             }
             guard var state = candidates.first else {
@@ -91,7 +91,22 @@ final class GrokProvider: ProviderRuntime {
             if let rawExpiry = state.entry.expiresAt,
                let expiresAt = OpenUsageISO8601.date(from: rawExpiry),
                now() >= expiresAt {
-                throw OMPOAuthError.sessionExpired("Grok")
+                let refreshed = await loadOffMainActor {
+                    OMPOAuthStore.triggerCLIRefresh(providerKey: ompAccount.providerKey)
+                }
+                if refreshed {
+                    candidates = (try? await loadOffMainActor { [authStore] in
+                        try authStore.loadAuthCandidates()
+                    }) ?? candidates
+                    if let updated = candidates.first {
+                        state = updated
+                    }
+                }
+                if let updatedRaw = state.entry.expiresAt,
+                   let updatedExpiresAt = OpenUsageISO8601.date(from: updatedRaw),
+                   now() >= updatedExpiresAt {
+                    throw OMPOAuthError.sessionExpired("Grok")
+                }
             }
             return try await probe(state: &state, accessToken: state.token)
         }

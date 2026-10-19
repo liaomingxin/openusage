@@ -85,6 +85,22 @@ struct KimiAuthStore: Sendable {
         return credentials
     }
 
+    func defaultAccountLabel() -> String? {
+        let credentials = loadCredentials()
+        if let token = credentials?.accessToken,
+           let payload = ProviderParse.jwtPayload(token) {
+            if let email = (payload["email"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+                return email
+            }
+            if let userID = ((payload["user_id"] as? String) ?? (payload["sub"] as? String))?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+                return "CLI · \(userID.prefix(8))"
+            }
+        }
+        return nil
+    }
+
     /// Reads only this card's app-managed key file, never environment variables or another login.
     func loadAPIKey() -> String? {
         guard let apiKeyPath,

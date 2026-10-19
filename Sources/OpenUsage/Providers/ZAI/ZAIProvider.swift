@@ -10,6 +10,7 @@ final class ZAIProvider: ProviderRuntime {
     let hermesScanner: HermesUsageScanner
     let pricing: @Sendable () async -> ModelPricing
     let now: @Sendable () -> Date
+    let accountLabel: String?
 
     /// The console this account lives on, read from the key file at launch and re-read on every
     /// refresh so a change in Settings takes effect on the next pass. Drives the API host, the two
@@ -24,7 +25,8 @@ final class ZAIProvider: ProviderRuntime {
         zcodeScanner: ZCodeUsageScanner = ZCodeUsageScanner(),
         hermesScanner: HermesUsageScanner = HermesUsageScanner(),
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        accountLabel: String? = nil
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
@@ -34,16 +36,44 @@ final class ZAIProvider: ProviderRuntime {
         self.hermesScanner = hermesScanner
         self.pricing = pricing
         self.now = now
+        self.accountLabel = accountLabel
         self.platform = authStore.loadPlatform()
     }
 
     var provider: Provider {
         Provider(
             id: "zai",
-            displayName: "Z.ai",
+            familyName: "Z.ai",
+            accountLabel: accountLabel,
             icon: .providerMark("zai"),
             links: platform.links
         )
+    }
+
+    nonisolated static func defaultAccountLabel(
+        files: TextFileAccessing = LocalTextFileAccessor(),
+        authStore: ZAIAuthStore = ZAIAuthStore()
+    ) -> String? {
+        let platform = authStore.loadPlatform() == .cn ? "bigmodel.cn" : "z.ai"
+        if let text = try? files.readTextIfPresent("~/.zcode/v2/credentials.json"),
+           let credentials = ProviderParse.jsonObject(Data(text.utf8)) {
+            for key in credentials.keys where key.hasPrefix("account-provider:coding-plan:account:") {
+                guard let accountRange = key.range(of: ":account:", options: .backwards),
+                      let suffixRange = key.range(
+                        of: ":api-key",
+                        range: accountRange.upperBound..<key.endIndex
+                      ),
+                      let accountID = String(key[accountRange.upperBound..<suffixRange.lowerBound])
+                        .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                else { continue }
+                return "\(platform) · #\(accountID.prefix(8))"
+            }
+        }
+        if let key = authStore.loadAPIKey()?.apiKey,
+           let prefix = key.split(separator: ".").first, !prefix.isEmpty {
+            return "\(platform) · #\(prefix.prefix(8))"
+        }
+        return nil
     }
 
     var widgetDescriptors: [WidgetDescriptor] {

@@ -223,6 +223,27 @@ extension LayoutStore {
         }
     }
 
+    /// Keep each family's accounts together, including disabled accounts, in their saved internal order.
+    @discardableResult
+    func reorderProviderFamily(draggedFamily: String, targetFamily: String) -> Bool {
+        recordingUndoStep {
+            var seen = Set<String>()
+            let familyOrder = customizeGroups.map { ProviderAccountID.family(of: $0.provider.id) }
+                .filter { seen.insert($0).inserted }
+            guard let next = Self.reordered(familyOrder, dragged: draggedFamily, target: targetFamily) else {
+                return false
+            }
+            let ordered = orderedProviderIDs()
+            let providersByFamily = Dictionary(grouping: ordered) { ProviderAccountID.family(of: $0) }
+            let activeFamilies = Set(next)
+            providerOrder = next.flatMap { providersByFamily[$0] ?? [] }
+                + ordered.filter { !activeFamilies.contains(ProviderAccountID.family(of: $0)) }
+            persistProviderOrder()
+            syncPlacedOrder()
+            return true
+        }
+    }
+
     /// Reorder metrics within one provider when `dragged` is dropped onto `target` (both descriptor ids of
     /// that provider). Operates on the provider's full metric order so disabled metrics keep their place too.
     ///

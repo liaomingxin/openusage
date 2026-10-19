@@ -136,7 +136,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        firstLaunchWindow?.show()
+        if let firstLaunchWindow {
+            firstLaunchWindow.show()
+        } else {
+            MenuBarPopover.showHandler?()
+        }
         return true
     }
 

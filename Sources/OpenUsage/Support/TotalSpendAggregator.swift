@@ -111,6 +111,39 @@ struct TotalSpend: Equatable {
     /// Raw storage empty — no provider had dollars or tokens for the period.
     var isEmpty: Bool { slices.isEmpty }
 
+    /// Coalesces account contributions in first-appearance order without changing the raw total.
+    func groupedByFamily() -> TotalSpend {
+        var grouped: [TotalSpendSlice] = []
+        var indices: [String: Int] = [:]
+        grouped.reserveCapacity(slices.count)
+        indices.reserveCapacity(slices.count)
+
+        for slice in slices {
+            let family = ProviderAccountID.family(of: slice.provider.id)
+            if let index = indices[family] {
+                let first = grouped[index]
+                grouped[index] = TotalSpendSlice(
+                    provider: Provider(id: family, displayName: first.provider.familyName, icon: first.provider.icon),
+                    amountUSD: first.amountUSD + slice.amountUSD,
+                    tokenCount: first.tokenCount + slice.tokenCount,
+                    estimated: first.estimated || slice.estimated
+                )
+            } else {
+                indices[family] = grouped.count
+                let provider = slice.provider.id == family ? slice.provider : Provider(
+                    id: family, displayName: slice.provider.familyName, icon: slice.provider.icon
+                )
+                grouped.append(TotalSpendSlice(
+                    provider: provider,
+                    amountUSD: slice.amountUSD,
+                    tokenCount: slice.tokenCount,
+                    estimated: slice.estimated
+                ))
+            }
+        }
+        return TotalSpend(period: period, slices: grouped)
+    }
+
     /// Filters, ranks, and computes the center value for the title menu's selected metric.
     func projection(for metric: TotalSpendMetric) -> TotalSpendProjection {
         let included: [(slice: TotalSpendSlice, display: Double)] = slices.compactMap { slice in

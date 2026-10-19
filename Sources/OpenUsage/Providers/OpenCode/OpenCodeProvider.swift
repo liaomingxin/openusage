@@ -44,14 +44,7 @@ enum OpenCodeUsageError: Error, LocalizedError, Equatable {
 /// and a usage trend from OpenCode's SQLite logs (Go + Zen).
 @MainActor
 final class OpenCodeProvider: ProviderRuntime {
-    let provider = Provider(
-        id: "opencode",
-        displayName: "OpenCode",
-        icon: .providerMark("opencode"),
-        links: [
-            .init(label: "Dashboard", url: "https://opencode.ai/auth")
-        ]
-    )
+    let provider: Provider
 
     let authStore: OpenCodeAuthStore
     let usageClient: OpenCodeUsageClient
@@ -71,8 +64,18 @@ final class OpenCodeProvider: ProviderRuntime {
         authStore: OpenCodeAuthStore = OpenCodeAuthStore(),
         usageClient: OpenCodeUsageClient = OpenCodeUsageClient(),
         usageScanner: OpenCodeUsageScanner = OpenCodeUsageScanner(),
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        accountLabel: String? = nil
     ) {
+        self.provider = Provider(
+            id: "opencode",
+            familyName: "OpenCode",
+            accountLabel: accountLabel,
+            icon: .providerMark("opencode"),
+            links: [
+                .init(label: "Dashboard", url: "https://opencode.ai/auth")
+            ]
+        )
         self.authStore = authStore
         self.usageClient = usageClient
         self.usageScanner = usageScanner

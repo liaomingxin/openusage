@@ -14,7 +14,7 @@ import Foundation
 /// which are 5h-only — the weekly meters read "No data" there.
 @MainActor
 final class AntigravityProvider: ProviderRuntime {
-    let provider = Provider(id: "antigravity", displayName: "Antigravity", icon: .providerMark("antigravity"))
+    let provider: Provider
 
     let authStore: AntigravityAuthStore
     let usageClient: AntigravityUsageClient
@@ -33,8 +33,15 @@ final class AntigravityProvider: ProviderRuntime {
         dbUsageScanner: AntigravityDbUsageScanner = AntigravityDbUsageScanner(),
         piScanner: PiUsageScanner = .shared,
         now: @escaping @Sendable () -> Date = Date.init,
-        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
+        accountLabel: String? = nil
     ) {
+        self.provider = Provider(
+            id: "antigravity",
+            familyName: "Antigravity",
+            accountLabel: accountLabel,
+            icon: .providerMark("antigravity")
+        )
         self.authStore = authStore
         self.usageClient = usageClient
         self.discovery = discovery

@@ -60,6 +60,22 @@ struct OpenCodeAuthStore: Sendable {
         OpenCodePaths.authFilePath(dataDirectory: dataDirectory)
     }
 
+    func defaultAccountLabel() -> String? {
+        let paths = (try? (databasePaths?() ?? OpenCodePaths.databaseFiles(in: dataDirectory))) ?? []
+        let sql = """
+            SELECT json_extract(value, '$.metadata.email') FROM credential
+            WHERE integration_id IN ('opencode', 'opencode-go') AND (active IS NULL OR active = 1)
+            ORDER BY active DESC, time_updated DESC, id DESC LIMIT 1;
+            """
+        for path in paths {
+            if let email = try? sqlite.queryValue(path: path, sql: sql)?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+                return email
+            }
+        }
+        return nil
+    }
+
     /// `oauth` or `api` for one provider entry in OpenCode 2's `credential` table (or `auth.json`
     /// before import), or nil when that provider is absent. A custom base URL is not an official login.
     func credentialKind(providerID: String) throws -> String? {

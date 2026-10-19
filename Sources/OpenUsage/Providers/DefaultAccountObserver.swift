@@ -110,6 +110,34 @@ struct DefaultAccountObserver: Sendable {
 
     // MARK: - Codex
 
+    /// A display-only email from local auth files; never probes or reads keychain credentials.
+    func defaultCodexEmail() -> String? {
+        let homes: [String]
+        if let raw = environment.value(for: "CODEX_HOME")?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            homes = [raw]
+        } else {
+            homes = ["~/.config/codex", "~/.codex"]
+        }
+        for home in homes {
+            let anchor = expandTilde(home)
+            guard let text = try? files.readTextIfPresent(anchor + "/auth.json"),
+                  let auth = CodexAuthStore.parseAuth(text)
+            else { continue }
+            let idTokenPayload = auth.tokens?.idToken.flatMap { ProviderParse.jwtPayload($0) }
+            if let email = (idTokenPayload?["email"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+                return email
+            }
+            let accessTokenPayload = auth.tokens?.accessToken.flatMap { ProviderParse.jwtPayload($0) }
+            if let email = ((accessTokenPayload?["https://api.openai.com/profile"] as? [String: Any])?["email"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+                return email
+            }
+        }
+        return nil
+    }
+
     /// The default Codex homes, mirroring `CodexAuthStore.authPaths()`: `CODEX_HOME` when exported,
     /// else `~/.config/codex` then `~/.codex`. The first home that names its account wins.
     ///

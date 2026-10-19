@@ -7,28 +7,33 @@ import SwiftUI
 /// outside the `label:` view builder (an `ImageRenderer` inline there throws obscure errors).
 @MainActor
 enum MenuBarStripRenderer {
-    /// Last render, memoized on (content, style). The observation loop re-renders on every snapshot
-    /// write — several times per refresh pass — but the strip's visible content rarely changes.
+    /// Last render, memoized on (content, style, isSecondaryExpanded). The observation loop re-renders
+    /// on every snapshot write — several times per refresh pass — but the strip's visible content rarely changes.
     /// Returning the same `NSImage` instance lets `StatusItemImageUpdater` skip the status-item set
     /// (an unconditional set still costs a WindowServer redraw), and keeps `ImageRenderer` (which
     /// retains a little memory per run on macOS) to actual visual changes.
-    private static var lastRender: (content: MenuBarContent, style: MenuBarStyle, image: NSImage?)?
+    private static var lastRender: (
+        content: MenuBarContent, style: MenuBarStyle, isSecondaryExpanded: Bool, image: NSImage?
+    )?
 
     /// The strip image for the given content and style, or `nil` when the content renders nothing
     /// in that style (caller falls back to the app icon). Memoized: equal inputs return the
     /// previously rendered instance.
-    static func image(for content: MenuBarContent, style: MenuBarStyle) -> NSImage? {
-        if let lastRender, lastRender.content == content, lastRender.style == style {
+    static func image(
+        for content: MenuBarContent, style: MenuBarStyle, isSecondaryExpanded: Bool = false
+    ) -> NSImage? {
+        if let lastRender, lastRender.content == content, lastRender.style == style,
+           lastRender.isSecondaryExpanded == isSecondaryExpanded {
             AppLog.debug(.menubar, "strip cache hit")
             return lastRender.image
         }
         AppLog.debug(.menubar, "strip cache miss (rendering)")
         let image: NSImage?
         switch style {
-        case .text: image = textImage(for: content)
+        case .text: image = textImage(for: content, isSecondaryExpanded: isSecondaryExpanded)
         case .bars: image = barsImage(for: content)
         }
-        lastRender = (content, style, image)
+        lastRender = (content, style, isSecondaryExpanded, image)
         return image
     }
 
@@ -39,9 +44,13 @@ enum MenuBarStripRenderer {
     /// glyph's normalization inset would otherwise ship as transparent margins, widening the status
     /// item past its artwork (the menu bar already pads every item, so baked-in margins read as an
     /// extra-large gap next to neighboring items).
-    static func textImage(for content: MenuBarContent) -> NSImage? {
+    static func textImage(for content: MenuBarContent, isSecondaryExpanded: Bool = false) -> NSImage? {
         guard !content.isEmpty else { return nil }
-        let renderer = ImageRenderer(content: MenuBarTextStrip(content: content))
+        let renderer = ImageRenderer(content: MenuBarTextStrip(
+            content: content.primaryContent,
+            overflowCount: content.secondaryGroups.count,
+            isSecondaryExpanded: isSecondaryExpanded
+        ))
         renderer.scale = 2
         guard let rendered = renderer.cgImage else { return nil }
         let cgImage = trimmedToVisibleContent(rendered) ?? rendered
@@ -155,6 +164,8 @@ private struct MenuBarPrivacyLabel: View {
 
 private struct MenuBarTextStrip: View {
     let content: MenuBarContent
+    var overflowCount: Int = 0
+    var isSecondaryExpanded: Bool = false
 
     var body: some View {
         HStack(spacing: 11) {
@@ -162,6 +173,16 @@ private struct MenuBarTextStrip: View {
                 HStack(spacing: 4) {
                     glyph(group.icon)
                     metricsView(group.metrics)
+                }
+            }
+            if overflowCount > 0 {
+                HStack(spacing: 1) {
+                    if !isSecondaryExpanded {
+                        Text("+\(overflowCount)")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    Image(systemName: isSecondaryExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
                 }
             }
         }

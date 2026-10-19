@@ -76,6 +76,8 @@ struct ProviderAccountAssembly {
     let kimiAccounts: [KimiAccountConfiguration]
     /// Additional Grok and Cursor identities discovered in OMP, excluding the native logins.
     let ompAccounts: [OMPOAuthAccount]
+    /// Display labels for native/default cards, independent of their proven identity stamps.
+    let defaultAccountLabels: [String: String]
 
     init(
         identityKeysByCard: [String: String],
@@ -83,7 +85,8 @@ struct ProviderAccountAssembly {
         claudeCards: [ClaudeAccountCard] = [],
         claudeSwapCards: [ClaudeSwapCard] = [],
         kimiAccounts: [KimiAccountConfiguration] = [],
-        ompAccounts: [OMPOAuthAccount] = []
+        ompAccounts: [OMPOAuthAccount] = [],
+        defaultAccountLabels: [String: String] = [:]
     ) {
         self.identityKeysByCard = identityKeysByCard
         self.extraCodexCards = extraCodexCards
@@ -91,6 +94,7 @@ struct ProviderAccountAssembly {
         self.claudeSwapCards = claudeSwapCards
         self.kimiAccounts = kimiAccounts
         self.ompAccounts = ompAccounts
+        self.defaultAccountLabels = defaultAccountLabels
     }
 
     /// `waitsForLoginShell`: true for the menu-bar app (a Finder/Dock launch inherits no shell
@@ -185,6 +189,7 @@ struct ProviderAccountAssembly {
     ) -> ProviderAccountAssembly {
         var identityKeys: [String: String] = [:]
         var observations: [ProviderAccountsStore.Observation] = []
+        var defaultLabels: [String: String] = [:]
 
         let outcomes: [(family: String, outcome: DefaultAccountObserver.Outcome)] = [
             ("claude", { observer.observeClaude() }),
@@ -195,6 +200,7 @@ struct ProviderAccountAssembly {
         for (family, outcome) in outcomes {
             switch outcome {
             case .resolved(let identityKey, let label, let anchor):
+                if family == "codex" { defaultLabels[family] = label?.nilIfEmpty }
                 identityKeys[family] = identityKey
                 observations.append(ProviderAccountsStore.Observation(
                     family: family,
@@ -209,6 +215,9 @@ struct ProviderAccountAssembly {
             case .absent:
                 AppLog.debug(.config, "accounts: \(family) has no default login")
             }
+        }
+        if families.contains("codex"), defaultLabels["codex"] == nil {
+            defaultLabels["codex"] = observer.defaultCodexEmail()
         }
 
         for extra in extraCodex {
@@ -366,7 +375,7 @@ struct ProviderAccountAssembly {
 
         return ProviderAccountAssembly(
             identityKeysByCard: identityKeys, extraCodexCards: extraCards, claudeCards: cards,
-            claudeSwapCards: swapCards
+            claudeSwapCards: swapCards, defaultAccountLabels: defaultLabels
         )
     }
 
@@ -430,7 +439,9 @@ struct ProviderAccountAssembly {
 
     private static func organizationLabel(_ value: String?) -> String? {
         guard let value, let opening = value.lastIndex(of: "("), value.last == ")" else { return value }
-        return String(value[value.index(after: opening)..<value.index(before: value.endIndex)])
+        let label = String(value[value.index(after: opening)..<value.index(before: value.endIndex)])
+        let personalSuffix = "'s Organization"
+        return label.hasSuffix(personalSuffix) ? String(label.dropLast(personalSuffix.count)) : label
     }
 
     private static func discoverDesktopOrganizations(

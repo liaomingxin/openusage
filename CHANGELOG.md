@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.7.15-beta.1-kimi.4
+
+### New Features
+- Add a two-layer expandable status bar: keep a single OpenUsage icon in the system menu bar and display all starred metrics in a draggable, position-remembering iOS Liquid Glass floating capsule below it. By @liaomingxin.
+- Group multi-account providers into unified family hub cards (`ProviderFamilySection`) with single-row quota comparison matrices, urgency sorting, and per-account focus tabs. By @liaomingxin.
+- Add dashboard lens filters (`All` / `Quotas` / `Alerts`), family grouping toggle (`Grouped` / `Separate`), and an optional 3-column wide dashboard layout (`908pt`). By @liaomingxin.
+- Group accounts by provider family in Customize (`L1` / `L2`), with per-account enablement and menu-bar star targeting. By @liaomingxin.
+- Resolve and display account email/identifier badges across default and additional cards (`Claude`, `Codex`, `Cursor`, `Grok`, `Kimi Code`, `Muse Code`, `OpenCode`, `Z.ai`, `Antigravity`). By @liaomingxin.
+- Condense bounded quota rows to a two-line layout, dim idle `0% used` meters, and add family spend rollups, compact spend strip mode, and Top-5 + `Others` legend capping to Total Spend. By @liaomingxin.
+
+### Bug Fixes
+- Prefer active Keychain credentials over stale `state.vscdb` tokens in Cursor 3.25+ (`Glass`) and fall back to Keychain when SQLite token refresh fails. By @liaomingxin.
+- Automatically trigger `omp usage --provider xai-oauth` when an OMP-backed Grok access token expires so OMP safely rotates its 6-hour token in the background. By @liaomingxin.
+
+### Installation
+Open the DMG and replace `/Applications/OpenUsage.app`. If Gatekeeper blocks this personal build, remove the quarantine attribute once:
+
+```sh
+xattr -rd com.apple.quarantine /Applications/OpenUsage.app
+```
+
+**Full Changelog**: [v0.7.15-beta.1-kimi.3...v0.7.15-beta.1-kimi.4](https://github.com/liaomingxin/openusage/compare/v0.7.15-beta.1-kimi.3...v0.7.15-beta.1-kimi.4)
+
 ## v0.7.15-beta.1-kimi.3
 
 ### New Features

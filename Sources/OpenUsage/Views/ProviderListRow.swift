@@ -5,12 +5,14 @@ import SwiftUI
 /// and expands to fill, so the empty space between the name and the toggle is tappable too; the
 /// trailing on/off toggle toggles; the caret after the toggle also opens L2. So: tap anything except
 /// the grip or the toggle to open L2, drag the grip to reorder. The secondary line shows the
-/// provider's total metric count. Disabled providers render greyed but stay openable.
+/// provider's total metric count or a family account summary. Disabled rows stay openable.
 struct ProviderListRow<Handle: View>: View {
     let provider: Provider
     let isEnabled: Bool
     let metricCount: Int
     let handle: (AnyView) -> Handle
+    var titleOverride: String? = nil
+    var subtitleOverride: String? = nil
     var onToggle: ((Bool) -> Void) = { _ in }
     var onOpen: () -> Void = {}
 
@@ -29,11 +31,11 @@ struct ProviderListRow<Handle: View>: View {
                 ProviderIcon(source: provider.icon)
                     .frame(width: 18, height: 18)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(provider.displayName)
+                    Text(titleOverride ?? provider.displayName)
                         .font(.system(size: density.headerPointSize, weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text("\(metricCount) metrics")
+                    Text(subtitleOverride ?? "\(metricCount) metrics")
                         .font(.system(size: density.planBadgePointSize))
                         .foregroundStyle(.secondary)
                 }
@@ -54,7 +56,7 @@ struct ProviderListRow<Handle: View>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Open \(provider.displayName)")
+            .accessibilityLabel("Open \(titleOverride ?? provider.displayName)")
         }
         .padding(.horizontal, Theme.cardRowInset)
         .padding(.vertical, density.controlRowPadding)

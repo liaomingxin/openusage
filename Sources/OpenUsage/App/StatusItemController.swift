@@ -2,27 +2,54 @@ import AppKit
 import KeyboardShortcuts
 import SwiftUI
 
-/// The dashboard's host window: a borderless, **non-activating** panel that can still become key.
-///
-/// This is the fix for `NSPopover`'s fundamental limitation in a menu-bar accessory app. A popover's
-/// window is only key while the whole app is active, and activating an `LSUIElement` app is
-/// asynchronous — on macOS 26+ it lands several runloop ticks later or is denied — so the popover is
-/// on-screen but not key, the keystroke goes to the focused status-item button instead (Enter
-/// re-toggles it shut; Esc is lost), and you need a second click/keypress. A `.nonactivatingPanel`
-/// whose `canBecomeKey` is `true` becomes key the instant it's ordered front, *without* activating the
-/// app, so keyboard input (Esc/Return navigation, the Settings shortcut recorder) works on the first
-/// try. (The pattern keyboard-first menu-bar apps use; cross-checked via GitHits.)
+/// A borderless, non-activating dashboard host that becomes key without activating the accessory app.
+/// Unlike `NSPopover`, it receives keyboard input immediately, avoiding asynchronous activation races
+/// that otherwise lose Esc/Return and require a second click in text fields or shortcut recorders.
 final class MenuBarPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
-/// Owns the menu-bar status item and the panel that shows the dashboard.
-///
-/// Deliberately not SwiftUI's `MenuBarExtra`: its `.window` panel never became a proper key window for
-/// text input (the Settings shortcut recorder silently ignored key presses) and there is no public API
-/// to present it programmatically. A plain `NSStatusItem` + a key-capable `NSPanel` gives a real key
-/// window and a real show/hide pair the global shortcut can call directly.
+final class SecondaryStripPanel: NSPanel {
+    private var dragStartMouse: NSPoint?
+    private var dragStartOrigin: NSPoint?
+    private var isDraggingWindow = false
+
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .leftMouseDown:
+            dragStartMouse = NSEvent.mouseLocation
+            dragStartOrigin = frame.origin
+            isDraggingWindow = false
+            super.sendEvent(event)
+        case .leftMouseDragged:
+            if let startMouse = dragStartMouse, let startOrigin = dragStartOrigin {
+                let mouse = NSEvent.mouseLocation
+                let dx = mouse.x - startMouse.x
+                let dy = mouse.y - startMouse.y
+                if isDraggingWindow || hypot(dx, dy) > 3 {
+                    isDraggingWindow = true
+                    setFrameOrigin(NSPoint(x: (startOrigin.x + dx).rounded(), y: (startOrigin.y + dy).rounded()))
+                    return
+                }
+            }
+            super.sendEvent(event)
+        case .leftMouseUp:
+            let wasDragging = isDraggingWindow
+            dragStartMouse = nil
+            dragStartOrigin = nil
+            isDraggingWindow = false
+            if wasDragging { return }
+            super.sendEvent(event)
+        default:
+            super.sendEvent(event)
+        }
+    }
+}
+
+/// Owns the status item, draggable secondary strip, and key-capable dashboard panel.
+/// `NSStatusItem` + `NSPanel` supports reliable text input and programmatic show/hide, unlike the
+/// `MenuBarExtra` window used previously.
 @MainActor
 final class StatusItemController: NSObject {
     private let container: AppContainer
@@ -31,10 +58,24 @@ final class StatusItemController: NSObject {
     /// (which never retains the controller), so this can be a plain non-optional `let`.
     private let imageUpdater: StatusItemImageUpdater
     private let panel: MenuBarPanel
+    private let secondaryPanel: SecondaryStripPanel
+    private var secondaryHostingController: NSHostingController<SecondaryMenuBarStripView>?
+    private static let secondaryExpandedKey = "menubar.secondaryBarExpanded"
+    private static let secondaryCustomXKey = "menubar.secondaryBarCustomX"
+    private static let secondaryCustomYKey = "menubar.secondaryBarCustomY"
+    private var isUpdatingSecondaryFrame = false
+    private var windowMoveObserver: NSObjectProtocol?
+    private var isSecondaryBarExpanded: Bool {
+        didSet {
+            UserDefaults.standard.set(isSecondaryBarExpanded, forKey: Self.secondaryExpandedKey)
+        }
+    }
+    private var latestMenuBarContent = MenuBarContent(groups: [], bars: [])
     private let heightController: PanelHeightController
     private lazy var outsideClickMonitor = PanelOutsideClickMonitor(
         panel: panel,
         statusItem: statusItem,
+        secondaryPanel: secondaryPanel,
         isMorphing: { [weak self] in self?.heightController.isMorphing ?? false },
         onInsidePanelClick: { [weak self] in self?.clearStrayFocus() },
         onDismiss: { [weak self] in self?.hidePanel() }
@@ -50,6 +91,7 @@ final class StatusItemController: NSObject {
 
     init(container: AppContainer, updater: UpdaterController) {
         self.container = container
+        self.isSecondaryBarExpanded = UserDefaults.standard.object(forKey: Self.secondaryExpandedKey) as? Bool ?? true
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.statusItem = statusItem
         // Captures the status item, not `self` — no retain cycle, and no optional property just to
@@ -91,11 +133,20 @@ final class StatusItemController: NSObject {
         )
         self.panel = panel
         self.heightController = PanelHeightController(panel: panel) { container.layout.screen }
+        self.secondaryPanel = SecondaryStripPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
 
         super.init()
 
         configurePanel()
+        configureSecondaryPanel()
         configureStatusItem()
+        imageUpdater.isSecondaryExpanded = { [weak self] in self?.isSecondaryBarExpanded ?? false }
+        imageUpdater.onContentUpdated = { [weak self] content in self?.handleMenuBarContentUpdated(content) }
         imageUpdater.update()
         applyTransparency()
 
@@ -106,6 +157,7 @@ final class StatusItemController: NSObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.panel.appearance = AppearanceSetting.current.nsAppearance
+                self?.secondaryPanel.appearance = AppearanceSetting.current.nsAppearance
             }
         }
         // Registered once here; the controller lives for the app's whole life.
@@ -185,12 +237,38 @@ final class StatusItemController: NSObject {
         panel.contentViewController = rootVC
     }
 
+    private func configureSecondaryPanel() {
+        secondaryPanel.level = .statusBar
+        secondaryPanel.hidesOnDeactivate = false
+        secondaryPanel.hasShadow = true
+        secondaryPanel.isMovable = true
+        secondaryPanel.isMovableByWindowBackground = true
+        secondaryPanel.isOpaque = false
+        secondaryPanel.backgroundColor = .clear
+        secondaryPanel.animationBehavior = .utilityWindow
+        secondaryPanel.isReleasedWhenClosed = false
+        secondaryPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        secondaryPanel.appearance = AppearanceSetting.current.nsAppearance
+        windowMoveObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification, object: secondaryPanel, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.isUpdatingSecondaryFrame, self.secondaryPanel.isVisible else { return }
+                let frame = self.secondaryPanel.frame
+                UserDefaults.standard.set(frame.minX, forKey: Self.secondaryCustomXKey)
+                UserDefaults.standard.set(frame.maxY, forKey: Self.secondaryCustomYKey)
+                if self.panel.isVisible {
+                    self.heightController.prepareForOpening(below: frame)
+                }
+            }
+        }
+    }
+
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
         button.target = self
         button.action = #selector(statusButtonClicked)
-        // Left-click toggles the popover; right-click (or control-click) drops the context menu.
-        // Both arrive through `statusButtonClicked`, which branches on the triggering event.
+        // Context clicks open the native menu; left-clicks toggle the strip or dashboard.
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
@@ -200,16 +278,10 @@ final class StatusItemController: NSObject {
     /// shouldn't fade in from nothing).
     private var hasAppliedTransparency = false
 
-    /// Applies the resolved transparency style to the panel and re-arms on the next change. Mirrors
-    /// `StatusItemImageUpdater.update()`'s `withObservationTracking` re-arm (its `onChange` is
-    /// one-shot). Reads the
-    /// store's `effectiveStyle`, which folds in the persisted toggle, the egg state, and the system
-    /// accessibility flags — so this fires whenever any of them changes. Backdrop already exists (it's a
-    /// stored property), so the first call from `init` safely sets the initial look.
-    ///
-    /// On every change after launch the window alpha and the backdrop crossfade ease together in one
-    /// ~0.55s group, matching the SwiftUI side (`tooMuchTransparency`'s `.animation`), so toggling the
-    /// egg or Increase Transparency fades in and out instead of snapping.
+    /// Applies the resolved toggle, egg, and accessibility style, then re-arms one-shot observation
+    /// like `StatusItemImageUpdater.update()`. The stored backdrop is ready for the initial call.
+    /// Subsequent changes crossfade the window alpha and backdrop together over ~0.55s, matching
+    /// SwiftUI's `tooMuchTransparency` animation; the initial appearance is applied immediately.
     private func applyTransparency() {
         let style = withObservationTracking {
             container.transparency.effectiveStyle
@@ -239,12 +311,103 @@ final class StatusItemController: NSObject {
 
     // MARK: - Show / hide
 
+    private func handleMenuBarContentUpdated(_ content: MenuBarContent) {
+        latestMenuBarContent = content
+        updateSecondaryBar()
+    }
+
+    private func setSecondaryBarExpanded(_ expanded: Bool) {
+        guard isSecondaryBarExpanded != expanded else { return }
+        isSecondaryBarExpanded = expanded
+        updateSecondaryBar()
+        imageUpdater.update()
+    }
+
+    private func dashboardAnchorRect(for buttonRect: NSRect) -> NSRect {
+        secondaryPanel.isVisible ? secondaryPanel.frame : buttonRect
+    }
+
+    private func resetSecondaryBarPosition() {
+        UserDefaults.standard.removeObject(forKey: Self.secondaryCustomXKey)
+        UserDefaults.standard.removeObject(forKey: Self.secondaryCustomYKey)
+        updateSecondaryBar()
+    }
+
+    private func updateSecondaryBar() {
+        let rawButtonRect = statusItem.button.flatMap { button in
+            button.window.map { $0.convertToScreen(button.convert(button.bounds, to: nil)) }
+        }
+        let fallbackRect = NSScreen.main.map {
+            NSRect(x: $0.visibleFrame.maxX - 240, y: $0.visibleFrame.maxY, width: 24, height: 24)
+        }
+        let buttonRectOnScreen = (rawButtonRect?.width ?? 0) > 0 ? rawButtonRect : fallbackRect
+        if !latestMenuBarContent.groups.isEmpty && isSecondaryBarExpanded
+            && container.layout.menuBarStyle == .text && !container.privacy.concealUsage,
+           let buttonRect = buttonRectOnScreen {
+            let strip = SecondaryMenuBarStripView(
+                groups: latestMenuBarContent.groups,
+                isDashboardOpen: panel.isVisible,
+                onToggleDashboard: { [weak self] in self?.togglePopover() },
+                onCollapse: { [weak self] in self?.setSecondaryBarExpanded(false) },
+                onResetPosition: { [weak self] in self?.resetSecondaryBarPosition() }
+            )
+            let hosting: NSHostingController<SecondaryMenuBarStripView>
+            if let existing = secondaryHostingController {
+                existing.rootView = strip
+                hosting = existing
+            } else {
+                hosting = NSHostingController(rootView: strip)
+                secondaryHostingController = hosting
+                secondaryPanel.contentViewController = hosting
+            }
+            let view = hosting.view
+            view.layoutSubtreeIfNeeded()
+            let fitting = view.fittingSize
+            let size = NSSize(width: max(fitting.width, 80).rounded(), height: max(fitting.height, 28).rounded())
+            let screen = NSScreen.screens.first { $0.frame.intersects(buttonRect) } ?? NSScreen.main
+            var topLeft = PanelGeometry.clampedTopLeft(
+                below: buttonRect, width: size.width, visibleFrame: screen?.visibleFrame
+            )
+            topLeft.y = (buttonRect.minY - 2).rounded(.down)
+            if UserDefaults.standard.object(forKey: Self.secondaryCustomXKey) != nil {
+                topLeft = NSPoint(
+                    x: UserDefaults.standard.double(forKey: Self.secondaryCustomXKey),
+                    y: UserDefaults.standard.double(forKey: Self.secondaryCustomYKey)
+                )
+                let savedFrame = NSRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width, height: size.height)
+                if let visibleFrame = (NSScreen.screens.first { $0.frame.intersects(savedFrame) } ?? screen)?.visibleFrame {
+                    topLeft.x = min(max(topLeft.x, visibleFrame.minX), max(visibleFrame.minX, visibleFrame.maxX - size.width))
+                    topLeft.y = min(max(topLeft.y, visibleFrame.minY + min(size.height, visibleFrame.height)), visibleFrame.maxY)
+                }
+            }
+            isUpdatingSecondaryFrame = true
+            defer { isUpdatingSecondaryFrame = false }
+            secondaryPanel.setFrame(
+                NSRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width, height: size.height),
+                display: true
+            )
+            secondaryPanel.orderFrontRegardless()
+        } else {
+            secondaryPanel.orderOut(nil)
+        }
+        if panel.isVisible, let buttonRectOnScreen {
+            heightController.prepareForOpening(below: dashboardAnchorRect(for: buttonRectOnScreen))
+        }
+    }
+
     @objc private func statusButtonClicked() {
         let event = NSApp.currentEvent
         let isContextClick = event?.type == .rightMouseUp
             || event?.modifierFlags.contains(.control) == true
+        let isOptionClick = event?.modifierFlags.contains(.option) == true
         if isContextClick {
             showContextMenu()
+        } else if !latestMenuBarContent.groups.isEmpty && container.layout.menuBarStyle == .text && !isOptionClick {
+            if panel.isVisible {
+                hidePanel()
+            } else {
+                setSecondaryBarExpanded(!isSecondaryBarExpanded)
+            }
         } else {
             togglePopover()
         }
@@ -261,6 +424,9 @@ final class StatusItemController: NSObject {
         if panel.isVisible { hidePanel() }
 
         let menu = NSMenu()
+        menu.addItem(ClosureMenuItem(title: "Open Dashboard", systemSymbol: "rectangle.grid.2x2", keyEquivalent: "") { [weak self] in
+            self?.showPopover()
+        })
         menu.addItem(ClosureMenuItem(title: "Settings", systemSymbol: "gearshape", keyEquivalent: ",") { [weak self] in
             self?.openSettings()
         })
@@ -311,7 +477,8 @@ final class StatusItemController: NSObject {
         // Record the display before changing the visibility signal. That signal makes SwiftUI
         // immediately clamp the measured height; without the display anchor the clamp falls back to
         // the fixed opening guess, making large and small displays open at the same height.
-        heightController.prepareForOpening(below: buttonRectOnScreen)
+        let anchorRect = dashboardAnchorRect(for: buttonRectOnScreen)
+        heightController.prepareForOpening(below: anchorRect)
         // Mark the popover on-screen before laying out, so the egg's animation loops mount their
         // `TimelineView` clocks in time for the first displayed frame. Read by the SwiftUI egg via
         // `\.popoverIsVisible`; a closed popover keeps the loops unmounted, so a left-on egg costs no CPU.
@@ -330,6 +497,7 @@ final class StatusItemController: NSObject {
         clearStrayFocus()
         button.highlight(true)
         outsideClickMonitor.start()
+        updateSecondaryBar()
     }
 
     private func hidePanel() {
@@ -354,6 +522,7 @@ final class StatusItemController: NSObject {
         outsideClickMonitor.stop()
         statusItem.button?.highlight(false)
         heightController.finishClosing()
+        updateSecondaryBar()
     }
 
     /// Drops keyboard focus inside the panel so a clicked plain-styled control (a metric row's

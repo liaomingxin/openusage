@@ -2,14 +2,7 @@ import Foundation
 
 @MainActor
 final class MuseProvider: ProviderRuntime {
-    let provider = Provider(
-        id: "muse",
-        displayName: "Muse Code",
-        icon: .providerMark("muse"),
-        links: [
-            .init(label: "Dashboard", url: "https://accountscenter.meta.com/muse_code/")
-        ]
-    )
+    let provider: Provider
 
     let authStore: MuseAuthStore
     let usageClient: MuseUsageClient
@@ -22,8 +15,18 @@ final class MuseProvider: ProviderRuntime {
         usageClient: MuseUsageClient = MuseUsageClient(),
         cliScanner: MuseCLIUsageScanner = MuseCLIUsageScanner(),
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        accountLabel: String? = nil
     ) {
+        self.provider = Provider(
+            id: "muse",
+            familyName: "Muse Code",
+            accountLabel: accountLabel,
+            icon: .providerMark("muse"),
+            links: [
+                .init(label: "Dashboard", url: "https://accountscenter.meta.com/muse_code/")
+            ]
+        )
         self.authStore = authStore
         self.usageClient = usageClient
         self.cliScanner = cliScanner

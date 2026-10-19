@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// The Customize provider list (L1): every known provider as a row, in the user's saved order —
-/// including disabled ones (greyed), so the user can re-enable them or open their detail — dealt
-/// into two side-by-side cards in reading order. Each row carries an on/off toggle, a metric-count
-/// label, and a chevron into the provider's detail (L2). Enabled providers drag-reorder by the
-/// leading grip (across both cards); tapping a row opens L2 (`layout.customizeProviderID = id`).
+/// The Customize provider list (L1): one row per family in the user's saved order, including disabled
+/// accounts so they stay manageable. Families are dealt into two side-by-side cards; their toggle
+/// controls every account and their detail (L2) provides per-account controls. The leading grip
+/// reorders the whole family across both cards.
 struct CustomizeProviderListView: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(AppContainer.self) private var container
@@ -15,7 +14,27 @@ struct CustomizeProviderListView: View {
     @State private var activeProviderID: String?
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
 
-    private var orderedRows: [ProviderRow] { layout.customizeProviderRows }
+    private struct FamilyRow: Identifiable {
+        let familyID: String
+        var rows: [ProviderRow]
+        var id: String { primary.id }
+        var primary: ProviderRow { rows[0] }
+    }
+
+    private var familyRows: [FamilyRow] {
+        var result: [FamilyRow] = []
+        var indexByFamily: [String: Int] = [:]
+        for row in layout.customizeProviderRows {
+            let familyID = ProviderAccountID.family(of: row.provider.id)
+            if let index = indexByFamily[familyID] {
+                result[index].rows.append(row)
+            } else {
+                indexByFamily[familyID] = result.count
+                result.append(FamilyRow(familyID: familyID, rows: [row]))
+            }
+        }
+        return result
+    }
 
     var body: some View {
         // Two cards side by side, the rows dealt into them in reading order (row 1 left, row 2 right,
@@ -24,7 +43,8 @@ struct CustomizeProviderListView: View {
         // of its name. Drag-reorder is unchanged: the gesture hit-tests row frames in the shared
         // coordinate space, so a drop onto any row (either card) takes that row's position and the
         // rest re-deal. No measurement pass — every row is one line tall, so the split is fixed.
-        let columns = MasonryLayout.assignColumns(orderedRows, heights: [:])
+        let rows = familyRows
+        let columns = MasonryLayout.assignColumns(rows, heights: [:])
         VStack(alignment: .leading, spacing: density.sectionSpacing) {
             HStack(alignment: .top, spacing: density.sectionSpacing) {
                 ForEach(columns) { column in
@@ -46,43 +66,54 @@ struct CustomizeProviderListView: View {
                 destination: .settings
             )
         }
-        .animation(Motion.spring, value: orderedRows.map(\.id))
+        .animation(Motion.spring, value: rows.map(\.id))
     }
 
-    private func providerRow(_ row: ProviderRow) -> some View {
-        ProviderListRow(
+    private func providerRow(_ familyRow: FamilyRow) -> some View {
+        let row = familyRow.primary
+        let enabledCount = familyRow.rows.filter(\.isEnabled).count
+        let isFamily = familyRow.rows.count > 1
+        return ProviderListRow(
             provider: row.provider,
-            isEnabled: row.isEnabled,
+            isEnabled: enabledCount > 0,
             metricCount: row.metricCount,
-            // The grip leads the tappable bar; a tap opens L2, a drag reorders. Drag-reorder is enabled
-            // only for active providers — `reorderProvider` operates on the enabled set, so a disabled
-            // row's grip stays inert (the row still opens/toggles).
+            // Fully disabled families stay openable but do not participate in enabled-family reorder.
             handle: { grip in
-                if row.isEnabled {
-                    AnyView(grip.highPriorityGesture(providerDragGesture(for: row)))
+                if enabledCount > 0 {
+                    AnyView(grip.highPriorityGesture(providerDragGesture(for: familyRow)))
                 } else {
                     grip
                 }
             },
-            onToggle: { container.enablement.setEnabled($0, for: row.id) },
+            titleOverride: isFamily ? row.provider.familyName : nil,
+            subtitleOverride: isFamily ? "\(enabledCount)/\(familyRow.rows.count) accounts · \(row.metricCount) metrics" : nil,
+            onToggle: { enabled in
+                for accountRow in familyRow.rows {
+                    container.enablement.setEnabled(enabled, for: accountRow.id)
+                }
+            },
             onOpen: { withAnimation(Motion.spring) { layout.customizeProviderID = row.id } }
         )
         .opacity(activeProviderID == row.id ? 0 : 1)
         .reorderFrame(id: row.id, in: .named(reorderSpaceName))
     }
 
-    private func providerDragGesture(for row: ProviderRow) -> some Gesture {
+    private func providerDragGesture(for familyRow: FamilyRow) -> some Gesture {
         reorderDragGesture(
-            id: row.id,
+            id: familyRow.id,
             coordinateSpaceName: reorderSpaceName,
             frameStore: frameStore,
             active: $activeProviderID,
             lift: $reorderLift,
-            makeLift: { makeProviderLift(for: row, value: $0) },
-            // Hit-test only enabled providers (the set `reorderProvider` can actually move); disabled
-            // rows keep their tail position and aren't reorder targets.
-            orderedIDs: { layout.customizeGroups.map(\.provider.id) },
-            reorder: { layout.reorderProvider(dragged: row.id, target: $0) }
+            makeLift: { makeProviderLift(for: familyRow.primary, value: $0) },
+            // Only visible, enabled family rows publish usable reorder targets.
+            orderedIDs: { familyRows.filter { $0.rows.contains(where: \.isEnabled) }.map(\.id) },
+            reorder: {
+                layout.reorderProviderFamily(
+                    draggedFamily: familyRow.familyID,
+                    targetFamily: ProviderAccountID.family(of: $0)
+                )
+            }
         )
     }
 

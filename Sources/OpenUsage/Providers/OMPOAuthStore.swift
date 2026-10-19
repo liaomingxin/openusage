@@ -107,6 +107,33 @@ struct OMPOAuthStore: Sendable {
         return OMPOAuthCredential(accessToken: token, expiresAt: expiry)
     }
 
+    /// Triggers OMP's own CLI usage pass (`omp usage --provider <providerKey> --no-extensions --json`)
+    /// so OMP acquires its refresh lease and rotates an expired access token in `agent.db` safely.
+    static func triggerCLIRefresh(providerKey: String, processRunner: ProcessRunning = SystemProcessRunner()) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "\(home)/.bun/bin/omp",
+            "/opt/homebrew/bin/omp",
+            "/usr/local/bin/omp"
+        ]
+        guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            return false
+        }
+        let env = [
+            "PATH": "\(home)/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+            "HOME": home
+        ]
+        guard let result = try? processRunner.run(
+            executable: executable,
+            arguments: ["usage", "--provider", providerKey, "--no-extensions", "--json"],
+            environment: env,
+            timeout: 20
+        ) else {
+            return false
+        }
+        return result.succeeded
+    }
+
     static func accountID(providerKey: String, token: String, fallback: String? = nil) -> String? {
         let subject = (ProviderParse.jwtPayload(token)?["sub"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty

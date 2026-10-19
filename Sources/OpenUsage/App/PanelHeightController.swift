@@ -1,5 +1,27 @@
 import AppKit
 
+enum DashboardColumnsSetting: Int, CaseIterable, Identifiable, Sendable {
+    case two = 2
+    case three = 3
+
+    static let key = "dashboard.columnCount"
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .two: "2 Columns"
+        case .three: "3 Columns (Wide)"
+        }
+    }
+
+    var panelWidth: CGFloat {
+        switch self {
+        case .two: PanelGeometry.width
+        case .three: 908
+        }
+    }
+}
+
 /// Owns the menu-bar panel's placement and content-driven height changes. The status-item controller
 /// still owns panel creation and show/hide; this type owns only the height boundary between SwiftUI and
 /// AppKit.
@@ -28,6 +50,12 @@ final class PanelHeightController {
         self.currentScreen = currentScreen
     }
 
+    /// All screens share the selected width so Settings and the SwiftUI pager stay aligned.
+    private var currentPanelWidth: CGFloat {
+        DashboardColumnsSetting(rawValue: defaults.integer(forKey: DashboardColumnsSetting.key))?.panelWidth
+            ?? Self.panelWidth
+    }
+
     /// Installs the two narrow callbacks SwiftUI uses: apply one animated frame and clamp a target to
     /// the available display height.
     func installBridge() {
@@ -49,9 +77,10 @@ final class PanelHeightController {
 
         let screen = NSScreen.screens.first { $0.frame.intersects(buttonRect) } ?? NSScreen.main
         anchorScreen = screen
+        let width = currentPanelWidth
         let topLeft = PanelGeometry.clampedTopLeft(
             below: buttonRect,
-            width: Self.panelWidth,
+            width: width,
             visibleFrame: screen?.visibleFrame
         )
         anchorTopLeft = topLeft
@@ -59,7 +88,7 @@ final class PanelHeightController {
         let remembered = loadHeight(for: currentScreen()) ?? Self.defaultHeight
         let height = clampedHeight(remembered)
         panel.setFrame(
-            PanelGeometry.frame(topLeft: topLeft, width: Self.panelWidth, height: height),
+            PanelGeometry.frame(topLeft: topLeft, width: width, height: height),
             display: false
         )
         panel.invalidateShadow()
@@ -86,10 +115,18 @@ final class PanelHeightController {
             AppLog.error(.statusItem, "Morph height while visible but no anchor; frame not applied")
             return
         }
+        let width = currentPanelWidth
+        var topLeft = anchorTopLeft
+        if let visibleFrame = anchorScreen?.visibleFrame {
+            topLeft.x = min(
+                max(topLeft.x, visibleFrame.minX + PanelGeometry.screenMargin),
+                visibleFrame.maxX - width - PanelGeometry.screenMargin
+            )
+        }
         let height = clampedHeight(rawHeight)
-        guard abs(panel.frame.height - height) > 1 else { return }
+        guard abs(panel.frame.height - height) > 1 || abs(panel.frame.width - width) > 1 else { return }
         panel.setFrame(
-            PanelGeometry.frame(topLeft: anchorTopLeft, width: Self.panelWidth, height: height),
+            PanelGeometry.frame(topLeft: topLeft, width: width, height: height),
             display: false
         )
         isMorphing = true

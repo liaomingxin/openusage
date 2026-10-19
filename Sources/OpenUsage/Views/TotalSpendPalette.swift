@@ -40,7 +40,16 @@ enum TotalSpendPalette {
 
     static func color(for providerID: String) -> Color {
         if let brand = byProviderID[providerID] { return brand }
+        let family = ProviderAccountID.family(of: providerID)
         let stableHash = providerID.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
+        if let brand = byProviderID[family] {
+            let opacity: Double = switch stableHash % 3 {
+            case 0: 0.82
+            case 1: 0.68
+            default: 0.55
+            }
+            return brand.opacity(opacity)
+        }
         return fallback[stableHash % fallback.count]
     }
 

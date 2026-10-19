@@ -80,7 +80,15 @@ struct CursorAuthStore: Sendable {
             let sqliteSubject = Self.tokenSubject(sqliteAccessToken)
             let keychainSubject = Self.tokenSubject(keychainAccessToken)
             let subjectsDiffer = sqliteSubject != nil && keychainSubject != nil && sqliteSubject != keychainSubject
-            if hasKeychainAuth, sqliteMembershipType == "free", subjectsDiffer {
+            let activeAuthID = readStateValue("glass.lastSignedInAuthId")
+                ?? readStateValue("cursorAuth/stripeMembershipAuthId")
+            let keychainMatchesActiveAuthID = activeAuthID != nil && activeAuthID == keychainSubject
+            let sqliteIsExpired = sqliteAccessToken.flatMap(Self.tokenExpiration) != nil && needsRefresh(sqliteAccessToken)
+            let keychainIsFresh = keychainAccessToken.flatMap(Self.tokenExpiration) != nil && !needsRefresh(keychainAccessToken)
+            if hasKeychainAuth,
+               (sqliteMembershipType == "free" && subjectsDiffer)
+                || (keychainMatchesActiveAuthID && subjectsDiffer)
+                || (sqliteIsExpired && keychainIsFresh) {
                 return CursorAuthState(
                     accessToken: keychainAccessToken,
                     refreshToken: keychainRefreshToken,
@@ -95,15 +103,42 @@ struct CursorAuthStore: Sendable {
             )
         }
 
-        if hasKeychainAuth {
-            return CursorAuthState(
-                accessToken: keychainAccessToken,
-                refreshToken: keychainRefreshToken,
-                source: .keychain
-            )
-        }
+        return loadKeychainAuthState()
+    }
 
+    func defaultAccountLabel() -> String? {
+        let state = loadAuthState()
+        let subject = Self.tokenSubject(state?.accessToken)
+        let profile = readStateValue("cursorAuth/cachedScopedProfile").flatMap {
+            ProviderParse.jsonObject(Data($0.utf8))
+        }
+        if let profile, (profile["authId"] as? String) == subject || subject == nil,
+           let email = (profile["email"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            return email
+        }
+        if state?.source == .sqlite,
+           let cachedEmail = readStateValue("cursorAuth/cachedEmail")?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            return cachedEmail
+        }
+        if let profile, (profile["authId"] as? String) == subject,
+           let name = (profile["displayName"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            return name
+        }
         return nil
+    }
+
+    func loadKeychainAuthState() -> CursorAuthState? {
+        let keychainAccessToken = readKeychainValue(Self.keychainAccessTokenService)
+        let keychainRefreshToken = readKeychainValue(Self.keychainRefreshTokenService)
+        guard keychainAccessToken != nil || keychainRefreshToken != nil else { return nil }
+        return CursorAuthState(
+            accessToken: keychainAccessToken,
+            refreshToken: keychainRefreshToken,
+            source: .keychain
+        )
     }
 
     func loadOMPAuthState() throws -> CursorAuthState {

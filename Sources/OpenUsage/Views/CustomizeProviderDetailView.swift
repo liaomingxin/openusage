@@ -24,11 +24,23 @@ struct CustomizeProviderDetailView: View {
     let frameStore: ReorderFrameStore
 
     @State private var activeMetricID: String?
+    @State private var selectedAccountID: String?
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+
+    private var activeAccountID: String { selectedAccountID ?? providerID }
+
+    private var familyProviders: [Provider] {
+        let familyID = ProviderAccountID.family(of: providerID)
+        return container.registry.providers.filter { ProviderAccountID.family(of: $0.id) == familyID }
+    }
 
     var body: some View {
         if let group = layout.customizeDetail(for: providerID) {
+            let accounts = familyProviders
             VStack(alignment: .leading, spacing: density.sectionSpacing) {
+                if accounts.count > 1 {
+                    accountsSection(accounts)
+                }
                 metricSections(group)
                     .simultaneousGesture(metricDragGesture())
                 if let keyProvider = container.apiKeyProviders.first(where: { $0.provider.id == providerID }) {
@@ -48,6 +60,48 @@ struct CustomizeProviderDetailView: View {
         } else {
             // Unknown provider — L1 only lists known providers, so this is unreachable in practice.
             EmptyView()
+        }
+    }
+
+    private func accountsSection(_ accounts: [Provider]) -> some View {
+        SectionCard("Accounts (\(accounts.count))") {
+            ForEach(accounts) { account in
+                HStack(spacing: 10) {
+                    Button {
+                        selectedAccountID = account.id
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: activeAccountID == account.id ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(activeAccountID == account.id ? Color.accentColor : Color.secondary)
+                            Text(account.accountLabel ?? "Default")
+                                .font(.system(
+                                    size: density.bodyPointSize,
+                                    weight: activeAccountID == account.id ? .semibold : .regular
+                                ))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text("\(layout.pinnedCount(forProvider: account.id))/\(LayoutStore.maxPinsPerProvider) ★")
+                                .font(.system(size: density.captionPointSize, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(.quaternary, in: Capsule())
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: Binding(
+                        get: { container.enablement.isEnabled(account.id) },
+                        set: { container.enablement.setEnabled($0, for: account.id) }
+                    ))
+                    .settingsSwitchStyle()
+                    .accessibilityLabel("Enable \(account.displayName)")
+                }
+                .padding(.horizontal, Theme.cardRowInset)
+                .padding(.vertical, density.controlRowPadding)
+            }
         }
     }
 
@@ -107,7 +161,10 @@ struct CustomizeProviderDetailView: View {
                 AnyView(grip.reorderFrame(id: "grip:\(metric.id)", in: .named(reorderSpaceName)))
             },
             trailing: {
-                StarButton(metric: metric)
+                if let targetID = layout.remappedMetricID(metric.id, from: providerID, to: activeAccountID),
+                   let targetDescriptor = layout.registry.descriptor(id: targetID) {
+                    StarButton(metric: targetDescriptor)
+                }
                 Toggle("", isOn: Binding(
                     get: { layout.isMetricEnabled(metric.id) },
                     set: { layout.setMetricEnabled(metric.id, $0) }

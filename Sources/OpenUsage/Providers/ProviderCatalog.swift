@@ -11,7 +11,8 @@ enum ProviderCatalog {
         claudeSwapCards: [ClaudeSwapCard] = [],
         claudeIdentityKeys: [String: String] = [:],
         kimiAccounts: [KimiAccountConfiguration] = [],
-        ompAccounts: [OMPOAuthAccount] = []
+        ompAccounts: [OMPOAuthAccount] = [],
+        defaultAccountLabels: [String: String] = [:]
     ) -> [ProviderRuntime] {
         // Default provider order (see AGENTS.md "## Providers"): the three established providers first,
         // then every other provider alphabetically by display name. Extra account cards sit immediately
@@ -58,7 +59,7 @@ enum ProviderCatalog {
             }
         }
         providers += claudeSwapCards.map { ClaudeSwapProvider(card: $0) }
-        providers.append(CodexProvider())
+        providers.append(CodexProvider(accountLabel: defaultAccountLabels["codex"]))
         providers += extraCodexCards.map { card in
             CodexProvider(
                 id: card.id,
@@ -67,7 +68,7 @@ enum ProviderCatalog {
                 scansLocalLogs: false
             )
         }
-        providers.append(CursorProvider())
+        providers.append(CursorProvider(accountLabel: defaultAccountLabels["cursor"]))
         for account in ompAccounts where account.family == "cursor" {
             providers.append(CursorProvider(
                 authStore: CursorAuthStore(ompAccount: account),
@@ -76,10 +77,10 @@ enum ProviderCatalog {
             ))
         }
         providers += [
-            AntigravityProvider(),
+            AntigravityProvider(accountLabel: defaultAccountLabels["antigravity"]),
             CopilotProvider(defaults: defaults),
             DevinProvider(),
-            GrokProvider()
+            GrokProvider(accountLabel: defaultAccountLabels["grok"])
         ]
         for account in ompAccounts where account.family == "grok" {
             providers.append(GrokProvider(
@@ -89,7 +90,7 @@ enum ProviderCatalog {
                 scansLocalLogs: false
             ))
         }
-        providers.append(KimiProvider())
+        providers.append(KimiProvider(accountLabel: defaultAccountLabels["kimi"]))
         providers += kimiAccounts.map { account in
             KimiProvider(
                 authStore: KimiAuthStore(
@@ -102,11 +103,11 @@ enum ProviderCatalog {
             )
         }
         providers += [
-            MuseProvider(),
+            MuseProvider(accountLabel: defaultAccountLabels["muse"]),
             OllamaProvider(),
-            OpenCodeProvider(),
+            OpenCodeProvider(accountLabel: defaultAccountLabels["opencode"]),
             OpenRouterProvider(),
-            ZAIProvider()
+            ZAIProvider(accountLabel: defaultAccountLabels["zai"])
         ]
         return providers
     }

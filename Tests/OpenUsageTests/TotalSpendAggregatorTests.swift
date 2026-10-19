@@ -150,6 +150,52 @@ final class TotalSpendAggregatorTests: XCTestCase {
         XCTAssertEqual(tokens.centerValue, 1_000_000, accuracy: 0.0001)
     }
 
+    func testGroupedByFamilyMergesMultiAccountSlices() {
+        let extraClaude = Provider(
+            id: "claude@dea44032", familyName: "Claude", accountLabel: "Work", icon: claude.icon
+        )
+        let extraCodex = Provider(
+            id: "codex@986103e1", familyName: "Codex", accountLabel: "Personal", icon: codex.icon
+        )
+        let total = TotalSpend(period: .yesterday, slices: [
+            TotalSpendSlice(provider: claude, amountUSD: 2.50, tokenCount: 100_000, estimated: false),
+            TotalSpendSlice(provider: codex, amountUSD: 4, tokenCount: 200_000, estimated: false),
+            TotalSpendSlice(provider: extraClaude, amountUSD: 3.25, tokenCount: 300_000, estimated: true),
+            TotalSpendSlice(provider: extraCodex, amountUSD: 6, tokenCount: 400_000, estimated: false)
+        ])
+
+        let grouped = total.groupedByFamily()
+
+        XCTAssertEqual(grouped.period, .yesterday)
+        XCTAssertEqual(grouped.slices.map(\.provider.id), ["claude", "codex"])
+        XCTAssertEqual(grouped.slices.map(\.provider.familyName), ["Claude", "Codex"])
+        XCTAssertEqual(grouped.slices.map(\.provider.displayName), ["Claude", "Codex"])
+        XCTAssertTrue(grouped.slices.allSatisfy { $0.provider.accountLabel == nil })
+        XCTAssertEqual(grouped.slices[0].amountUSD, 5.75, accuracy: 0.0001)
+        XCTAssertEqual(grouped.slices[0].tokenCount, 400_000, accuracy: 0.0001)
+        XCTAssertTrue(grouped.slices[0].estimated)
+        XCTAssertEqual(grouped.slices[1].amountUSD, 10, accuracy: 0.0001)
+        XCTAssertEqual(grouped.slices[1].tokenCount, 600_000, accuracy: 0.0001)
+        XCTAssertFalse(grouped.slices[1].estimated)
+        XCTAssertEqual(grouped.totalUSD, total.totalUSD, accuracy: 0.0001)
+        XCTAssertEqual(grouped.totalTokens, total.totalTokens, accuracy: 0.0001)
+        XCTAssertEqual(total.slices.count, 4)
+    }
+
+    func testGroupedByFamilyNormalizesLoneAdditionalAccount() {
+        let extraClaude = Provider(
+            id: "claude@dea44032", familyName: "Claude", accountLabel: "Work", icon: claude.icon
+        )
+        let slice = TotalSpendSlice(provider: extraClaude, amountUSD: 5, tokenCount: 250_000, estimated: true)
+
+        let grouped = TotalSpend(period: .today, slices: [slice]).groupedByFamily()
+
+        XCTAssertEqual(grouped.slices, [
+            TotalSpendSlice(provider: claude, amountUSD: 5, tokenCount: 250_000, estimated: true)
+        ])
+        XCTAssertEqual(TotalSpend(period: .today, slices: []).groupedByFamily().slices, [])
+    }
+
     func testEmptyProjectionWhenNothingQualifies() {
         let total = TotalSpendAggregator.total(for: .today, providers: [claude], snapshots: [:])
         XCTAssertTrue(total.isEmpty)

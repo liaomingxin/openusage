@@ -89,7 +89,15 @@ final class CursorProvider: ProviderRuntime {
                 }
                 state = nativeState
             }
-            return try await probe(authState: state)
+            do {
+                return try await probe(authState: state)
+            } catch let error as CursorAuthError where state.source == .sqlite {
+                if let keychainState = await loadOffMainActor({ [authStore] in authStore.loadKeychainAuthState() }),
+                   keychainState.accessToken != state.accessToken {
+                    return try await probe(authState: keychainState)
+                }
+                throw error
+            }
         } catch {
             return ProviderSnapshot.error(provider: provider, error: error)
         }

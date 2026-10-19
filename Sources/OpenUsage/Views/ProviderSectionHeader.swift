@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Shared provider section header used by the dashboard and its lifted provider-reorder preview.
-/// The provider mark and name lead, followed by the optional plan badge. Dashboard callers supply a
-/// screenshot-copy action, revealed at the trailing edge while the header is hovered. Callers can also
+/// The provider mark and name lead, followed by optional account and plan badges. Dashboard callers
+/// supply a screenshot-copy action, revealed at the trailing edge while the header is hovered. Callers can also
 /// supply an optional `warning` — the latest refresh error, rendered as a small amber
 /// triangle beside the name whose hover tooltip carries the message (e.g. "Not logged in. Run `codex`
 /// to authenticate."). The
@@ -10,12 +10,13 @@ import SwiftUI
 /// revalidating: a short "Outdated" tag whose hover tooltip carries the precise age ("Last updated 3h
 /// 12m ago"), so fossilized plan/limits never pass for current data.
 ///
-/// The title is the provider's family name alone ("Codex", "Claude"): on a multi-account card the
-/// account (email or organization) rides in the title's hover tooltip instead of the title text, so a
-/// long email can't truncate the name or crowd the plan badge. Every other place the name stands on
+/// The title is the provider's family name alone ("Codex", "Claude"). Multi-account cards show a
+/// compact account badge and keep the full account label in the title's hover tooltip; the badge
+/// truncates before the name or plan under width pressure. Every other place the name stands on
 /// its own keeps the full `displayName`.
 struct ProviderSectionHeader: View {
     let provider: Provider
+    var showsAccountBadge: Bool = true
     var plan: String?
     var warning: String?
     /// Whether this provider's refresh is currently in flight — drives the small spinner beside the name
@@ -39,6 +40,7 @@ struct ProviderSectionHeader: View {
 
     init(
         provider: Provider,
+        showsAccountBadge: Bool = true,
         plan: String? = nil,
         warning: String? = nil,
         refreshing: Bool = false,
@@ -46,6 +48,7 @@ struct ProviderSectionHeader: View {
         onCopyScreenshot: (() -> Bool)? = nil
     ) {
         self.provider = provider
+        self.showsAccountBadge = showsAccountBadge
         self.plan = plan
         self.warning = warning
         self.refreshing = refreshing
@@ -66,21 +69,22 @@ struct ProviderSectionHeader: View {
             ProviderIcon(source: provider.icon, inset: 0.04)
                 .frame(width: density.headerIconSize, height: density.headerIconSize)
                 .partyPulse(partyMode)
-            // Baseline-aligned pair: the plan badge (and stale tag) are smaller type and sit on the
-            // name's text baseline, so the words line up along the bottom rather than floating centered.
+            // The smaller account, plan, and staleness text share the name's baseline. The name and
+            // plan keep priority while the account badge and stale tag yield under width pressure.
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                // Name + plan keep their width and stay on one line; under width pressure (a long plan
-                // name like "Super Grok Heavy") the lower-priority stale tag truncates first instead of
-                // wrapping the name to a second line.
                 Text(title)
                     .font(.system(size: density.headerPointSize, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .layoutPriority(1)
+                    .layoutPriority(2)
                     .hoverTooltip(titleTooltip)
+                if showsAccountBadge, let accountLabel = provider.accountLabel, !accountLabel.isEmpty {
+                    ProviderAccountBadge(label: accountLabel)
+                        .layoutPriority(1)
+                }
                 if let plan {
                     ProviderPlanBadge(plan: plan)
-                        .layoutPriority(1)
+                        .layoutPriority(0.5)
                 }
                 // Tertiary, below the plan in hierarchy: outdated content, not something the user acts on.
                 // Short by design ("Outdated") so it never pushes the plan name onto a second line — the
@@ -118,6 +122,24 @@ struct ProviderSectionHeader: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+    }
+}
+
+struct ProviderAccountBadge: View {
+    let label: String
+
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: density.planBadgePointSize, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(.quaternary))
+            .frame(maxWidth: 88)
     }
 }
 

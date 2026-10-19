@@ -33,6 +33,7 @@ struct MeterBarView: View {
                 Capsule()
                     .fill(partyMode ? PartyMode.meterFill : Theme.severityFill(state.severity))
                     .frame(width: fillWidth(track: proxy.size.width))
+                    .opacity(data.hasData && data.used <= 0.0001 && state.severity == .normal && !partyMode ? 0.38 : 1)
             }
             .overlay(alignment: .leading) {
                 if let tick {

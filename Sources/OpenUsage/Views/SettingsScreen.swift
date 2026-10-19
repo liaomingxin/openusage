@@ -21,6 +21,7 @@ struct SettingsScreen: View {
     @AppStorage(AppearanceSetting.key) private var appearance = AppearanceSetting.system
     @AppStorage(TimeFormatSetting.key) private var timeFormat = TimeFormatSetting.auto
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage(DashboardColumnsSetting.key) private var columnsSetting = DashboardColumnsSetting.two
     @AppStorage(ReduceAnimationsSetting.key) private var reduceAnimations = ReduceAnimationsSetting.fallback
     @AppStorage(LogLevelSetting.key) private var logLevel = LogLevelSetting.fallback
     /// Surfaced under the Advanced rows when copying the path or revealing the file fails.
@@ -152,6 +153,9 @@ struct SettingsScreen: View {
             }
             ControlRow("Density") {
                 picker($density, options: DensitySetting.allCases, label: \.label)
+            }
+            ControlRow("Columns") {
+                picker($columnsSetting, options: DashboardColumnsSetting.allCases, label: \.label)
             }
             ControlRow("Reduce Animations") {
                 Toggle("", isOn: $reduceAnimations)
@@ -332,6 +336,7 @@ struct SettingsScreen: View {
             .alert("Reset All Settings?", isPresented: $isPresentingResetConfirm) {
                 Button("Reset", role: .destructive) {
                     withAnimation(Motion.spring) { container.resetAllSettings() }
+                    columnsSetting = .two
                     launchAtLogin.update(to: false)
                     updater.resetToDefaults()
                     shortcutFieldGeneration += 1

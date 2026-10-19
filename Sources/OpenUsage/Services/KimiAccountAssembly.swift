@@ -14,7 +14,8 @@ extension ProviderAccountAssembly {
             claudeCards: claudeCards,
             claudeSwapCards: claudeSwapCards,
             kimiAccounts: accounts,
-            ompAccounts: ompAccounts
+            ompAccounts: ompAccounts,
+            defaultAccountLabels: defaultAccountLabels
         )
     }
 }

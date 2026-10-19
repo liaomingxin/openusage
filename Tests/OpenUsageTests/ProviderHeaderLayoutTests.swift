@@ -35,6 +35,33 @@ final class ProviderHeaderLayoutTests: XCTestCase {
         }
     }
 
+    func testMultiAccountDashboardHeaderFitsOversizedPlanInBothDensities() throws {
+        let provider = Provider(
+            id: "codex@ab12cd34",
+            familyName: "Codex",
+            accountLabel: "dellabiddle1@example.com",
+            icon: .providerMark("codex")
+        )
+        for density in DensitySetting.allCases {
+            let suite = "ProviderHeaderLayoutTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defaults.set(density.rawValue, forKey: DensitySetting.key)
+            defer { defaults.removePersistentDomain(forName: suite) }
+
+            let header = ProviderSectionHeader(
+                provider: provider,
+                plan: longPlan,
+                warning: "Refresh failed",
+                staleness: StalenessHint(label: "Outdated", tooltip: "Last updated 2h ago"),
+                onCopyScreenshot: { true }
+            )
+            .defaultAppStorage(defaults)
+            .environment(\.hoverTooltipsDisabled, true)
+
+            try assertFits(header, width: 276)
+        }
+    }
+
     func testShareHeaderFitsOversizedPlan() throws {
         let card = ShareCardView(
             provider: codexProvider, plan: longPlan, rows: [], appearance: .light

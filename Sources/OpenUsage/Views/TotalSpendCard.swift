@@ -1,14 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The dashboard's cross-provider Total Spend section: a donut ring on the left whose segments are
-/// each provider's share of the selected metric, with the total in the center, and a right column
-/// stacking a compact capsule period picker (Today / Yesterday / 30 Days) over the ranked legend.
-/// The title is a pull-down menu for Cost / Cost/MTok / Tokens. Data comes from
-/// `TotalSpendAggregator` over the same snapshots the provider cards render. Shown whenever any
-/// enabled provider tracks spend (`LayoutStore.hasSpendCapableProvider`) and the toggle at the top
-/// of Settings is on; a period (or metric) with nothing to show uses a quiet empty state instead of
-/// hiding the card.
+/// Cross-provider spend with a grouped ring/legend or compact strip, sharing the provider snapshots.
 struct TotalSpendCard: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(WidgetDataStore.self) private var dataStore
@@ -24,6 +17,9 @@ struct TotalSpendCard: View {
     /// The selected metric (Cost / Cost/MTok / Tokens) survives the same way.
     @AppStorage(TotalSpendSetting.metricKey) private var metricRawValue = TotalSpendMetric.cost.rawValue
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage("dashboard.groupByFamily") private var groupByFamily = true
+    @AppStorage("dashboard.filterMode") private var filterModeRaw = "all"
+    @AppStorage("totalSpend.compactMode") private var isCompactMode = false
 
     private var period: TotalSpendPeriod {
         TotalSpendPeriod(rawValue: periodRawValue) ?? .today
@@ -33,20 +29,21 @@ struct TotalSpendCard: View {
         TotalSpendMetric(rawValue: metricRawValue) ?? .cost
     }
 
-    /// The spend-tile providers the card may aggregate — capability-based (see
-    /// `LayoutStore.spendCapableProviders`), so a provider stays counted even when its own rows are
-    /// hidden in Customize, and providers with merely similar-looking dollar rows never leak in.
+    /// Include spend-capable providers even when their own rows are hidden in Customize.
     private var providers: [Provider] {
         layout.spendCapableProviders
     }
 
     private var total: TotalSpend {
-        TotalSpendAggregator.total(for: period, providers: providers, snapshots: dataStore.snapshots)
+        let total = TotalSpendAggregator.total(for: period, providers: providers, snapshots: dataStore.snapshots)
+        return groupByFamily ? total.groupedByFamily() : total
     }
 
     private var projection: TotalSpendProjection {
         total.projection(for: metric)
     }
+
+    private var compactModeActive: Bool { isCompactMode || filterModeRaw == "quotas" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
@@ -57,9 +54,7 @@ struct TotalSpendCard: View {
 
     // MARK: - Header
 
-    /// Section header matching the provider headers' scale: title menu leading, the share control
-    /// trailing — revealed on hover exactly like a provider header's copy control, so the two header
-    /// kinds share one affordance (the right-click menu keeps the action reachable without hovering).
+    /// Match provider headers, keeping compact mode available beside the hover-revealed share action.
     private var header: some View {
         HStack(spacing: 5) {
             metricMenu
@@ -68,6 +63,7 @@ struct TotalSpendCard: View {
                 .foregroundStyle(.secondary)
                 .hoverTooltip(infoTooltip)
             Spacer(minLength: 8)
+            compactModeButton
             shareButton
         }
         .padding(.horizontal, Theme.sectionHeaderInset)
@@ -107,12 +103,26 @@ struct TotalSpendCard: View {
         .accessibilityValue(metric.title)
     }
 
-    /// Names the providers actually feeding the ring — the enabled spend-capable set — instead of a
-    /// hardcoded list, so disabling a provider (or a new spend provider shipping) can't make the
-    /// tooltip lie about what the total reflects.
+    /// Name the enabled providers actually contributing, rather than a fixed provider list.
     private var infoTooltip: String {
         let names = providers.map(\.displayName)
         return "Only includes \(names.formatted(.list(type: .and)))."
+    }
+
+    private var compactModeButton: some View {
+        Button {
+            isCompactMode.toggle()
+        } label: {
+            Image(systemName: compactModeActive ? "chevron.down" : "chevron.up")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(filterModeRaw == "quotas")
+        .hoverTooltip(filterModeRaw == "quotas" ? "Quotas view keeps spend compact" : compactModeActive ? "Expand spend" : "Compact spend")
+        .accessibilityLabel(compactModeActive ? "Expand Total Spend" : "Compact Total Spend")
     }
 
     private var shareButton: some View {
@@ -131,11 +141,13 @@ struct TotalSpendCard: View {
     private var card: some View {
         cardBody
             .padding(.horizontal, Theme.cardRowInset)
-            .padding(.vertical, 12)
+            .padding(.vertical, compactModeActive && !projection.isEmpty ? 4 : 12)
             .frame(maxWidth: .infinity)
             .cardSurface()
             .animation(Motion.spring, value: periodRawValue)
             .animation(Motion.spring, value: metricRawValue)
+            .animation(Motion.spring, value: compactModeActive)
+            .animation(Motion.spring, value: groupByFamily)
             .contextMenu {
                 Button("Share Screenshot") {
                     ShareCardRenderer.shareTotalSpend(
@@ -148,10 +160,7 @@ struct TotalSpendCard: View {
             }
     }
 
-    /// Ring steady on the left in a snug column; the right column stacks the compact period picker
-    /// over the legend and is capped in width, so on the wide card a legend row's name and figures
-    /// stay within one glance instead of stretching to opposite edges. Whatever is left stays empty
-    /// on the trailing side rather than padding the ring or the legend apart.
+    /// Keep the full ring and legend snug; compact mode preserves the same period and metric.
     @ViewBuilder private var cardBody: some View {
         if projection.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
@@ -159,6 +168,8 @@ struct TotalSpendCard: View {
                 emptyState
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        } else if compactModeActive {
+            compactCardBody
         } else {
             HStack(alignment: .top, spacing: 18) {
                 TotalSpendRing(projection: projection, hoveredProviderID: $hoveredProviderID)
@@ -180,22 +191,49 @@ struct TotalSpendCard: View {
         }
     }
 
-    /// Leading column for the 104pt ring: the ring plus a little air on either side, so the hovered
-    /// arc's 5% growth never clips.
+    private var compactCardBody: some View {
+        let totalDisplay = projection.slices.reduce(0) { $0 + $1.displayAmount }
+        let center = MetricFormatter.totalSpendRingCenter(projection.centerValue, metric: projection.metric)
+        return HStack(spacing: 12) {
+            periodPicker
+                .fixedSize()
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    ForEach(projection.slices) { slice in
+                        Rectangle()
+                            .fill(TotalSpendPalette.color(for: slice.provider.id))
+                            .frame(width: totalDisplay > 0 ? geometry.size.width * slice.displayAmount / totalDisplay : 0)
+                    }
+                }
+            }
+            .frame(height: 6)
+            .clipShape(.rect(cornerRadius: 3))
+            .accessibilityHidden(true)
+            Text("\(center.primary) \(center.unit)")
+                .font(.system(size: density.supportingPointSize, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .layoutPriority(1)
+        }
+        .frame(minHeight: 24)
+        .hoverTooltip(projection.slices.prefix(5).map {
+            "\($0.provider.displayName): \(totalSpendValue($0.displayAmount, metric: projection.metric, style: .full))"
+        }.joined(separator: "\n"))
+    }
+
+    /// Air around the 104pt ring prevents the hovered arc's 5% growth from clipping.
     private static let ringColumnWidth: CGFloat = 132
 
-    /// Cap on the picker + legend column. A legend row is name · amount · share · (tokens); past
-    /// this width the name and its figures drift too far apart to read as one line.
+    /// Keep legend names and figures within one glance on wide cards.
     private static let legendColumnMaxWidth: CGFloat = 360
 
-    /// Raw per-provider token counts for the legend's parenthetical — from the un-projected total,
-    /// since projected slices carry only the ranked display amount.
+    /// Raw token counts remain available when projection switches to dollars or rates.
     private var tokenCounts: [String: Double] {
         Dictionary(uniqueKeysWithValues: total.slices.map { ($0.provider.id, $0.tokenCount) })
     }
 
-    /// The shared capsule switcher (`CapsuleSegmentedPicker`), sized to its segments — stretching it
-    /// across the card read badly once the picker moved into the legend column.
+    /// Shared period switcher, sized to its segments rather than stretched across the card.
     private var periodPicker: some View {
         CapsuleSegmentedPicker(
             options: TotalSpendPeriod.allCases,
@@ -204,19 +242,14 @@ struct TotalSpendCard: View {
         )
     }
 
-    /// A metric/period combination with nothing to show mirrors the spend tiles' "No data" rule —
-    /// never a fabricated zero ring. The shared empty state, a step shorter than on a full screen
-    /// since it sits inside a card under the period picker.
+    /// No data stays empty rather than drawing a fabricated zero ring.
     private var emptyState: some View {
         EmptyStateView(title: metric.emptyMessage)
             .padding(.vertical, -8)
     }
 }
 
-/// The ring + legend composition shared by the share-card export, so the PNG can't drift from what's
-/// on screen. (The live card composes the same two pieces itself, with the period picker stacked
-/// above the legend.) Slices come ranked by the selected metric from `TotalSpend.projection`, so the
-/// ring reads clockwise from 12 o'clock in the same order the legend reads top-down.
+/// Shared ring and capped legend composition for screenshot export.
 struct TotalSpendRingContent: View {
     let projection: TotalSpendProjection
     /// Per-provider token counts for the legend's parenthetical, keyed by provider ID.
@@ -342,7 +375,7 @@ struct TotalSpendRing: View {
     private var centerLabel: some View {
         VStack(spacing: 1) {
             if let slice = hoveredSlice {
-                Text("\(totalSpendValue(slice.displayAmount, metric: projection.metric, style: .row)) · \(totalSpendShare(slice, in: projection))")
+                Text("\(totalSpendValue(slice.displayAmount, metric: projection.metric, style: .row)) · \(totalSpendShare(slice.displayAmount, in: projection))")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
                     .monospacedDigit()
@@ -379,10 +412,7 @@ struct TotalSpendRing: View {
     }
 }
 
-/// The ranked legend beside the ring — rows in the ring's clockwise order, so scanning the ring from
-/// 12 o'clock matches reading top-down. Each row is one line: name leading, then the amount, share,
-/// and (outside Tokens mode) that provider's token count, all monospaced so the numbers align.
-/// Hovering a row drives the ring's hover state, and the ring's arcs drive the emphasis here.
+/// Ranked contributions, capped at five rows with overflow details available on hover.
 struct TotalSpendLegend: View {
     let projection: TotalSpendProjection
     let tokenCounts: [String: Double]
@@ -392,8 +422,11 @@ struct TotalSpendLegend: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            ForEach(projection.slices) { slice in
+            ForEach(projection.slices.prefix(projection.slices.count > 5 ? 4 : 5)) { slice in
                 legendRow(slice)
+            }
+            if projection.slices.count > 5 {
+                othersRow
             }
             if !projection.slices.isEmpty {
                 Divider()
@@ -406,54 +439,54 @@ struct TotalSpendLegend: View {
     }
 
     private func legendRow(_ slice: TotalSpendProjectedSlice) -> some View {
-        let isHovered = hoveredProviderID == slice.provider.id
-        return HStack(spacing: 7) {
-            Circle()
-                .fill(TotalSpendPalette.color(for: slice.provider.id))
-                .frame(width: 8, height: 8)
-            Text(slice.provider.displayName)
-                .font(.system(size: density.supportingPointSize, weight: isHovered ? .semibold : .regular))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            // Tokens always abbreviate in the legend (12.4M), matching spend rows elsewhere —
-            // `.full` would spill every digit. Cost modes keep cents via `.row` / `.full`.
-            Text("\(totalSpendValue(slice.displayAmount, metric: projection.metric, style: legendValueStyle)) · \(totalSpendShare(slice, in: projection))")
-                .font(.system(size: density.supportingPointSize, weight: .medium))
-                .foregroundStyle(isHovered ? .primary : .secondary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            if let tokens = tokenCountText(for: slice) {
-                Text("(\(tokens))")
-                    .font(.system(size: density.supportingPointSize))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-            }
-        }
+        legendRowContent(
+            name: slice.provider.displayName,
+            value: sliceValueText(slice.displayAmount),
+            tokens: tokenCountText(tokenCounts[slice.provider.id] ?? 0),
+            color: TotalSpendPalette.color(for: slice.provider.id),
+            isHovered: hoveredProviderID == slice.provider.id
+        )
         .contentShape(Rectangle())
         .onHover { hovering in
             hoveredProviderID = hovering ? slice.provider.id : nil
         }
     }
 
-    private var totalRow: some View {
+    private var othersRow: some View {
+        let remaining = projection.slices.dropFirst(4)
+        return legendRowContent(
+            name: "Others (\(remaining.count))",
+            value: sliceValueText(remaining.reduce(0) { $0 + $1.displayAmount }),
+            tokens: tokenCountText(remaining.reduce(0) { $0 + (tokenCounts[$1.provider.id] ?? 0) }),
+            color: .secondary
+        )
+        .contentShape(Rectangle())
+        .onHover { if $0 { hoveredProviderID = nil } }
+        .hoverTooltip(remaining.map {
+            "\($0.provider.displayName): \(totalSpendValue($0.displayAmount, metric: projection.metric, style: .full))"
+        }.joined(separator: "\n"))
+    }
+
+    private func legendRowContent(
+        name: String, value: String, tokens: String?, color: Color,
+        isHovered: Bool = false, isTotal: Bool = false
+    ) -> some View {
         HStack(spacing: 7) {
-            Color.clear
+            Circle()
+                .fill(color)
                 .frame(width: 8, height: 8)
-            Text("Total")
-                .font(.system(size: density.supportingPointSize, weight: .semibold))
+            Text(name)
+                .font(.system(size: density.supportingPointSize, weight: isHovered || isTotal ? .semibold : .regular))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            Text(totalRowPrimaryText)
-                .font(.system(size: density.supportingPointSize, weight: .semibold))
-                .foregroundStyle(.primary)
+            Text(value)
+                .font(.system(size: density.supportingPointSize, weight: isTotal ? .semibold : .medium))
+                .foregroundStyle(isHovered || isTotal ? .primary : .secondary)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            if let tokens = totalTokenCountText {
+            if let tokens {
                 Text("(\(tokens))")
                     .font(.system(size: density.supportingPointSize))
                     .foregroundStyle(.tertiary)
@@ -461,10 +494,20 @@ struct TotalSpendLegend: View {
                     .lineLimit(1)
             }
         }
+    }
+
+    private var totalRow: some View {
+        legendRowContent(
+            name: "Total", value: totalRowPrimaryText, tokens: totalTokenCountText, color: .clear, isTotal: true
+        )
         .contentShape(Rectangle())
         .onHover { hovering in
             if hovering { hoveredProviderID = nil }
         }
+    }
+
+    private func sliceValueText(_ amount: Double) -> String {
+        "\(totalSpendValue(amount, metric: projection.metric, style: legendValueStyle)) · \(totalSpendShare(amount, in: projection))"
     }
 
     private var totalRowPrimaryText: String {
@@ -478,16 +521,12 @@ struct TotalSpendLegend: View {
     }
 
     private var totalTokenCountText: String? {
-        guard projection.metric != .tokens else { return nil }
-        let sum = projection.slices.reduce(0.0) { $0 + (tokenCounts[$1.provider.id] ?? 0) }
-        guard sum > 0 else { return nil }
-        return MetricFormatter.number(sum, kind: .count, style: .row)
+        tokenCountText(projection.slices.reduce(0) { $0 + (tokenCounts[$1.provider.id] ?? 0) })
     }
 
     /// The parenthetical token count — skipped in Tokens mode, where the amount already is tokens.
-    private func tokenCountText(for slice: TotalSpendProjectedSlice) -> String? {
-        guard projection.metric != .tokens,
-              let tokens = tokenCounts[slice.provider.id], tokens > 0 else { return nil }
+    private func tokenCountText(_ tokens: Double) -> String? {
+        guard projection.metric != .tokens, tokens > 0 else { return nil }
         return MetricFormatter.number(tokens, kind: .count, style: .row)
     }
 
@@ -514,10 +553,10 @@ private func totalSpendValue(_ value: Double, metric: TotalSpendMetric, style: M
 
 /// A slice's true share of the projection, e.g. `62%`; a tiny but nonzero share reads `<1%` rather
 /// than rounding down to a misleading `0%`.
-private func totalSpendShare(_ slice: TotalSpendProjectedSlice, in projection: TotalSpendProjection) -> String {
+private func totalSpendShare(_ amount: Double, in projection: TotalSpendProjection) -> String {
     let total = projection.slices.reduce(0) { $0 + $1.displayAmount }
     guard total > 0 else { return "0%" }
-    let share = slice.displayAmount / total
+    let share = amount / total
     if share > 0, share < 0.005 { return "<1%" }
     return share.formatted(.percent.precision(.fractionLength(0)))
 }

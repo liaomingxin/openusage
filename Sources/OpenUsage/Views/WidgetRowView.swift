@@ -2,11 +2,10 @@ import SwiftUI
 
 /// One metric as a row inside a provider's grouped list container. The provider icon is drawn once in the
 /// section header (not per row), so a row shows only the metric. Two layouts:
-/// - **Bounded** (`limit != nil`, meter row): a label line (right-aligned flame + run-out time when
-///   projected to run out before reset, or "~3% spare" when cutting it close), then a full-width
-///   capsule meter (color = pace verdict; in the amber state a tick splits the projected spare
-///   cushion off the bar; hovering shows the verdict), then a primary text row ("50% left" ⟷ "Resets in 4d 17h").
-///   Mirrors the original OpenUsage card.
+/// - **Bounded** (`limit != nil`, meter row): one line combines the label, compact pace warning,
+///   headline reading, and reset context above a full-width capsule meter. The bar's color carries
+///   the pace verdict; an amber tick splits off the projected spare cushion. An optional detail
+///   line holds provider-supplied absolute figures.
 /// - **Unbounded** (`limit == nil`, text-only row): **no bar**. Label on the left, a single right-aligned
 ///   descriptive line ("1,503 left") and an optional secondary line ("on-device estimate").
 /// Rows size to their own content (variable height). Same `WidgetData` the menu bar uses — only layout differs.
@@ -99,16 +98,13 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Bounded: label (+ run-out warning) → meter → primary text row.
-    /// The label, bar, and reading are one perceptual unit, so they sit on the tight step of the
-    /// grid (`rowInnerSpacing`); the row's vertical padding provides the separation from
-    /// neighboring rows.
+    /// Bounded: label, inline pace, and reading → meter → optional detail.
+    /// The header and bar form one compact unit; vertical padding separates neighboring rows.
     private var boundedRow: some View {
         let state = data.meterState()
         return VStack(alignment: .leading, spacing: density.rowInnerSpacing) {
-            boundedLabelRow(state)
+            boundedHeaderAndReadingRow(state)
             MeterBarView(data: data, state: state)
-            primaryTextRow
             meterDetailRow
         }
     }
@@ -126,87 +122,79 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Label with the pace warning right-aligned on the same line — one slot, escalating with the
-    /// `MeterState`. Spent: a flame + "Limit reached",
-    /// the terminal state that outranks any pace projection. Running out: a flame + projected
-    /// run-out time, read as "Limit in 3h 45m" ⟷ "Limit today at 11:49 PM" (following the global
-    /// countdown/exact mode) — clicking the time flips the global mode like the reset label. Close
-    /// to limit: a quiet "~3% spare" — the cushion projected at reset. Healthy / level / no-data:
-    /// nothing unless "always show pacing" surfaces projection on blue. Only the flame carries
-    /// flame carries the severity color — tint on glass is reserved for the symbol while copy
-    /// stays secondary like the row's other supporting text; the bar below carries the color.
-    /// Hovering shows the pace projection at reset. The warning gets the space; the title truncates.
-    private func boundedLabelRow(_ state: WidgetData.MeterState) -> some View {
-        HStack(spacing: 6) {
+    private func boundedHeaderAndReadingRow(_ state: WidgetData.MeterState) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(data.title)
                 .font(labelFont)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-            warning(state)
+                .layoutPriority(1)
+            compactWarningBadge(state)
+            Spacer(minLength: 6)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                headlineText
+                    .font(supportingFont.weight(.semibold))
+                if let trailing = compactBoundedTrailingText() {
+                    Text("·").foregroundStyle(.tertiary)
+                    trailingContext(text: trailing)
+                }
+            }
+            .font(supportingFont)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
-    /// The single escalating warning slot, switching exhaustively over the state so the copy can
-    /// never contradict the bar. The flame cases share one builder; the amber and (always-show-pacing)
-    /// blue cases are plain text.
+    /// Pacing stays beside the label instead of claiming another line or displacing the reading.
+    /// The flame alone carries severity; supporting copy remains secondary.
     @ViewBuilder
-    private func warning(_ state: WidgetData.MeterState) -> some View {
+    private func compactWarningBadge(_ state: WidgetData.MeterState) -> some View {
         switch state {
         case .spent:
-            flameWarning(text: "Limit reached", state: state, accessibility: "Limit reached")
+            compactFlameWarning(text: nil, state: state, accessibility: "Limit reached")
         case .runningOut(let eta, _):
-            // `eta == nil` is the float-edge case: the flame stands alone (the projection lives in
-            // the tooltip), rather than printing a misleading time. A shown time reads "Limit in 3h
-            // 45m" (or the exact "Limit today at …"), carrying its own verb and following the global
-            // countdown/exact mode, so — exactly like the reset label — clicking it flips that mode
-            // (lifted reorder previews pass no toggle and render it inert).
-            flameWarning(text: eta, state: state,
-                         accessibility: eta ?? "Will reach limit",
-                         action: eta == nil ? nil : onToggleResetDisplay)
+            compactFlameWarning(
+                text: eta.map { compactRunOutText($0) },
+                state: state,
+                accessibility: eta ?? "Will reach limit",
+                action: eta == nil ? nil : onToggleResetDisplay
+            )
         case .closeToLimit(let spare, _):
-            Spacer(minLength: 8)
             Text(spare)
-                .font(supportingFont)
+                .font(captionFont)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
                 .hoverTooltip(state.tooltip)
         case .healthy where data.alwaysShowPacing:
-            // "Always show pacing" surfaces the projection on the otherwise-silent on-track row: the
-            // same quiet secondary note as the amber case, but the cushion ("~33% left at reset")
-            // rather than the spare. No flame (blue isn't a warning) and no hover tooltip — the copy
-            // already *is* the projection the amber case hides in its tooltip.
             if let projection = state.tooltip {
-                Spacer(minLength: 8)
-                Text(projection)
-                    .font(supportingFont)
+                Text(projection.replacingOccurrences(of: " left at reset", with: " spare"))
+                    .font(captionFont)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
+                    .hoverTooltip(projection)
             }
         case .noData, .healthy, .level:
             EmptyView()
         }
     }
 
-    /// Flame icon + optional label text, carrying the state's projection tooltip — shared by the
-    /// spent and running-out cases. Only the flame is severity-tinted; the copy stays secondary
-    /// (tint on glass is reserved for the symbol). An optional `action` wraps the warning in a
-    /// plain button (the run-out time's countdown/exact toggle) with the shared capsule hover cue.
+    /// The run-out time keeps its countdown/exact toggle and full accessible label even though
+    /// the flame supplies the visible "Limit" context.
     @ViewBuilder
-    private func flameWarning(text: String?, state: WidgetData.MeterState,
-                              accessibility: String, action: (() -> Void)? = nil) -> some View {
-        Spacer(minLength: 8)
-        let label = HStack(spacing: 3) {
+    private func compactFlameWarning(
+        text: String?, state: WidgetData.MeterState,
+        accessibility: String, action: (() -> Void)? = nil
+    ) -> some View {
+        let label = HStack(alignment: .firstTextBaseline, spacing: 3) {
             Image(systemName: "flame.fill")
                 .font(.system(size: density.supportingPointSize - 1))
                 .foregroundStyle(Theme.severityFill(state.severity))
-                .accessibilityHidden(true) // the warning text alongside carries the message
+                .accessibilityHidden(true)
             if let text {
                 Text(text)
-                    .font(supportingFont)
+                    .font(captionFont)
                     .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .foregroundStyle(.secondary)
@@ -222,28 +210,40 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Primary line under the bar: value+mode word on the left ("50% left"), reset/limit context on
-    /// the right. The headline is the Used/Left toggle (click to flip the global meter style, with
-    /// the opposite reading in its tooltip) — the exact counterpart of the reset label's toggle.
-    private var primaryTextRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            headlineText
-            Spacer(minLength: 8)
-            trailingContext
+    private func compactRunOutText(_ text: String) -> String {
+        if text.hasPrefix("Limit in ") {
+            return String(text.dropFirst("Limit in ".count))
         }
-        .font(supportingFont)
-        .lineLimit(1)
+        if text.hasPrefix("Limit ") {
+            return String(text.dropFirst("Limit ".count))
+        }
+        return text
     }
 
-    // The headline value is the row's payload — the number the user opened the popover to read —
-    // so it sits at `.primary` (vibrant full-contrast on the popover glass); the surrounding
-    // context (reset countdown, deficit) stays `.secondary`.
+    private func compactBoundedTrailingText() -> String? {
+        guard let text = data.boundedTrailingText() else { return nil }
+        if text.hasPrefix("Resets in ") {
+            return String(text.dropFirst("Resets in ".count))
+        }
+        if text.hasPrefix("Resets ") {
+            return String(text.dropFirst("Resets ".count))
+        }
+        return text
+    }
+
+    // The headline stays primary for active values; untouched bounded quotas recede alongside their
+    // dimmed meter. Reset countdowns and other surrounding context remain secondary.
+    private var headlineStyle: AnyShapeStyle {
+        data.isBounded && data.hasData && data.used <= 0.0001
+            ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary)
+    }
+
     @ViewBuilder
     private var headlineText: some View {
         if data.hasMeterStyleToggle, let onToggleMeterStyle {
             Button(action: onToggleMeterStyle) {
                 Text(data.headline)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(headlineStyle)
                     .contentTransition(.numericText())
             }
             .buttonStyle(.plain)
@@ -251,7 +251,7 @@ struct WidgetRowView: View {
             .hoverTooltip(data.meterStyleTooltip)
         } else {
             Text(data.headline)
-                .foregroundStyle(.primary)
+                .foregroundStyle(headlineStyle)
                 .contentTransition(.numericText())
         }
     }
@@ -260,19 +260,17 @@ struct WidgetRowView: View {
     /// click target that flips the global relative/absolute mode (with the opposite format in its
     /// tooltip), mirroring the original. Otherwise it's plain text.
     @ViewBuilder
-    private var trailingContext: some View {
-        if let text = data.boundedTrailingText() {
-            if data.hasResetLabel(), let onToggleResetDisplay {
-                Button(action: onToggleResetDisplay) {
-                    Text(text).foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .hoverToggleAffordance()
-                .hoverTooltip(data.resetTooltip())
-            } else {
+    private func trailingContext(text: String) -> some View {
+        if data.hasResetLabel(), let onToggleResetDisplay {
+            Button(action: onToggleResetDisplay) {
                 Text(text).foregroundStyle(.secondary)
-                    .hoverTooltip(data.resetTooltip())
             }
+            .buttonStyle(.plain)
+            .hoverToggleAffordance()
+            .hoverTooltip(data.resetTooltip())
+        } else {
+            Text(text).foregroundStyle(.secondary)
+                .hoverTooltip(data.resetTooltip())
         }
     }
 

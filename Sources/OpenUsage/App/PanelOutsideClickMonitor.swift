@@ -5,6 +5,7 @@ import AppKit
 final class PanelOutsideClickMonitor {
     private let panel: MenuBarPanel
     private let statusItem: NSStatusItem
+    private let secondaryPanel: NSPanel?
     private let isMorphing: () -> Bool
     private let onInsidePanelClick: () -> Void
     private let onDismiss: () -> Void
@@ -13,12 +14,14 @@ final class PanelOutsideClickMonitor {
     init(
         panel: MenuBarPanel,
         statusItem: NSStatusItem,
+        secondaryPanel: NSPanel? = nil,
         isMorphing: @escaping () -> Bool,
         onInsidePanelClick: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.panel = panel
         self.statusItem = statusItem
+        self.secondaryPanel = secondaryPanel
         self.isMorphing = isMorphing
         self.onInsidePanelClick = onInsidePanelClick
         self.onDismiss = onDismiss
@@ -68,13 +71,16 @@ final class PanelOutsideClickMonitor {
         let isInsidePanel = panel.frame.contains(screenPoint)
         let hasWindowContext = windowID != nil && windowTypeName != nil
         let buttonWindowID = statusItem.button?.window.map(ObjectIdentifier.init)
+        let isSecondaryPanelWindow = secondaryPanel.map {
+            hasWindowContext && windowID == ObjectIdentifier($0)
+        } ?? false
         let context = PanelOutsideClickContext(
             isMorphing: isMorphing(),
             hasAttachedSheet: panel.attachedSheet != nil,
             isOnStatusButton: isOnStatusButton(screenPoint),
             isInsidePanel: isInsidePanel,
             isPanelWindow: hasWindowContext && windowID == ObjectIdentifier(panel),
-            isStatusItemWindow: hasWindowContext && windowID == buttonWindowID,
+            isStatusItemWindow: (hasWindowContext && windowID == buttonWindowID) || isSecondaryPanelWindow,
             eventWindowTypeName: hasWindowContext ? windowTypeName : nil
         )
 
@@ -86,6 +92,9 @@ final class PanelOutsideClickMonitor {
     }
 
     private func isOnStatusButton(_ screenPoint: NSPoint) -> Bool {
+        if let secondaryPanel, secondaryPanel.isVisible, secondaryPanel.frame.contains(screenPoint) {
+            return true
+        }
         guard let button = statusItem.button, let buttonWindow = button.window else { return false }
         let buttonFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         return PanelOutsideClickPolicy.pointHitsStatusButton(

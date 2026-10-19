@@ -80,6 +80,12 @@ struct MuseAuthStore: Sendable {
         return false
     }
 
+    func defaultAccountLabel() -> String? {
+        guard let meta = loadMetaProviderRecord() else { return nil }
+        return (meta["user_email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            ?? (meta["user_full_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
     func loadCredentials() throws -> MuseCredentials? {
         guard let meta = loadMetaProviderRecord() else { return nil }
         let baseURL = Self.normalizeBaseURL(meta["api_base_url"] as? String)

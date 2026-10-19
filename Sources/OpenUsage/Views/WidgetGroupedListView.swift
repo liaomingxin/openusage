@@ -1,14 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// The dashboard display: a two-column masonry grid of provider cards (System Settings style). A
-/// provider's icon + name sits above a rounded container holding its metric rows. Rows are the shared
-/// `WidgetRowView`, fed by the same `WidgetDataStore` the menu bar uses.
-///
-/// Reordering works here directly (no Customize needed): drag any metric row to reorder it within its
-/// provider, or drag a provider's header line to reorder whole providers. Customize stays the discoverable,
-/// obvious place to do the same plus toggle metrics on/off. Both surfaces use the same local gesture/geometry
-/// helper so they work inside the menu-bar popover without a system drag/drop session.
+/// A configurable masonry grid of provider and family cards using the shared metric rows.
+/// Drag headers to reorder providers/families or metric rows to reorder within a provider.
+/// Local gestures and frame geometry keep reordering inside the menu-bar popover.
 struct WidgetGroupedListView: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout
@@ -20,48 +15,102 @@ struct WidgetGroupedListView: View {
     @State private var frameStore = ReorderFrameStore()
     @State private var activeProviderID: String?
     @State private var activeMetricID: String?
+    @State private var selectedFamilyAccountIDs: [String: String] = [:]
     /// Latest measured height of each card section, lifted from the reorder frames (which already
     /// measure every section each layout pass).
     @State private var cardHeights: [String: CGFloat] = [:]
     /// The heights the column split is actually balanced with — see `recordHeights`.
     @State private var balanceHeights: [String: CGFloat] = [:]
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
-
+    @AppStorage(DashboardFilterMode.key) private var filterMode = DashboardFilterMode.all
+    @AppStorage(DashboardGroupingSetting.groupByFamilyKey) private var groupByFamily = true
+    @AppStorage(DashboardColumnsSetting.key) private var columnsSetting = DashboardColumnsSetting.two
 
     var body: some View {
-        // Masonry grid (`MasonryLayout`): two independent columns, each card joining the currently
-        // shorter one. Not `MasonryGrid` — the cards already publish frames for drag-reorder, so the
-        // heights come from those frames instead of a second measurement pass. Gap matches section
-        // spacing so the grid reads as even on both axes.
-        let columns = MasonryLayout.assignColumns(layout.displayGroups, heights: balanceHeights)
-        HStack(alignment: .top, spacing: density.sectionSpacing) {
-            ForEach(columns) { column in
-                VStack(alignment: .leading, spacing: density.sectionSpacing) {
-                    ForEach(column.items) { group in
-                        section(group)
+        let clusters = ProviderFamilyCluster.clusters(from: filteredGroups, groupByFamily: groupByFamily)
+        let columns = MasonryLayout.assignColumns(
+            clusters, heights: balanceHeights, columnCount: columnsSetting.rawValue
+        )
+        Group {
+            if clusters.isEmpty {
+                EmptyStateView(title: filterMode == .alerts ? "All quotas are healthy" : "No matching metrics")
+            } else {
+                HStack(alignment: .top, spacing: density.sectionSpacing) {
+                    ForEach(columns) { column in
+                        VStack(alignment: .leading, spacing: density.sectionSpacing) {
+                            ForEach(column.items) { cluster in
+                                clusterSection(cluster)
+                                    .reorderFrame(id: cluster.id, in: .named(reorderSpaceName))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .top)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { frames in
             frameStore.frames = frames
-            recordHeights(frames)
+            recordHeights(frames, clusters: clusters)
         }
-        .onChange(of: layout.displayGroups.map(\.provider.id)) { _, _ in rebalanceColumns() }
-        .animation(Motion.spring, value: layout.displayGroups.map(\.provider.id))
+        .onChange(of: clusters.map { $0.groups.map(\.id) }) { _, _ in rebalanceColumns(clusters) }
+        .onChange(of: filterMode) { _, _ in resetBalance() }
+        .onChange(of: groupByFamily) { _, _ in resetBalance() }
+        .onChange(of: columnsSetting) { _, _ in resetBalance() }
+        .animation(Motion.spring, value: clusters.map(\.id))
     }
 
-    /// Feeds the balancing heights from the reorder frames. `cardHeights` tracks the latest
-    /// measurements; `balanceHeights` — the snapshot the column split uses — only absorbs a card's
-    /// first height. Re-splitting on a live height change (a caret opening, a density switch) would
-    /// shuffle neighboring cards out from under the pointer, so the snapshot otherwise refreshes
-    /// only in `rebalanceColumns()`.
-    private func recordHeights(_ frames: [String: CGRect]) {
-        let providerIDs = Set(layout.displayGroups.map(\.provider.id))
+    private var filteredGroups: [ProviderGroup] {
+        guard filterMode != .all else { return layout.displayGroups }
+        return layout.displayGroups.filter { group in
+            if filterMode == .alerts, dataStore.headerNotice(for: group.provider.id) != nil { return true }
+            return group.widgets.contains { widget in
+                guard let descriptor = layout.descriptor(for: widget) else { return false }
+                return filterMode.matches(data: dataStore.data(for: descriptor))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func clusterSection(_ cluster: ProviderFamilyCluster) -> some View {
+        if cluster.isMultiAccount && groupByFamily {
+            ProviderFamilySection(
+                cluster: cluster,
+                selectedAccountID: selectedFamilyAccountIDs[cluster.id],
+                onSelectAccount: { selectedFamilyAccountIDs[cluster.id] = $0 },
+                filterMode: filterMode,
+                focusedAccountContent: { group in containerContentRows(group) }
+            )
+            .opacity(activeProviderID == cluster.id ? 0 : 1)
+            .highPriorityGesture(familyDragGesture(for: cluster))
+            .contextMenu {
+                Button("Refresh All \(cluster.groups[0].provider.familyName) Accounts") {
+                    Task {
+                        for group in layout.customizeGroups
+                        where ProviderAccountID.family(of: group.provider.id) == cluster.familyID {
+                            await dataStore.refreshOnUserRequest(providerID: group.provider.id)
+                        }
+                    }
+                }
+                Button("Customize…") { openCustomize(for: cluster.groups[0].provider.id) }
+                Divider()
+                Button("Hide \(cluster.groups[0].provider.familyName)") {
+                    for group in layout.customizeGroups
+                    where ProviderAccountID.family(of: group.provider.id) == cluster.familyID {
+                        container.enablement.setEnabled(false, for: group.provider.id)
+                    }
+                }
+            }
+        } else if let group = cluster.groups.first {
+            section(group)
+        }
+    }
+
+    /// First measurements feed the split; live height changes never shuffle cards under the pointer.
+    private func recordHeights(_ frames: [String: CGRect], clusters: [ProviderFamilyCluster]) {
+        let clusterIDs = Set(clusters.map(\.id))
         let measured = frames.reduce(into: [String: CGFloat]()) { result, entry in
-            if providerIDs.contains(entry.key) { result[entry.key] = entry.value.height }
+            if clusterIDs.contains(entry.key) { result[entry.key] = entry.value.height }
         }
         guard measured != cardHeights else { return }
         cardHeights = measured
@@ -74,12 +123,14 @@ struct WidgetGroupedListView: View {
         if grew { balanceHeights = snapshot }
     }
 
-    /// Re-splits the columns against the latest measured heights when the provider set or order
-    /// changes (a drag reorder, a provider hidden or shown), so the new arrangement lands balanced.
-    /// Prunes heights of providers no longer on the dashboard.
-    private func rebalanceColumns() {
-        let providerIDs = Set(layout.displayGroups.map(\.provider.id))
-        balanceHeights = cardHeights.filter { providerIDs.contains($0.key) }
+    private func rebalanceColumns(_ clusters: [ProviderFamilyCluster]) {
+        let clusterIDs = Set(clusters.map(\.id))
+        balanceHeights = cardHeights.filter { clusterIDs.contains($0.key) }
+    }
+
+    private func resetBalance() {
+        cardHeights = [:]
+        balanceHeights = [:]
     }
 
     private func section(_ group: ProviderGroup) -> some View {
@@ -87,8 +138,7 @@ struct WidgetGroupedListView: View {
             header(group)
             container(group)
         }
-        .opacity(activeProviderID == group.provider.id ? 0 : 1)
-        .reorderFrame(id: group.provider.id, in: .named(reorderSpaceName))
+        .opacity(activeProviderID == (groupByFamily ? ProviderAccountID.family(of: group.provider.id) : group.provider.id) ? 0 : 1)
     }
 
     private func header(_ group: ProviderGroup) -> some View {
@@ -120,12 +170,7 @@ struct WidgetGroupedListView: View {
         }
     }
 
-    /// Renders the provider's branded share card and copies the PNG to the clipboard. The appearance is
-    /// taken from the popover's own `colorScheme` — this view is hosted in the popover panel, whose
-    /// appearance is `AppearanceSetting.current` (explicit for Light/Dark, the menu bar for System) — so
-    /// the export matches the card on screen instead of guessing from `NSApp.effectiveAppearance`. The
-    /// same render path backs the footer's "Share Screenshot" submenu, which reaches it without a
-    /// right-click.
+    /// Copy a branded share card using this popover's appearance, including explicit Light/Dark.
     private func shareCard(_ group: ProviderGroup) -> Bool {
         ShareCardRenderer.share(
             group: group,
@@ -174,9 +219,11 @@ struct WidgetGroupedListView: View {
     }
 
     private func container(_ group: ProviderGroup) -> some View {
-        // Resolve each row's descriptor + data exactly once per render, then reuse it for both the
-        // neighbor-aware condensing rule and the row itself — `dataStore.data(for:)` used to be
-        // recomputed several times per row (twice per adjacent pair plus once in `row`).
+        DashboardMetricCard { containerContentRows(group) }
+    }
+
+    /// Shared with the focused family tab so its rows keep their gestures, menus, and hover content.
+    private func containerContentRows(_ group: ProviderGroup) -> some View {
         let providerID = group.provider.id
         let isExpanded = layout.isProviderExpanded(providerID)
         let alwaysRows = resolvedRows(group.alwaysShownWidgets)
@@ -187,34 +234,29 @@ struct WidgetGroupedListView: View {
         let cardRows = metricCardRows(
             alwaysRows: alwaysRows,
             expandedRows: expandedRows,
-            hasExpandedMetrics: group.hasExpandedMetrics,
+            hasExpandedMetrics: !expandedRows.isEmpty,
             isExpanded: isExpanded,
             links: dataStore.links(for: providerID),
             condensedIDs: condensedIDs
         )
-        // Same card builder the lifted preview uses, so the floating chip can't drift from the live card.
-        return DashboardMetricCard {
-            // One stable list keeps the drag-owning metric row alive when it crosses the separator.
-            // Separate always-shown/expanded loops can tear that source view down before `onEnded` fires,
-            // leaving the lift overlay visible until another drag forces a reset.
-            ForEach(cardRows) { cardRow in
-                switch cardRow {
-                case .metric(let entry):
-                    row(entry.descriptor, data: entry.data, in: providerID,
-                        condensedTop: condensedIDs.contains(entry.descriptor.id))
-                case .hairline:
-                    CardHairline()
-                case .links(let links):
-                    ProviderLinksView(links: links)
-                case .separator:
-                    DashboardMetricCardSeparator()
-                        .reorderFrame(
-                            id: expandedDividerID(for: providerID),
-                            in: .named(reorderSpaceName)
-                        )
-                case .toggle:
-                    expandToggle(providerID: providerID, isExpanded: isExpanded)
-                }
+        // A single list preserves drag-owning row identity when crossing the expanded divider.
+        return ForEach(cardRows) { cardRow in
+            switch cardRow {
+            case .metric(let entry):
+                row(entry.descriptor, data: entry.data, in: providerID,
+                    condensedTop: condensedIDs.contains(entry.descriptor.id))
+            case .hairline:
+                CardHairline()
+            case .links(let links):
+                ProviderLinksView(links: links)
+            case .separator:
+                DashboardMetricCardSeparator()
+                    .reorderFrame(
+                        id: expandedDividerID(for: providerID),
+                        in: .named(reorderSpaceName)
+                    )
+            case .toggle:
+                expandToggle(providerID: providerID, isExpanded: isExpanded)
             }
         }
     }
@@ -222,7 +264,9 @@ struct WidgetGroupedListView: View {
     private func resolvedRows(_ widgets: [PlacedWidget]) -> [ResolvedRow] {
         widgets.compactMap { widget -> ResolvedRow? in
             guard let descriptor = layout.descriptor(for: widget) else { return nil }
-            return ResolvedRow(widget: widget, descriptor: descriptor, data: dataStore.data(for: descriptor))
+            let data = dataStore.data(for: descriptor)
+            guard filterMode.matches(data: data) else { return nil }
+            return ResolvedRow(widget: widget, descriptor: descriptor, data: data)
         }
     }
 
@@ -357,16 +401,24 @@ struct WidgetGroupedListView: View {
         }
     }
 
+    private func familyDragGesture(for cluster: ProviderFamilyCluster) -> some Gesture {
+        providerDragGesture(for: cluster.groups[0])
+    }
+
     private func providerDragGesture(for group: ProviderGroup) -> some Gesture {
-        reorderDragGesture(
-            id: group.provider.id,
+        let id = groupByFamily ? ProviderAccountID.family(of: group.provider.id) : group.provider.id
+        return reorderDragGesture(
+            id: id,
             coordinateSpaceName: reorderSpaceName,
             frameStore: frameStore,
             active: $activeProviderID,
             lift: $reorderLift,
-            makeLift: { makeProviderLift(for: group, value: $0) },
-            orderedIDs: { layout.displayGroups.map(\.provider.id) },
-            reorder: { layout.reorderProvider(dragged: group.provider.id, target: $0) }
+            makeLift: { makeProviderLift(for: group, id: id, value: $0) },
+            orderedIDs: { ProviderFamilyCluster.clusters(from: filteredGroups, groupByFamily: groupByFamily).map(\.id) },
+            reorder: { target in
+                if groupByFamily { return layout.reorderProviderFamily(draggedFamily: id, targetFamily: target) }
+                return layout.reorderProvider(dragged: id, target: target)
+            }
         )
     }
 
@@ -401,32 +453,23 @@ struct WidgetGroupedListView: View {
         guard let group = layout.displayGroups.first(where: { $0.provider.id == providerID }) else {
             return []
         }
-        let alwaysShown = group.alwaysShownWidgets.compactMap { layout.descriptor(for: $0)?.id }
-        // The separator is a drop target whenever the expanded section is open — including a links-only
-        // section (buttons but no expanded metrics), so a metric can be dragged across the boundary
-        // even when only buttons are showing below it.
-        let hasExpandedContent = group.hasExpandedMetrics || !dataStore.links(for: group.provider.id).isEmpty
+        let alwaysShown = resolvedRows(group.alwaysShownWidgets).map(\.descriptor.id)
+        // Only rendered rows participate in drag targeting; hidden lens rows have no frames.
+        let expanded = resolvedRows(group.expandedWidgets).map(\.descriptor.id)
+        let hasExpandedContent = !expanded.isEmpty || !dataStore.links(for: group.provider.id).isEmpty
         guard hasExpandedContent, layout.isProviderExpanded(providerID) else { return alwaysShown }
-        let expanded = group.expandedWidgets.compactMap { layout.descriptor(for: $0)?.id }
         return alwaysShown + [expandedDividerID(for: providerID)] + expanded
     }
 
-    private func makeProviderLift(for group: ProviderGroup, value: DragGesture.Value) -> ReorderLift? {
+    private func makeProviderLift(for group: ProviderGroup, id: String, value: DragGesture.Value) -> ReorderLift? {
         let isExpanded = layout.isProviderExpanded(group.provider.id)
-        let alwaysRows = group.alwaysShownWidgets.compactMap { widget -> WidgetData? in
-            guard let descriptor = layout.descriptor(for: widget) else { return nil }
-            return dataStore.data(for: descriptor)
-        }
-        let expandedRows = isExpanded
-            ? group.expandedWidgets.compactMap { widget -> WidgetData? in
-                guard let descriptor = layout.descriptor(for: widget) else { return nil }
-                return dataStore.data(for: descriptor)
-            }
-            : []
+        let alwaysRows = resolvedRows(group.alwaysShownWidgets).map(\.data)
+        let resolvedExpandedRows = resolvedRows(group.expandedWidgets)
+        let expandedRows = isExpanded ? resolvedExpandedRows.map(\.data) : []
         let links = dataStore.links(for: group.provider.id)
-        let hasExpandedContent = group.hasExpandedMetrics || !links.isEmpty
+        let hasExpandedContent = !resolvedExpandedRows.isEmpty || !links.isEmpty
         return ReorderLift.make(
-            id: group.provider.id,
+            id: id,
             payload: .dashboardProvider(
                 provider: group.provider,
                 plan: dataStore.plan(for: group.provider.id),
