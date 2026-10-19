@@ -21,6 +21,8 @@ final class AppContainer {
     let apiKeyProviders: [any APIKeyManaging]
     /// Explicit Kimi account sources; edits apply on the next launch, like other account discovery.
     let kimiAccountsStore: KimiAccountsStore
+    /// Per-account manual billing dates, with provider-reported dates used when no override is set.
+    let subscriptionExpiry: SubscriptionExpiryStore
     /// Quota pace notification preferences (three independent triggers). Drives the Settings section
     /// and is read by `WidgetDataStore.evaluateNotifications`.
     let notificationSettings: NotificationSettingsStore
@@ -148,6 +150,13 @@ final class AppContainer {
         self.layout = layout
         self.dataStore = dataStore
         self.iCloudSync = iCloudSync
+        self.subscriptionExpiry = SubscriptionExpiryStore(
+            fileURL: SubscriptionExpiryStore.defaultFileURL,
+            accountKeysByProviderID: SubscriptionExpiryStore.makeAccountKeys(
+                providers: registry.providers,
+                identityKeysByCard: accountAssembly.identityKeysByCard
+            )
+        )
 
         // The resets popover's claim services, sharing each provider's credential loading and HTTP
         // client so the claim's auth can't drift from the provider's. A claim forces a refresh so the
@@ -256,6 +265,7 @@ final class AppContainer {
         reseedEnabledProviders()
         dataStore.resetDisplaySettings()
         notificationSettings.resetToDefaults()
+        subscriptionExpiry.resetAll()
         transparency.resetToDefaults()
         privacy.hideUsageWhileScreenSharing = false
         // Same as flipping the Settings toggle off: stops syncing and removes this Mac's document
@@ -267,6 +277,7 @@ final class AppContainer {
             AppearanceSetting.key, TimeFormatSetting.key, DensitySetting.key,
             ReduceAnimationsSetting.key, LogLevelSetting.key, TotalSpendSetting.key,
             TotalSpendSetting.periodKey, TotalSpendSetting.metricKey,
+            "subscriptionExpiry.visible", "subscriptionExpiry.compactMode",
         ] {
             UserDefaults.standard.removeObject(forKey: key)
         }

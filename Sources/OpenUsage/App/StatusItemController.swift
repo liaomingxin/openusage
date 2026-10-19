@@ -110,6 +110,7 @@ final class StatusItemController: NSObject {
                     .environment(container)
                     .environment(container.layout)
                     .environment(container.dataStore)
+                    .environment(container.subscriptionExpiry)
                     .environment(container.transparency)
                     .environment(container.agentUsage)
                     .environment(updater)

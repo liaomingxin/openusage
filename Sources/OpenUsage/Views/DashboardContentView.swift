@@ -67,7 +67,7 @@ struct DashboardContentView: View {
                 label: \.label
             )
             Spacer(minLength: 8)
-            if hasMultiAccountFamily {
+            if hasMultiAccountFamily, filterMode != .expiries {
                 Button {
                     withAnimation(Motion.spring) { groupByFamily.toggle() }
                 } label: {
@@ -90,16 +90,18 @@ struct DashboardContentView: View {
 
     @ViewBuilder
     private var widgetContent: some View {
-        // Spend remains reachable before fresh metrics arrive, except in the alerts-only lens.
-        if showTotalSpend, layout.hasSpendCapableProvider, filterMode != .alerts {
-            TotalSpendCard()
-                .padding(.bottom, density.sectionSpacing)
-        }
         if layout.displayGroups.isEmpty {
             EmptyDashboardView {
                 withAnimation(Motion.modeSwitch) { layout.screen = .customize }
             }
+        } else if filterMode == .expiries {
+            SubscriptionExpiryCard()
         } else {
+            // Spend remains reachable before fresh metrics arrive, except in the alerts-only lens.
+            if showTotalSpend, layout.hasSpendCapableProvider, filterMode != .alerts {
+                TotalSpendCard()
+                    .padding(.bottom, density.sectionSpacing)
+            }
             WidgetGroupedListView(
                 reorderSpaceName: reorderSpaceName,
                 reorderLift: $reorderLift

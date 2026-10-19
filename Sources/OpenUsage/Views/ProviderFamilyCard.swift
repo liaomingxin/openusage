@@ -33,8 +33,10 @@ struct ProviderFamilySection<SingleAccountContent: View>: View {
 
     @Environment(LayoutStore.self) private var layout
     @Environment(WidgetDataStore.self) private var dataStore
+    @Environment(SubscriptionExpiryStore.self) private var expiryStore
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @State private var editingExpiryProvider: Provider?
 
     private struct MatrixRow: Identifiable {
         let id: String
@@ -82,6 +84,9 @@ struct ProviderFamilySection<SingleAccountContent: View>: View {
                     }
                 }
             }
+        }
+        .popover(item: $editingExpiryProvider, arrowEdge: .top) { provider in
+            SubscriptionExpiryEditorPopover(provider: provider)
         }
     }
 
@@ -132,6 +137,7 @@ struct ProviderFamilySection<SingleAccountContent: View>: View {
                         Task { await dataStore.refreshOnUserRequest(providerID: group.provider.id) }
                     }
                     Button("Customize…") { openCustomize(for: group.provider.id) }
+                    expiryMenuItems(for: group.provider)
                     Button("Share Screenshot") {
                         ShareCardRenderer.share(
                             group: group, dataStore: dataStore, layout: layout, appearance: colorScheme
@@ -198,6 +204,7 @@ struct ProviderFamilySection<SingleAccountContent: View>: View {
             if let plan = account.plan { ProviderPlanBadge(plan: plan) }
             if let warning = account.warning { warningIcon(warning) }
             Spacer(minLength: 4)
+            expiryControl(for: account.group.provider)
             Button {
                 Task { await dataStore.refreshOnUserRequest(providerID: account.id) }
             } label: {
@@ -215,44 +222,78 @@ struct ProviderFamilySection<SingleAccountContent: View>: View {
 
     private func matrixSection(_ account: Account) -> some View {
         let quotaRows = Array(account.rows.lazy.filter { $0.data.isBounded }.prefix(2))
-        return Button {
-            withAnimation(Motion.spring) { onSelectAccount(account.id) }
-        } label: {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(account.isIdle ? AnyShapeStyle(.tertiary) : Theme.severityFill(account.severity))
-                    .frame(width: 6, height: 6)
-                Text(account.group.provider.accountLabel ?? "Default")
-                    .font(.system(size: density.supportingPointSize, weight: account.isIdle ? .regular : .semibold))
-                    .foregroundStyle(account.isIdle ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let plan = account.plan { ProviderPlanBadge(plan: plan) }
-                if let warning = account.warning { warningIcon(warning) }
-                Spacer(minLength: 6)
-                if quotaRows.isEmpty {
-                    if let row = account.rows.first(where: { !$0.data.isBounded }) {
-                        Text(row.data.unboundedDetail)
-                            .font(.system(size: density.captionPointSize, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+        return HStack(spacing: 6) {
+            Button {
+                withAnimation(Motion.spring) { onSelectAccount(account.id) }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(account.isIdle ? AnyShapeStyle(.tertiary) : Theme.severityFill(account.severity))
+                        .frame(width: 6, height: 6)
+                    Text(account.group.provider.accountLabel ?? "Default")
+                        .font(.system(size: density.supportingPointSize, weight: account.isIdle ? .regular : .semibold))
+                        .foregroundStyle(account.isIdle ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let plan = account.plan { ProviderPlanBadge(plan: plan) }
+                    if let warning = account.warning { warningIcon(warning) }
+                    Spacer(minLength: 6)
+                    if quotaRows.isEmpty {
+                        if let row = account.rows.first(where: { !$0.data.isBounded }) {
+                            Text(row.data.unboundedDetail)
+                                .font(.system(size: density.captionPointSize, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    } else {
+                        ForEach(quotaRows) { row in
+                            matrixQuotaCell(row.data)
+                        }
                     }
-                } else {
-                    ForEach(quotaRows) { row in
-                        matrixQuotaCell(row.data)
-                    }
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, Theme.cardRowInset)
-            .frame(height: density == .compact ? 28 : 32)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .hoverTooltip(account.rows.map { "\($0.data.title): \($0.data.headline)" }.joined(separator: "\n"))
+            .accessibilityLabel("Show \(account.group.provider.accountLabel ?? "Default") account")
+            expiryControl(for: account.group.provider)
+        }
+        .padding(.horizontal, Theme.cardRowInset)
+        .frame(height: density == .compact ? 28 : 32)
+        .contextMenu {
+            expiryMenuItems(for: account.group.provider)
+        }
+    }
+
+    private func expiryControl(for provider: Provider) -> some View {
+        let expiry = expiryStore.resolvedExpiry(for: provider.id, snapshot: dataStore.snapshots[provider.id])
+        return Button {
+            editingExpiryProvider = provider
+        } label: {
+            if let expiry {
+                SubscriptionExpiryBadge(expiry: expiry)
+            } else {
+                Image(systemName: "calendar.badge.plus")
+                    .font(.system(size: density.captionPointSize))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
+            }
         }
         .buttonStyle(.plain)
-        .hoverTooltip(account.rows.map { "\($0.data.title): \($0.data.headline)" }.joined(separator: "\n"))
-        .accessibilityLabel("Show \(account.group.provider.accountLabel ?? "Default") account")
+        .hoverTooltip(expiry == nil ? "Set expiry date for \(provider.displayName)" : nil)
+        .accessibilityLabel("Edit expiry date for \(provider.displayName)")
+    }
+
+    @ViewBuilder
+    private func expiryMenuItems(for provider: Provider) -> some View {
+        Button("Set Expiry Date…") { editingExpiryProvider = provider }
+        if expiryStore.entry(for: provider.id) != nil {
+            Button("Clear Manual Expiry Date") { expiryStore.clearExpiry(for: provider.id) }
+        }
     }
 
     private func matrixQuotaCell(_ data: WidgetData) -> some View {

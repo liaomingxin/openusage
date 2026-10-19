@@ -8,6 +8,7 @@ struct WidgetGroupedListView: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout
     @Environment(WidgetDataStore.self) private var dataStore
+    @Environment(SubscriptionExpiryStore.self) private var expiryStore
     @Environment(\.colorScheme) private var colorScheme
     let reorderSpaceName: String
     @Binding var reorderLift: ReorderLift?
@@ -16,6 +17,7 @@ struct WidgetGroupedListView: View {
     @State private var activeProviderID: String?
     @State private var activeMetricID: String?
     @State private var selectedFamilyAccountIDs: [String: String] = [:]
+    @State private var editingExpiryProvider: Provider?
     /// Latest measured height of each card section, lifted from the reorder frames (which already
     /// measure every section each layout pass).
     @State private var cardHeights: [String: CGFloat] = [:]
@@ -150,10 +152,18 @@ struct WidgetGroupedListView: View {
             warning: dataStore.headerNotice(for: group.provider.id),
             refreshing: dataStore.refreshingProviderIDs.contains(group.provider.id),
             staleness: dataStore.stalenessHint(for: group.provider.id),
-            onCopyScreenshot: { shareCard(group) }
+            onCopyScreenshot: { shareCard(group) },
+            expiry: expiryStore.resolvedExpiry(for: group.provider.id, snapshot: dataStore.snapshots[group.provider.id]),
+            onEditExpiry: { editingExpiryProvider = group.provider }
         )
         .padding(.horizontal, Theme.sectionHeaderInset)
         .highPriorityGesture(providerDragGesture(for: group))
+        .popover(isPresented: Binding(
+            get: { editingExpiryProvider?.id == group.provider.id },
+            set: { if !$0 { editingExpiryProvider = nil } }
+        ), arrowEdge: .top) {
+            SubscriptionExpiryEditorPopover(provider: group.provider)
+        }
         .contextMenu {
             // Hides the whole provider section (the Customize provider list brings it back). Mirrors
             // the per-metric "Hide" but one level up, so the verb order reads the same on a header as a row.
@@ -166,6 +176,10 @@ struct WidgetGroupedListView: View {
             }
             Button("Customize…") {
                 openCustomize(for: group.provider.id)
+            }
+            Button("Set Expiry Date…") { editingExpiryProvider = group.provider }
+            if expiryStore.entry(for: group.provider.id) != nil {
+                Button("Clear Manual Expiry Date") { expiryStore.clearExpiry(for: group.provider.id) }
             }
             Divider()
             Button("Share Screenshot") { _ = shareCard(group) }

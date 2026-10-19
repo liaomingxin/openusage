@@ -3,6 +3,7 @@ enum DashboardFilterMode: String, CaseIterable, Identifiable, Sendable {
     case all = "all"
     case quotas = "quotas"
     case alerts = "alerts"
+    case expiries = "expiries"
 
     static let key = "dashboard.filterMode"
 
@@ -13,12 +14,13 @@ enum DashboardFilterMode: String, CaseIterable, Identifiable, Sendable {
         case .all: "All"
         case .quotas: "Quotas"
         case .alerts: "Alerts"
+        case .expiries: "Expiries"
         }
     }
 
     func matches(data: WidgetData) -> Bool {
         switch self {
-        case .all: true
+        case .all, .expiries: true
         case .quotas: !data.isUsagePeriod && !data.isChart
         case .alerts: Self.isAlerting(data: data)
         }

@@ -30,6 +30,8 @@ struct ProviderSectionHeader: View {
     /// Dashboard-only screenshot action. The reorder preview omits it, while Customize uses its own
     /// row type and is unaffected by this header.
     var onCopyScreenshot: (() -> Bool)?
+    var expiry: SubscriptionExpiryStore.ResolvedExpiry? = nil
+    var onEditExpiry: (() -> Void)? = nil
 
     /// Header type and icon track the density setting like the rows do, so Compact shrinks the
     /// whole section anatomy — not just the rows under it.
@@ -45,7 +47,9 @@ struct ProviderSectionHeader: View {
         warning: String? = nil,
         refreshing: Bool = false,
         staleness: StalenessHint? = nil,
-        onCopyScreenshot: (() -> Bool)? = nil
+        onCopyScreenshot: (() -> Bool)? = nil,
+        expiry: SubscriptionExpiryStore.ResolvedExpiry? = nil,
+        onEditExpiry: (() -> Void)? = nil
     ) {
         self.provider = provider
         self.showsAccountBadge = showsAccountBadge
@@ -54,6 +58,8 @@ struct ProviderSectionHeader: View {
         self.refreshing = refreshing
         self.staleness = staleness
         self.onCopyScreenshot = onCopyScreenshot
+        self.expiry = expiry
+        self.onEditExpiry = onEditExpiry
     }
 
     /// The card title — the family name, never "Codex — extra@example.com".
@@ -109,6 +115,25 @@ struct ProviderSectionHeader: View {
                     .accessibilityLabel(warning)
             }
             Spacer(minLength: 8)
+            if let onEditExpiry {
+                Button(action: onEditExpiry) {
+                    if let expiry {
+                        SubscriptionExpiryBadge(expiry: expiry)
+                    } else {
+                        Image(systemName: "calendar.badge.plus")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 20)
+                            .contentShape(Rectangle())
+                            .opacity(isHovered ? 1 : 0)
+                    }
+                }
+                .buttonStyle(.plain)
+                .hoverTooltip(expiry == nil ? "Set expiry date for \(provider.displayName)" : nil)
+                .accessibilityLabel("Edit expiry date for \(provider.displayName)")
+            } else if let expiry {
+                SubscriptionExpiryBadge(expiry: expiry)
+            }
             if let onCopyScreenshot {
                 CopyFeedbackButton(
                     accessibilityLabel: "Copy \(provider.displayName) Screenshot",
