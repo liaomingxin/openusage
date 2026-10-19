@@ -267,7 +267,9 @@ enum CursorUsageSummaryMapper {
 
     private static func planLabel(_ value: String?) -> String? {
         guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = value
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed.titleCased(separator: \.isWhitespace)
     }
 

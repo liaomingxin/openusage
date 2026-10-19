@@ -133,7 +133,25 @@ final class CursorProvider: ProviderRuntime {
             throw CursorAuthError.notLoggedIn
         }
 
-        let usageResponse = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
+        let usageResponse: HTTPResponse
+        do {
+            usageResponse = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
+        } catch CursorUsageError.connectionFailed {
+            let currentToken = authState.accessToken ?? accessToken
+            if let mapped = try? await usageSummaryAndRequestResult(
+                accessToken: currentToken,
+                planName: CursorUsageMapper.resolvedPlanName(
+                    planInfoName: nil,
+                    membershipType: authState.membershipType
+                ),
+                unavailableMessage: CursorUsageError.connectionFailed.localizedDescription
+            ) {
+                var enriched = mapped
+                let history = await appendSpendLines(to: &enriched.lines, accessToken: currentToken)
+                return snapshot(enriched, usageHistory: history)
+            }
+            throw CursorUsageError.connectionFailed
+        }
         try ProviderAuthRetry.requireSuccess(
             usageResponse,
             authExpired: CursorAuthError.tokenExpired,
@@ -144,8 +162,12 @@ final class CursorProvider: ProviderRuntime {
         }
         // The access token may have rotated during the usage fetch's refresh-and-retry; read the live one.
         let currentToken = authState.accessToken ?? accessToken
+        let isUnifiedGrokWithoutPlanUsage = !CursorPlanUsageFacts(usage: usage).hasPlanUsage
+            && (CursorAuthStore.tokenSubject(currentToken)?.hasPrefix("grok|") == true)
 
-        let planInfo = await fetchPlanInfo(accessToken: currentToken)
+        let planInfo = isUnifiedGrokWithoutPlanUsage
+            ? CursorPlanInfo(name: nil, unavailable: true, billingCycleEnd: nil)
+            : await fetchPlanInfo(accessToken: currentToken)
         let planInfoName = planInfo.name
         let planInfoUnavailable = planInfo.unavailable
         let routingPlanName = CursorUsageMapper.routingPlanName(
@@ -167,7 +189,9 @@ final class CursorProvider: ProviderRuntime {
                 planName: displayPlanName ?? routingPlanName,
                 unavailableMessage: fallback.message
             )
-            await appendGrokBotUsage(to: &mapped.lines, accessToken: currentToken)
+            if !isUnifiedGrokWithoutPlanUsage {
+                await appendGrokBotUsage(to: &mapped.lines, accessToken: currentToken)
+            }
             let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
             return snapshot(mapped, usageHistory: history)
         }

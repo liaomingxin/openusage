@@ -320,7 +320,10 @@ enum CursorUsageMapper {
         if facts.planUsageUnusable && !facts.hasTotalUsagePercent && normalizedPlan == "team" {
             return (true, "Team request-based usage data unavailable. Try again later.")
         }
-        if facts.planUsageUnusable && !facts.hasTotalUsagePercent && normalizedPlan.isEmpty && planInfoUnavailable {
+        if facts.planUsageUnusable && !facts.hasTotalUsagePercent && (
+            (normalizedPlan.isEmpty && planInfoUnavailable)
+                || (!facts.hasPlanUsage && (usage["billingCycleStart"] != nil || usage["billingCycleEnd"] != nil || usage["spendLimitUsage"] != nil))
+        ) {
             return (true, "Cursor request-based usage data unavailable. Try again later.")
         }
 
@@ -542,7 +545,9 @@ enum CursorUsageMapper {
 
     private static func planLabel(_ value: String?) -> String? {
         guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = value
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return trimmed.titleCased(separator: \.isWhitespace)
     }
