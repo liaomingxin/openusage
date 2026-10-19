@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.7.16-beta.1-kimi.1
+
+### New Features
+- Sync upstream `v0.7.16-beta.1`: claim Claude usage-limit resets directly from the `Rate Limit Resets` popover ([#1413](https://github.com/robinebers/openusage/pull/1413)).
+- Add Antigravity `Argon Weekly` quota meter ([#1395](https://github.com/robinebers/openusage/pull/1395)).
+
+### Bug Fixes
+- Merge Antigravity quota summary buckets across production and daily Cloud Code hosts while keeping the versioned `antigravity/2.23.1` User-Agent, and send Antigravity `ClientMetadata` to `loadCodeAssist` so plan badges resolve when the app is closed ([#1407](https://github.com/robinebers/openusage/pull/1407)).
+- Prefer Enterprise/Team billing membership over `GetPlanInfo = Pro` for Cursor plan badges, merge `Extra Usage` from `usage-summary` on model-pool seats, and support percent-only Team totals ([#1409](https://github.com/robinebers/openusage/pull/1409)).
+
+### Installation
+Open the DMG and replace `/Applications/OpenUsage.app`. If Gatekeeper blocks this personal build, remove the quarantine attribute once:
+
+```sh
+xattr -rd com.apple.quarantine /Applications/OpenUsage.app
+```
+
+**Full Changelog**: [v0.7.15-beta.1-kimi.4...v0.7.16-beta.1-kimi.1](https://github.com/liaomingxin/openusage/compare/v0.7.15-beta.1-kimi.4...v0.7.16-beta.1-kimi.1)
+
 ## v0.7.15-beta.1-kimi.4
 
 ### New Features
