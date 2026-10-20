@@ -67,7 +67,7 @@ struct DashboardContentView: View {
                 label: \.label
             )
             Spacer(minLength: 8)
-            if hasMultiAccountFamily, filterMode != .expiries {
+            if hasMultiAccountFamily, filterMode != .expiries, filterMode != .resets {
                 Button {
                     withAnimation(Motion.spring) { groupByFamily.toggle() }
                 } label: {
@@ -94,6 +94,8 @@ struct DashboardContentView: View {
             EmptyDashboardView {
                 withAnimation(Motion.modeSwitch) { layout.screen = .customize }
             }
+        } else if filterMode == .resets {
+            QuotaResetsCard()
         } else if filterMode == .expiries {
             SubscriptionExpiryCard()
         } else {
