@@ -27,10 +27,11 @@ enum TokenRefreshOutcome: Sendable {
 /// Google Cloud Code endpoints, and the Google OAuth token refresh.
 struct AntigravityUsageClient: Sendable {
     static let lsService = "exa.language_server_pb.LanguageServerService"
-    // The daily endpoint can omit Gemini quotas from a successful response; prefer production.
+    // Antigravity.app (`--cloud_code_endpoint`) and pi/omp bill against daily-cloudcode-pa;
+    // cloudcode-pa is kept as the fallback and for merging any omitted buckets.
     static let cloudCodeURLs = [
-        "https://cloudcode-pa.googleapis.com",
-        "https://daily-cloudcode-pa.googleapis.com"
+        "https://daily-cloudcode-pa.googleapis.com",
+        "https://cloudcode-pa.googleapis.com"
     ]
     static let fetchModelsPath = "/v1internal:fetchAvailableModels"
     static let loadCodeAssistPath = "/v1internal:loadCodeAssist"
@@ -40,7 +41,7 @@ struct AntigravityUsageClient: Sendable {
     /// Cloud Code only includes the "Gemini Models" group (`gemini-5h` / `gemini-weekly`) in
     /// `retrieveUserQuotaSummary` when the `antigravity` User-Agent carries a version >= the Gemini
     /// quota-pool release; bare `"antigravity"` returns only `"Claude and GPT models"`.
-    static let cloudCodeUserAgent = "antigravity/2.23.1"
+    static let cloudCodeUserAgent = "antigravity/2.24.0"
     // Google OAuth "installed application" client credentials, extracted verbatim from the Antigravity
     // app bundle — the same pair the shipped app and the legacy Tauri plugin use. For installed-app OAuth
     // clients Google does not treat the "secret" as confidential (it ships in every copy of the client),
