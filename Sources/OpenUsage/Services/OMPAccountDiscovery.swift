@@ -14,16 +14,33 @@ extension ProviderAccountAssembly {
         defaultLabels["opencode"] = OpenCodeAuthStore().defaultAccountLabel()
         defaultLabels["kimi"] = KimiAuthStore().defaultAccountLabel()
         defaultLabels["zai"] = ZAIProvider.defaultAccountLabel()
+        let nativeAntigravityEmail = AntigravityAuthStore().defaultAccountLabel()
+        var antigravityCards = extraAntigravityCards
+        var antigravityEmails = Set(antigravityCards.map { $0.accountLabel.lowercased() })
+        if let nativeAntigravityEmail {
+            let normalizedEmail = nativeAntigravityEmail.lowercased()
+            defaultLabels["antigravity"] = nativeAntigravityEmail
+            identities["antigravity"] = "antigravity:\(normalizedEmail)"
+            antigravityEmails.insert(normalizedEmail)
+        }
         let files = LocalTextFileAccessor()
-        for path in files.jsonFilePaths(in: "~/.cli-proxy-api")
+        for path in files.jsonFilePaths(in: "~/.cli-proxy-api").sorted()
             where (path as NSString).lastPathComponent.hasPrefix("antigravity-") {
             guard let text = try? files.readTextIfPresent(path),
-                  let object = ProviderParse.jsonObject(Data(text.utf8)),
-                  let email = (object["email"] as? String)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                  let token = AntigravityAuthStore.extractToken(fromKeychainRaw: text),
+                  token.refreshToken?.isEmpty == false,
+                  let email = token.email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             else { continue }
-            defaultLabels["antigravity"] = email
-            break
+            let normalizedEmail = email.lowercased()
+            guard antigravityEmails.insert(normalizedEmail).inserted else { continue }
+            let card = AntigravityExtraCard(
+                id: ProviderAccountID.make(family: "antigravity", identityKey: normalizedEmail),
+                accountLabel: email,
+                credentialPath: path,
+                identityKey: "antigravity:\(normalizedEmail)"
+            )
+            antigravityCards.append(card)
+            identities[card.id] = card.identityKey
         }
         let cursorIdentity = cursorAuthStore.loadAuthState()?.accessToken.flatMap {
             OMPOAuthStore.accountID(providerKey: "cursor", token: $0)
@@ -67,6 +84,7 @@ extension ProviderAccountAssembly {
         return ProviderAccountAssembly(
             identityKeysByCard: identities,
             extraCodexCards: extraCodexCards,
+            extraAntigravityCards: antigravityCards,
             claudeCards: claudeCards,
             claudeSwapCards: claudeSwapCards,
             kimiAccounts: kimiAccounts,

@@ -269,6 +269,47 @@ final class AntigravityProviderTests: XCTestCase {
         XCTAssertEqual(token?.expiry, OpenUsageISO8601.date(from: "2099-01-01T00:00:00Z"))
     }
 
+    func testExtractsEmailFromRootAndNestedKeychainIDToken() {
+        let payload = Data(#"{"email":"native@example.com"}"#.utf8).base64EncodedString()
+        let jwt = "header.\(payload).signature"
+        for inner in [
+            #"{"token":{"access_token":"native","refresh_token":"r"},"id_token":"\#(jwt)"}"#,
+            #"{"token":{"access_token":"native","refresh_token":"r","idToken":"\#(jwt)"}}"#
+        ] {
+            let wrapped = "go-keyring-base64:" + Data(inner.utf8).base64EncodedString()
+            let token = AntigravityAuthStore.extractToken(fromKeychainRaw: wrapped)
+            XCTAssertEqual(token?.email, "native@example.com")
+            let store = AntigravityAuthStore(keychain: FakeKeychain(wrapped), files: FakeFiles())
+            XCTAssertEqual(store.defaultAccountLabel(), "native@example.com")
+        }
+    }
+
+    func testExtractsCLIProxyEmailAndExpiredDate() {
+        let raw = #"{"access_token":"extra","refresh_token":"extra-refresh","email":" extra@example.com ","expired":"2099-01-01T00:00:00Z","disabled":false}"#
+        let token = AntigravityAuthStore.extractToken(fromKeychainRaw: raw)
+        XCTAssertEqual(token?.email, "extra@example.com")
+        XCTAssertEqual(token?.refreshToken, "extra-refresh")
+        XCTAssertEqual(token?.expiry, OpenUsageISO8601.date(from: "2099-01-01T00:00:00Z"))
+    }
+
+    func testExplicitEmailTakesPrecedenceAndRootExpiryIsUsedForNestedTokens() {
+        let payload = Data(#"{"email":"jwt@example.com"}"#.utf8).base64EncodedString()
+        let raw = #"{"token":{"access_token":"native","email":"nested@example.com"},"email":"root@example.com","id_token":"header.\#(payload).signature","expired":"2099-01-01T00:00:00Z"}"#
+        let token = AntigravityAuthStore.extractToken(fromKeychainRaw: raw)
+        XCTAssertEqual(token?.email, "nested@example.com")
+        XCTAssertEqual(token?.expiry, OpenUsageISO8601.date(from: "2099-01-01T00:00:00Z"))
+    }
+
+    func testRejectsDisabledCredentialsAtRootAndNestedToken() {
+        for raw in [
+            #"{"access_token":"extra","refresh_token":"r","email":"extra@example.com","disabled":true}"#,
+            #"{"token":{"access_token":"extra","refresh_token":"r"},"disabled":true}"#,
+            #"{"token":{"access_token":"extra","refresh_token":"r","disabled":true}}"#
+        ] {
+            XCTAssertNil(AntigravityAuthStore.extractToken(fromKeychainRaw: raw))
+        }
+    }
+
     func testExtractTokenFromRawJSONAndBearerAndPlain() {
         let plainJSON = #"{"access_token":"abc","refresh_token":"r"}"#
         XCTAssertEqual(AntigravityAuthStore.extractToken(fromKeychainRaw: plainJSON)?.accessToken, "abc")
@@ -300,6 +341,139 @@ final class AntigravityProviderTests: XCTestCase {
         let token = try store.loadKeychainToken()
         XCTAssertEqual(token?.accessToken, "ya29.kc")
         XCTAssertEqual(token?.refreshToken, "1//r")
+    }
+
+    func testScopedCredentialUsesOnlyItsFileAndNeverFallsBackToKeychain() throws {
+        let path = "~/.cli-proxy-api/antigravity-extra.json"
+        let files = FakeFiles([
+            path: #"{"access_token":"extra","refresh_token":"r","email":"extra@example.com"}"#
+        ])
+        let store = AntigravityAuthStore(
+            keychain: FakeKeychain(#"{"access_token":"native","email":"native@example.com"}"#),
+            files: files,
+            scopedCredentialPath: path
+        )
+        XCTAssertTrue(store.isScopedCredential)
+        XCTAssertEqual(try store.loadKeychainToken()?.accessToken, "extra")
+        XCTAssertEqual(store.defaultAccountLabel(), "extra@example.com")
+
+        files.files.removeValue(forKey: path)
+        XCTAssertNil(try store.loadKeychainToken())
+        XCTAssertNil(store.defaultAccountLabel())
+    }
+
+    func testScopedTokenCacheIsIsolatedFromDefaultCache() {
+        let files = FakeFiles()
+        let fixedNow = Date(timeIntervalSince1970: 1_000_000)
+        let native = AntigravityAuthStore(files: files, now: { fixedNow })
+        let scopedCache = "/test/antigravity/auth-extra.json"
+        let extra = AntigravityAuthStore(
+            files: files,
+            now: { fixedNow },
+            scopedCredentialPath: "/test/antigravity-extra.json",
+            cachePath: scopedCache
+        )
+        let nativeSource = AntigravityKeychainToken(accessToken: nil, refreshToken: "native-refresh", expiry: nil)
+        let extraSource = AntigravityKeychainToken(accessToken: nil, refreshToken: "extra-refresh", expiry: nil)
+
+        native.cacheToken("native-access", expiresIn: 3600, sourceRefreshToken: "native-refresh")
+        extra.cacheToken("extra-access", expiresIn: 3600, sourceRefreshToken: "extra-refresh")
+        XCTAssertEqual(native.loadCachedToken(matching: nativeSource), "native-access")
+        XCTAssertEqual(extra.loadCachedToken(matching: extraSource), "extra-access")
+        XCTAssertNotNil(files.files[AntigravityAuthStore.cachePath])
+        XCTAssertNotNil(files.files[scopedCache])
+
+        extra.discardCachedToken()
+        XCTAssertNil(files.files[scopedCache])
+        XCTAssertEqual(native.loadCachedToken(matching: nativeSource), "native-access")
+    }
+
+    @MainActor
+    func testCustomAccountUsesPrefixedWidgetDescriptorIDs() {
+        let id = "antigravity@abcd1234"
+        let extra = AntigravityProvider(id: id, accountLabel: "extra@example.com", scansLocalLogs: false)
+        XCTAssertEqual(extra.provider.id, id)
+        XCTAssertEqual(extra.provider.accountLabel, "extra@example.com")
+        XCTAssertEqual(Array(extra.widgetDescriptors.prefix(5)).map(\.id), [
+            "\(id).geminiPro", "\(id).geminiWeekly", "\(id).argonWeekly",
+            "\(id).claude", "\(id).claudeWeekly"
+        ])
+        XCTAssertTrue(extra.widgetDescriptors.allSatisfy { $0.id.hasPrefix("\(id).") })
+        XCTAssertEqual(Array(AntigravityProvider().widgetDescriptors.prefix(5)).map(\.id), [
+            AntigravityMetric.geminiID, AntigravityMetric.geminiWeeklyID, AntigravityMetric.argonWeeklyID,
+            AntigravityMetric.claudeID, AntigravityMetric.claudeWeeklyID
+        ])
+    }
+
+    @MainActor
+    func testCatalogGroupsExtraAntigravityCardsAndPreservesTheirScope() throws {
+        let card = AntigravityExtraCard(
+            id: "antigravity@abcd1234",
+            accountLabel: "extra@example.com",
+            credentialPath: "/test/antigravity-extra.json",
+            identityKey: "antigravity:extra@example.com"
+        )
+        let assembly = ProviderAccountAssembly(
+            identityKeysByCard: [card.id: card.identityKey],
+            extraAntigravityCards: [card]
+        ).includingKimiAccounts([])
+        XCTAssertEqual(assembly.extraAntigravityCards, [card])
+
+        let providers = ProviderCatalog.make(extraAntigravityCards: assembly.extraAntigravityCards)
+        let ids = providers.map(\.provider.id)
+        let nativeIndex = try XCTUnwrap(ids.firstIndex(of: "antigravity"))
+        let extraIndex = try XCTUnwrap(ids.firstIndex(of: card.id))
+        XCTAssertEqual(extraIndex, nativeIndex + 1)
+        let extra = try XCTUnwrap(providers[extraIndex] as? AntigravityProvider)
+        XCTAssertEqual(extra.authStore.scopedCredentialPath, card.credentialPath)
+        XCTAssertEqual(extra.authStore.cachePath, "~/Library/Application Support/OpenUsage/antigravity/auth-\(card.id).json")
+        XCTAssertFalse(extra.scansLocalLogs)
+    }
+
+    @MainActor
+    func testScopedCardSkipsLanguageServerAndLocalUsageScans() async {
+        let processCalls = Counter()
+        let pricingCalls = Counter()
+        let path = "/test/antigravity-extra.json"
+        let routing = RoutingHTTPClient { request in
+            XCTAssertEqual(request.headers["Authorization"], "Bearer extra-access")
+            if request.url.path.contains("fetchAvailableModels") {
+                let models = #"{"models":{"p":{"displayName":"Gemini 3.1 Pro (High)","quotaInfo":{"remainingFraction":0.4}}}}"#
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(models.utf8))
+            }
+            if request.url.path.contains("loadCodeAssist") {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"paidTier":{"name":"Google AI Pro"}}"#.utf8))
+            }
+            return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+        }
+        let provider = AntigravityProvider(
+            authStore: AntigravityAuthStore(
+                keychain: FakeKeychain(#"{"access_token":"native-access"}"#),
+                files: FakeFiles([
+                    path: #"{"access_token":"extra-access","refresh_token":"r","email":"extra@example.com","expired":"2099-01-01T00:00:00Z"}"#
+                ]),
+                scopedCredentialPath: path,
+                cachePath: "/test/antigravity/auth-extra.json"
+            ),
+            usageClient: AntigravityUsageClient(lsHTTP: routing, http: routing),
+            discovery: LanguageServerDiscovery(processRunner: AntigravityCountingProcessRunner(counter: processCalls)),
+            pricing: {
+                _ = pricingCalls.next()
+                return antigravityPricing
+            },
+            id: "antigravity@abcd1234",
+            accountLabel: "extra@example.com",
+            scansLocalLogs: false
+        )
+
+        let snapshot = await provider.refresh()
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.plan, "Pro")
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Session"])
+        XCTAssertNil(snapshot.usageHistory)
+        XCTAssertEqual(processCalls.next(), 0)
+        XCTAssertEqual(pricingCalls.next(), 0)
+        XCTAssertFalse(routing.requests.isEmpty)
     }
 
     // MARK: - Provider integration (Cloud Code path, no language server)
@@ -452,6 +626,15 @@ final class AntigravityProviderTests: XCTestCase {
 struct EmptyProcessRunner: ProcessRunning {
     func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
         ProcessResult(exitCode: 0, stdout: "", stderr: "")
+    }
+}
+
+private struct AntigravityCountingProcessRunner: ProcessRunning {
+    let counter: Counter
+
+    func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
+        _ = counter.next()
+        return ProcessResult(exitCode: 0, stdout: "", stderr: "")
     }
 }
 

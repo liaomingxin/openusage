@@ -59,6 +59,7 @@ public struct UsageReader {
         let providers = providersOverride ?? ProviderCatalog.make(
             defaults: defaults,
             extraCodexCards: accountAssembly.extraCodexCards,
+            extraAntigravityCards: accountAssembly.extraAntigravityCards,
             claudeCards: accountAssembly.claudeCards,
             claudeSwapCards: accountAssembly.claudeSwapCards,
             claudeIdentityKeys: accountAssembly.identityKeysByCard,

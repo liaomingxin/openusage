@@ -7,6 +7,7 @@ enum ProviderCatalog {
     static func make(
         defaults: UserDefaults = .standard,
         extraCodexCards: [CodexExtraCard] = [],
+        extraAntigravityCards: [AntigravityExtraCard] = [],
         claudeCards: [ClaudeAccountCard] = [],
         claudeSwapCards: [ClaudeSwapCard] = [],
         claudeIdentityKeys: [String: String] = [:],
@@ -76,8 +77,19 @@ enum ProviderCatalog {
                 accountLabel: account.accountLabel
             ))
         }
+        providers.append(AntigravityProvider(accountLabel: defaultAccountLabels["antigravity"]))
+        for card in extraAntigravityCards {
+            providers.append(AntigravityProvider(
+                authStore: AntigravityAuthStore(
+                    scopedCredentialPath: card.credentialPath,
+                    cachePath: "~/Library/Application Support/OpenUsage/antigravity/auth-\(card.id).json"
+                ),
+                id: card.id,
+                accountLabel: card.accountLabel,
+                scansLocalLogs: false
+            ))
+        }
         providers += [
-            AntigravityProvider(accountLabel: defaultAccountLabels["antigravity"]),
             CopilotProvider(defaults: defaults),
             DevinProvider(),
             GrokProvider(accountLabel: defaultAccountLabels["grok"])

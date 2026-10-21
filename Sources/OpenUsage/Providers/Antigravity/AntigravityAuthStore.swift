@@ -9,6 +9,7 @@ struct AntigravityKeychainToken: Sendable, Equatable {
     var accessToken: String?
     var refreshToken: String?
     var expiry: Date?
+    var email: String? = nil
 }
 
 struct AntigravityAuthStore: Sendable {
@@ -16,26 +17,39 @@ struct AntigravityAuthStore: Sendable {
     static let keychainAccount = "antigravity"
     /// Our own cache of refreshed access tokens, so a Google OAuth refresh happens ~once per token
     /// lifetime instead of every refresh cycle. We never write back to Antigravity's keychain item.
-    static let cachePath = "~/Library/Application Support/OpenUsage/antigravity/auth.json"
+    static let defaultCachePath = "~/Library/Application Support/OpenUsage/antigravity/auth.json"
+    static let cachePath = defaultCachePath
     /// Treat a token with less than this left as already expired (skip straight to refresh).
     static let refreshBuffer: TimeInterval = 60
 
     var keychain: KeychainAccessing
     var files: TextFileAccessing
     var now: @Sendable () -> Date
+    let scopedCredentialPath: String?
+    let cachePath: String
+
+    var isScopedCredential: Bool { scopedCredentialPath != nil }
 
     init(
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
         files: TextFileAccessing = LocalTextFileAccessor(),
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        scopedCredentialPath: String? = nil,
+        cachePath: String = AntigravityAuthStore.defaultCachePath
     ) {
         self.keychain = keychain
         self.files = files
         self.now = now
+        self.scopedCredentialPath = scopedCredentialPath
+        self.cachePath = cachePath
     }
 
     /// Blocking keychain read — call off the main actor.
     func loadKeychainToken() throws -> AntigravityKeychainToken? {
+        if let scopedCredentialPath {
+            guard let raw = try files.readTextIfPresent(scopedCredentialPath) else { return nil }
+            return Self.extractToken(fromKeychainRaw: raw)
+        }
         let raw: String?
         do {
             raw = try keychain.readGenericPassword(
@@ -52,6 +66,10 @@ struct AntigravityAuthStore: Sendable {
             throw AntigravityError.invalidCredentialData
         }
         return token
+    }
+
+    func defaultAccountLabel() -> String? {
+        (try? loadKeychainToken())?.email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
 
     /// Whether a keychain access token is worth attempting: expiry unknown, or it hasn't passed yet.
@@ -80,7 +98,7 @@ struct AntigravityAuthStore: Sendable {
         // extra refresh.
         let text: String
         do {
-            guard let stored = try files.readTextIfPresent(Self.cachePath) else { return nil }
+            guard let stored = try files.readTextIfPresent(self.cachePath) else { return nil }
             text = stored
         } catch {
             AppLog.warn(LogTag.auth("antigravity"), "refreshed-token cache read failed; ignoring it")
@@ -114,7 +132,7 @@ struct AntigravityAuthStore: Sendable {
         )
         do {
             let data = try JSONEncoder().encode(cached)
-            try files.writeText(Self.cachePath, String(decoding: data, as: UTF8.self))
+            try files.writeText(self.cachePath, String(decoding: data, as: UTF8.self))
         } catch {
             // The refreshed token still works for this session; a failed cache only means we refresh
             // again next cycle. Log loudly rather than fail the live fetch.
@@ -125,7 +143,7 @@ struct AntigravityAuthStore: Sendable {
     /// Remove only OpenUsage's derived token; Antigravity's Keychain entry is never modified.
     func discardCachedToken() {
         do {
-            try files.remove(Self.cachePath)
+            try files.remove(self.cachePath)
         } catch {
             AppLog.warn(LogTag.auth("antigravity"), "failed to remove stale refreshed-token cache")
         }
@@ -180,9 +198,16 @@ struct AntigravityAuthStore: Sendable {
     static func tokenFromObject(_ object: [String: Any]) -> AntigravityKeychainToken? {
         // Prefer a nested `token` object (the agy shape); otherwise read fields off the root.
         let source = (object["token"] as? [String: Any]) ?? object
+        guard (object["disabled"] as? Bool) != true, (source["disabled"] as? Bool) != true else {
+            return nil
+        }
         let access = firstString(source, ["access_token", "accessToken", "token", "id_token", "idToken", "bearerToken", "auth_token", "authToken"])
         let refresh = firstString(source, ["refresh_token", "refreshToken"])
-        let expiry = firstString(source, ["expiry", "expires_at", "expiresAt"]).flatMap { OpenUsageISO8601.date(from: $0) }
+        let expiry = firstDate(source, ["expiry", "expires_at", "expiresAt", "expired"])
+            ?? firstDate(object, ["expiry", "expires_at", "expiresAt", "expired"])
+        let email = firstString(source, ["email"]) ?? firstString(object, ["email"])
+            ?? (firstString(object, ["id_token", "idToken"]) ?? firstString(source, ["id_token", "idToken"]))
+                .flatMap { ProviderParse.jwtPayload($0)?["email"] as? String }
 
         if access == nil, refresh == nil {
             for key in ["tokens", "oauth", "oauth2", "credentials", "auth"] {
@@ -192,13 +217,22 @@ struct AntigravityAuthStore: Sendable {
             }
             return nil
         }
-        return AntigravityKeychainToken(accessToken: access, refreshToken: refresh, expiry: expiry)
+        return AntigravityKeychainToken(accessToken: access, refreshToken: refresh, expiry: expiry, email: email)
     }
 
     private static func firstString(_ object: [String: Any], _ keys: [String]) -> String? {
         for key in keys {
             if let value = (object[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
                 return value
+            }
+        }
+        return nil
+    }
+
+    private static func firstDate(_ object: [String: Any], _ keys: [String]) -> Date? {
+        for key in keys {
+            if let value = object[key] as? String, let date = OpenUsageISO8601.date(from: value) {
+                return date
             }
         }
         return nil

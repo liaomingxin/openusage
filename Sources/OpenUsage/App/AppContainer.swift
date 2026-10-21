@@ -80,6 +80,7 @@ final class AppContainer {
 
         let providers = ProviderCatalog.make(
             extraCodexCards: accountAssembly.extraCodexCards,
+            extraAntigravityCards: accountAssembly.extraAntigravityCards,
             claudeCards: accountAssembly.claudeCards,
             claudeSwapCards: accountAssembly.claudeSwapCards,
             claudeIdentityKeys: accountAssembly.identityKeysByCard,

@@ -11,6 +11,7 @@ extension ProviderAccountAssembly {
         return ProviderAccountAssembly(
             identityKeysByCard: identities,
             extraCodexCards: extraCodexCards,
+            extraAntigravityCards: extraAntigravityCards,
             claudeCards: claudeCards,
             claudeSwapCards: claudeSwapCards,
             kimiAccounts: accounts,

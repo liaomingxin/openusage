@@ -11,6 +11,14 @@ struct CodexExtraCard: Equatable, Sendable {
     var credentialPath: String
 }
 
+/// One extra Antigravity card backed by its own cli-proxy-api credential file.
+struct AntigravityExtraCard: Equatable, Sendable {
+    let id: String
+    let accountLabel: String
+    let credentialPath: String
+    let identityKey: String
+}
+
 /// One extra Claude card minted from a claude-swap slot: an account parked in claude-swap's stash
 /// rather than signed in at `~/.claude`.
 struct ClaudeSwapCard: Equatable, Sendable {
@@ -68,6 +76,8 @@ struct ProviderAccountAssembly {
     let identityKeysByCard: [String: String]
     /// Extra Codex cards discovered this launch (not the default-home card).
     let extraCodexCards: [CodexExtraCard]
+    /// Extra Antigravity cards discovered in cli-proxy-api, excluding the native Keychain login.
+    let extraAntigravityCards: [AntigravityExtraCard]
     /// Claude cards discovered this launch (default-home organization plus Desktop organizations).
     let claudeCards: [ClaudeAccountCard]
     /// Extra Claude cards discovered this launch in claude-swap's stash (never the active account).
@@ -82,6 +92,7 @@ struct ProviderAccountAssembly {
     init(
         identityKeysByCard: [String: String],
         extraCodexCards: [CodexExtraCard] = [],
+        extraAntigravityCards: [AntigravityExtraCard] = [],
         claudeCards: [ClaudeAccountCard] = [],
         claudeSwapCards: [ClaudeSwapCard] = [],
         kimiAccounts: [KimiAccountConfiguration] = [],
@@ -90,6 +101,7 @@ struct ProviderAccountAssembly {
     ) {
         self.identityKeysByCard = identityKeysByCard
         self.extraCodexCards = extraCodexCards
+        self.extraAntigravityCards = extraAntigravityCards
         self.claudeCards = claudeCards
         self.claudeSwapCards = claudeSwapCards
         self.kimiAccounts = kimiAccounts

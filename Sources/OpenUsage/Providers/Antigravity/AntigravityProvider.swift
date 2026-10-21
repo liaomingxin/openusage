@@ -24,6 +24,7 @@ final class AntigravityProvider: ProviderRuntime {
     let piScanner: PiUsageScanner
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
+    let scansLocalLogs: Bool
 
     private static let usageSourceNote = "From your Antigravity conversations (estimated)"
 
@@ -35,10 +36,12 @@ final class AntigravityProvider: ProviderRuntime {
         piScanner: PiUsageScanner = .shared,
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
-        accountLabel: String? = nil
+        id: String = "antigravity",
+        accountLabel: String? = nil,
+        scansLocalLogs: Bool = true
     ) {
         self.provider = Provider(
-            id: "antigravity",
+            id: id,
             familyName: "Antigravity",
             accountLabel: accountLabel,
             icon: .providerMark("antigravity")
@@ -50,19 +53,20 @@ final class AntigravityProvider: ProviderRuntime {
         self.piScanner = piScanner
         self.now = now
         self.pricing = pricing
+        self.scansLocalLogs = scansLocalLogs
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
-            .percent(id: AntigravityMetric.geminiID, provider: provider, title: AntigravityMetric.sessionLabel, sessionStartSignal: .zeroUsage)
+            .percent(id: "\(provider.id).geminiPro", provider: provider, title: AntigravityMetric.sessionLabel, sessionStartSignal: .zeroUsage)
                 .exportingLimit("geminiSession", unit: "percent"),
-            .percent(id: AntigravityMetric.geminiWeeklyID, provider: provider, title: AntigravityMetric.weeklyLabel)
+            .percent(id: "\(provider.id).geminiWeekly", provider: provider, title: AntigravityMetric.weeklyLabel)
                 .exportingLimit("geminiWeekly", unit: "percent"),
-            .percent(id: AntigravityMetric.argonWeeklyID, provider: provider, title: AntigravityMetric.argonWeeklyLabel)
+            .percent(id: "\(provider.id).argonWeekly", provider: provider, title: AntigravityMetric.argonWeeklyLabel)
                 .exportingLimit("argonWeekly", unit: "percent"),
-            .percent(id: AntigravityMetric.claudeID, provider: provider, title: AntigravityMetric.claudeLabel, sessionStartSignal: .zeroUsage)
+            .percent(id: "\(provider.id).claude", provider: provider, title: AntigravityMetric.claudeLabel, sessionStartSignal: .zeroUsage)
                 .exportingLimit("nonGeminiSession", unit: "percent"),
-            .percent(id: AntigravityMetric.claudeWeeklyID, provider: provider, title: AntigravityMetric.claudeWeeklyLabel)
+            .percent(id: "\(provider.id).claudeWeekly", provider: provider, title: AntigravityMetric.claudeWeeklyLabel)
                 .exportingLimit("nonGeminiWeekly", unit: "percent"),
             .usageTrend(provider: provider)
                 .exportingHistory(
@@ -97,34 +101,36 @@ final class AntigravityProvider: ProviderRuntime {
             let refreshedAt = now()
             var usageHistory: ProviderUsageHistory?
 
-            let scanPricing = await pricing()
-            async let native = dbUsageScanner.scan(daysBack: 30, now: refreshedAt, pricing: scanPricing)
-            async let pi = piScanner.scan(cardID: provider.id, now: refreshedAt, pricing: scanPricing)
-            let (nativeScan, piScan) = await (native, pi)
-            if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
-                let note = piScan != nil
-                    ? "From your Antigravity & pi logs (estimated)"
-                    : Self.usageSourceNote
-                usageHistory = ProviderUsageHistory(
-                    series: scan.series,
-                    modelUsage: scan.modelUsage,
-                    unknownModelsByDay: scan.unknownModelsByDay
-                )
-                SpendTileMapper.appendTokenUsage(
-                    scan.series,
-                    to: &result.lines,
-                    now: refreshedAt,
-                    unknownModelsByDay: scan.unknownModelsByDay,
-                    modelUsage: scan.modelUsage,
-                    modelSourceNote: note,
-                    pricing: scanPricing
-                )
-                SpendTileMapper.appendUsageTrend(
-                    scan.series,
-                    to: &result.lines,
-                    now: refreshedAt,
-                    note: note
-                )
+            if scansLocalLogs {
+                let scanPricing = await pricing()
+                async let native = dbUsageScanner.scan(daysBack: 30, now: refreshedAt, pricing: scanPricing)
+                async let pi = piScanner.scan(cardID: provider.id, now: refreshedAt, pricing: scanPricing)
+                let (nativeScan, piScan) = await (native, pi)
+                if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
+                    let note = piScan != nil
+                        ? "From your Antigravity & pi logs (estimated)"
+                        : Self.usageSourceNote
+                    usageHistory = ProviderUsageHistory(
+                        series: scan.series,
+                        modelUsage: scan.modelUsage,
+                        unknownModelsByDay: scan.unknownModelsByDay
+                    )
+                    SpendTileMapper.appendTokenUsage(
+                        scan.series,
+                        to: &result.lines,
+                        now: refreshedAt,
+                        unknownModelsByDay: scan.unknownModelsByDay,
+                        modelUsage: scan.modelUsage,
+                        modelSourceNote: note,
+                        pricing: scanPricing
+                    )
+                    SpendTileMapper.appendUsageTrend(
+                        scan.series,
+                        to: &result.lines,
+                        now: refreshedAt,
+                        note: note
+                    )
+                }
             }
 
             return ProviderSnapshot.make(
@@ -145,6 +151,9 @@ final class AntigravityProvider: ProviderRuntime {
     }
 
     private func probe() async throws -> StrategyResult {
+        if authStore.isScopedCredential {
+            return try await probeCloudCode()
+        }
         if let result = await probeLS(
             processName: "language_server",
             markers: ["antigravity", "antigravity-ide"],
