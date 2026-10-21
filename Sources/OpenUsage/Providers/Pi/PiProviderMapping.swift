@@ -29,7 +29,9 @@ enum PiProviderMapping {
         "zhipu": "zai",
         "zai-coding-cn": "zai",
         "google-antigravity": "antigravity",
-        "github-copilot": "copilot"
+        "github-copilot": "copilot",
+        "muse-code": "muse",
+        "meta": "muse"
     ]
 
     /// The OpenUsage card id for a pi provider, or nil when pi used a provider OpenUsage doesn't track.

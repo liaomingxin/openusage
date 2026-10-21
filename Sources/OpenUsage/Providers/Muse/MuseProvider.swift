@@ -7,6 +7,7 @@ final class MuseProvider: ProviderRuntime {
     let authStore: MuseAuthStore
     let usageClient: MuseUsageClient
     let cliScanner: MuseCLIUsageScanner
+    let piScanner: PiUsageScanner
     let pricing: @Sendable () async -> ModelPricing
     let now: @Sendable () -> Date
 
@@ -14,6 +15,7 @@ final class MuseProvider: ProviderRuntime {
         authStore: MuseAuthStore = MuseAuthStore(),
         usageClient: MuseUsageClient = MuseUsageClient(),
         cliScanner: MuseCLIUsageScanner = MuseCLIUsageScanner(),
+        piScanner: PiUsageScanner = .shared,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() },
         now: @escaping @Sendable () -> Date = Date.init,
         accountLabel: String? = nil
@@ -30,6 +32,7 @@ final class MuseProvider: ProviderRuntime {
         self.authStore = authStore
         self.usageClient = usageClient
         self.cliScanner = cliScanner
+        self.piScanner = piScanner
         self.pricing = pricing
         self.now = now
     }
@@ -85,21 +88,26 @@ final class MuseProvider: ProviderRuntime {
             let cliScan = await loadOffMainActor { [cliScanner, now] in
                 cliScanner.scan(now: now(), pricing: priced)
             }
-            if let scan = cliScan {
+            let piScan = await piScanner.scan(cardID: provider.id, now: now(), pricing: priced)
+            let mergedScan = DailyUsageAccumulator.merged([cliScan, piScan])
+            if let scan = mergedScan {
+                let note = piScan != nil
+                    ? "From your Muse Code and pi/omp logs (estimated)"
+                    : "From your Muse Code logs (estimated)"
                 SpendTileMapper.appendTokenUsage(
                     scan.series,
                     to: &mapped.lines,
                     now: now(),
                     unknownModelsByDay: scan.unknownModelsByDay,
                     modelUsage: scan.modelUsage,
-                    modelSourceNote: "From your Muse Code logs (estimated)",
+                    modelSourceNote: note,
                     pricing: priced
                 )
                 SpendTileMapper.appendUsageTrend(
                     scan.series,
                     to: &mapped.lines,
                     now: now(),
-                    note: "From your Muse Code logs (estimated)"
+                    note: note
                 )
                 mapped.lines.removeAll { $0.label == "No data" }
             }
@@ -109,7 +117,7 @@ final class MuseProvider: ProviderRuntime {
                 plan: mapped.plan,
                 lines: mapped.lines,
                 refreshedAt: now(),
-                usageHistory: cliScan.map {
+                usageHistory: mergedScan.map {
                     ProviderUsageHistory(
                         series: $0.series,
                         modelUsage: $0.modelUsage,

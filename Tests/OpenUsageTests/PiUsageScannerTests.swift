@@ -236,6 +236,8 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "xai-oauth"), "grok")
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "moonshot"), "kimi")
         XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "kimi-code"), "kimi")
+        XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "muse-code"), "muse")
+        XCTAssertEqual(PiProviderMapping.cardID(forPiProvider: "meta"), "muse")
         XCTAssertNil(PiProviderMapping.cardID(forPiProvider: "nvidia-nim"))
     }
 

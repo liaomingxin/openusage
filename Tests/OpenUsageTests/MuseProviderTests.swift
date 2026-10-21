@@ -124,6 +124,7 @@ final class MuseProviderTests: XCTestCase {
             authStore: authStore,
             usageClient: MuseUsageClient(http: http),
             cliScanner: MuseCLIUsageScanner(sessionsDirectory: { nil }),
+            piScanner: PiUsageScanner(homeDirectory: { URL(fileURLWithPath: "/nonexistent") }),
             pricing: { TestPricing.bundled },
             now: { Date(timeIntervalSince1970: 1_792_250_000) }
         )
@@ -131,5 +132,13 @@ final class MuseProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.plan, "Power Usage")
         XCTAssertEqual(snapshot.lines.map { $0.label }, ["Session", "Weekly"])
+    }
+
+    func testContributorModelsArePricedInSupplement() {
+        let tokens = TokenBreakdown(input: 1_000_000, cacheWrite5m: 0, cacheRead: 1_000_000, output: 1_000_000)
+        let wonderContrib = TestPricing.bundled.estimatedCostDollars(model: "muse-wonder-full-1.0-contributor", tokens: tokens)
+        XCTAssertEqual(wonderContrib ?? -1, 1.6 + 0.08 + 8.0, accuracy: 0.0001)
+        let sparkContrib = TestPricing.bundled.estimatedCostDollars(model: "muse-spark-1.3-contributor", tokens: tokens)
+        XCTAssertEqual(sparkContrib ?? -1, 0.1 + 0.002 + 0.2, accuracy: 0.0001)
     }
 }

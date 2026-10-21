@@ -45,7 +45,7 @@ actor PiUsageScanner {
         // v3: tiered codex rows drop their subscription-basis carried cost and carry the tier flags
         // instead, and provider-prefixed model slugs are stripped at parse time; v2 caches hold the
         // unstripped slugs and 8x-basis costs, so a reparse is required.
-        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: 3)
+        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: 4)
     )
 
     static func flushPersistentCacheWrites() async {
