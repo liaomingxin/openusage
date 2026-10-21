@@ -412,20 +412,41 @@ struct TotalSpendRing: View {
     }
 }
 
-/// Ranked contributions, capped at five rows with overflow details available on hover.
+/// Ranked contributions, capped at five rows by default; clicking `Others (N)` expands all rows in place.
 struct TotalSpendLegend: View {
     let projection: TotalSpendProjection
     let tokenCounts: [String: Double]
     @Binding var hoveredProviderID: String?
 
+    @Environment(\.popoverIsVisible) private var popoverIsVisible
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage(TotalSpendSetting.periodKey) private var spendPeriodRaw = TotalSpendPeriod.today.rawValue
+    @AppStorage(TotalSpendSetting.metricKey) private var spendMetricRaw = TotalSpendMetric.cost.rawValue
+    @AppStorage(AgentUsageWindow.storageKey) private var agentWindowRaw = AgentUsageWindow.today.rawValue
+    @AppStorage("agentUsage.metric") private var agentMetricRaw = TotalSpendMetric.cost.rawValue
+    @AppStorage(DashboardFilterMode.key) private var filterModeRaw = DashboardFilterMode.all.rawValue
+    @AppStorage(DashboardGroupingSetting.groupByFamilyKey) private var groupByFamily = true
+    @AppStorage("totalSpend.compactMode") private var isCompactMode = false
+
+    @State private var isOthersExpanded = false
+
+    private var visibleSlices: ArraySlice<TotalSpendProjectedSlice> {
+        if isOthersExpanded || projection.slices.count <= 5 {
+            return projection.slices[...]
+        }
+        return projection.slices.prefix(4)
+    }
+
+    private var expansionResetToken: String {
+        "\(popoverIsVisible)|\(spendPeriodRaw)|\(spendMetricRaw)|\(agentWindowRaw)|\(agentMetricRaw)|\(filterModeRaw)|\(groupByFamily)|\(isCompactMode)|\(projection.metric.rawValue)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            ForEach(projection.slices.prefix(projection.slices.count > 5 ? 4 : 5)) { slice in
+            ForEach(visibleSlices) { slice in
                 legendRow(slice)
             }
-            if projection.slices.count > 5 {
+            if projection.slices.count > 5, !isOthersExpanded {
                 othersRow
             }
             if !projection.slices.isEmpty {
@@ -436,6 +457,13 @@ struct TotalSpendLegend: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(Motion.spring, value: hoveredProviderID)
+        .animation(Motion.spring, value: isOthersExpanded)
+        .onChange(of: expansionResetToken) { _, _ in
+            isOthersExpanded = false
+        }
+        .onDisappear {
+            isOthersExpanded = false
+        }
     }
 
     private func legendRow(_ slice: TotalSpendProjectedSlice) -> some View {
@@ -454,31 +482,43 @@ struct TotalSpendLegend: View {
 
     private var othersRow: some View {
         let remaining = projection.slices.dropFirst(4)
-        return legendRowContent(
-            name: "Others (\(remaining.count))",
-            value: sliceValueText(remaining.reduce(0) { $0 + $1.displayAmount }),
-            tokens: tokenCountText(remaining.reduce(0) { $0 + (tokenCounts[$1.provider.id] ?? 0) }),
-            color: .secondary
-        )
-        .contentShape(Rectangle())
+        return Button {
+            withAnimation(Motion.spring) {
+                isOthersExpanded = true
+            }
+        } label: {
+            legendRowContent(
+                name: "Others (\(remaining.count))",
+                value: sliceValueText(remaining.reduce(0) { $0 + $1.displayAmount }),
+                tokens: tokenCountText(remaining.reduce(0) { $0 + (tokenCounts[$1.provider.id] ?? 0) }),
+                color: .secondary,
+                showsExpandChevron: true
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .onHover { if $0 { hoveredProviderID = nil } }
-        .hoverTooltip(remaining.map {
-            "\($0.provider.displayName): \(totalSpendValue($0.displayAmount, metric: projection.metric, style: .full))"
-        }.joined(separator: "\n"))
+        .accessibilityLabel("Expand \(remaining.count) more items")
     }
-
     private func legendRowContent(
         name: String, value: String, tokens: String?, color: Color,
-        isHovered: Bool = false, isTotal: Bool = false
+        isHovered: Bool = false, isTotal: Bool = false, showsExpandChevron: Bool = false
     ) -> some View {
         HStack(spacing: 7) {
             Circle()
                 .fill(color)
                 .frame(width: 8, height: 8)
-            Text(name)
-                .font(.system(size: density.supportingPointSize, weight: isHovered || isTotal ? .semibold : .regular))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                Text(name)
+                    .font(.system(size: density.supportingPointSize, weight: isHovered || isTotal ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                if showsExpandChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
             Spacer(minLength: 8)
             Text(value)
                 .font(.system(size: density.supportingPointSize, weight: isTotal ? .semibold : .medium))
