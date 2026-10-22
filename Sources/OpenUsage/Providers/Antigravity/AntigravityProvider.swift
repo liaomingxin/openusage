@@ -327,6 +327,22 @@ final class AntigravityProvider: ProviderRuntime {
             isComplete: AntigravityUsageMapper.isCompleteSummary
         ) {
         case .authFailed:
+            // Starter Quota accounts return 403 on retrieveUserQuotaSummary when `project` is omitted,
+            // while loadCodeAssist succeeds and supplies the required `cloudaicompanionProject`.
+            if case .ok(let lcaData) = await usageClient.loadCodeAssist(token: token) {
+                let lcaPlan = AntigravityUsageMapper.parseLoadCodeAssistPlan(lcaData)
+                if let project = AntigravityUsageMapper.parseProject(lcaData),
+                   case .ok(let bodies) = await usageClient.cloudCodeAllHosts(
+                       path: AntigravityUsageClient.quotaSummaryPath,
+                       token: token,
+                       userAgent: AntigravityUsageClient.cloudCodeUserAgent,
+                       body: ["project": project],
+                       isComplete: AntigravityUsageMapper.isCompleteSummary
+                   ),
+                   let lines = AntigravityUsageMapper.parseQuotaSummaries(bodies) {
+                    return .success(StrategyResult(plan: lcaPlan, lines: lines))
+                }
+            }
             return .authFailed
         case .ok(let bodies):
             if let lines = AntigravityUsageMapper.parseQuotaSummaries(bodies) {

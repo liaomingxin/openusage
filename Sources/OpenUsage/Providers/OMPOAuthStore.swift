@@ -142,6 +142,47 @@ struct OMPOAuthStore: Sendable {
         }
         return subject ?? fallback?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
     }
+    struct AntigravityRow: Decodable, Sendable {
+        let id: Int
+        let access: String?
+        let refresh: String?
+        let expires: Double?
+        let email: String?
+    }
+
+    func antigravityRows(credentialID: Int? = nil) throws -> [AntigravityRow] {
+        guard files.exists(databasePath) else { return [] }
+        let rowFilter = credentialID.map { " AND id = \($0)" } ?? ""
+        let sql = """
+        SELECT COALESCE(json_group_array(json_object(
+          'id', id,
+          'access', json_extract(data, '$.access'),
+          'refresh', json_extract(data, '$.refresh'),
+          'expires', json_extract(data, '$.expires'),
+          'email', json_extract(data, '$.email')
+        )), '[]') FROM (
+          SELECT id, data FROM auth_credentials
+          WHERE provider = 'google-antigravity'
+            AND credential_type = 'oauth' AND disabled_cause IS NULL\(rowFilter)
+          ORDER BY id
+        );
+        """
+        guard let text = try sqlite.queryValue(path: databasePath, sql: sql) else { return [] }
+        return try JSONDecoder().decode([AntigravityRow].self, from: Data(text.utf8))
+    }
+
+    func antigravityToken(credentialID: Int) throws -> AntigravityKeychainToken? {
+        guard let row = try antigravityRows(credentialID: credentialID).first else { return nil }
+        let access = row.access?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let refresh = row.refresh?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        guard access != nil || refresh != nil else { return nil }
+        let expiry = row.expires.flatMap {
+            $0.isFinite && $0 > 0 ? Date(timeIntervalSince1970: $0 / 1000) : nil
+        }
+        let email = row.email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        return AntigravityKeychainToken(accessToken: access, refreshToken: refresh, expiry: expiry, email: email)
+    }
+
 
     private func rows(credentialID: Int? = nil) throws -> [Row] {
         guard files.exists(databasePath) else { return [] }

@@ -26,21 +26,27 @@ struct AntigravityAuthStore: Sendable {
     var files: TextFileAccessing
     var now: @Sendable () -> Date
     let scopedCredentialPath: String?
+    let ompCredentialID: Int?
+    let ompStore: OMPOAuthStore
     let cachePath: String
 
-    var isScopedCredential: Bool { scopedCredentialPath != nil }
+    var isScopedCredential: Bool { scopedCredentialPath != nil || ompCredentialID != nil }
 
     init(
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
         files: TextFileAccessing = LocalTextFileAccessor(),
         now: @escaping @Sendable () -> Date = Date.init,
         scopedCredentialPath: String? = nil,
+        ompCredentialID: Int? = nil,
+        ompStore: OMPOAuthStore = OMPOAuthStore(),
         cachePath: String = AntigravityAuthStore.defaultCachePath
     ) {
         self.keychain = keychain
         self.files = files
         self.now = now
         self.scopedCredentialPath = scopedCredentialPath
+        self.ompCredentialID = ompCredentialID
+        self.ompStore = ompStore
         self.cachePath = cachePath
     }
 
@@ -49,6 +55,9 @@ struct AntigravityAuthStore: Sendable {
         if let scopedCredentialPath {
             guard let raw = try files.readTextIfPresent(scopedCredentialPath) else { return nil }
             return Self.extractToken(fromKeychainRaw: raw)
+        }
+        if let ompCredentialID {
+            return try ompStore.antigravityToken(credentialID: ompCredentialID)
         }
         let raw: String?
         do {

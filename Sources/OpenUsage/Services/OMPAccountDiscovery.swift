@@ -42,6 +42,22 @@ extension ProviderAccountAssembly {
             antigravityCards.append(card)
             identities[card.id] = card.identityKey
         }
+        for row in (try? store.antigravityRows()) ?? [] {
+            guard row.refresh?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+                  let email = row.email?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            else { continue }
+            let normalizedEmail = email.lowercased()
+            guard antigravityEmails.insert(normalizedEmail).inserted else { continue }
+            let card = AntigravityExtraCard(
+                id: ProviderAccountID.make(family: "antigravity", identityKey: normalizedEmail),
+                accountLabel: email,
+                credentialPath: nil,
+                ompCredentialID: row.id,
+                identityKey: "antigravity:\(normalizedEmail)"
+            )
+            antigravityCards.append(card)
+            identities[card.id] = card.identityKey
+        }
         let cursorIdentity = cursorAuthStore.loadAuthState()?.accessToken.flatMap {
             OMPOAuthStore.accountID(providerKey: "cursor", token: $0)
         }

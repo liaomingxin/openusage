@@ -11,11 +11,12 @@ struct CodexExtraCard: Equatable, Sendable {
     var credentialPath: String
 }
 
-/// One extra Antigravity card backed by its own cli-proxy-api credential file.
+/// One extra Antigravity card backed by its own cli-proxy-api credential file or OMP row.
 struct AntigravityExtraCard: Equatable, Sendable {
     let id: String
     let accountLabel: String
-    let credentialPath: String
+    let credentialPath: String?
+    var ompCredentialID: Int? = nil
     let identityKey: String
 }
 

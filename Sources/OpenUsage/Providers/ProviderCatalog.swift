@@ -82,6 +82,7 @@ enum ProviderCatalog {
             providers.append(AntigravityProvider(
                 authStore: AntigravityAuthStore(
                     scopedCredentialPath: card.credentialPath,
+                    ompCredentialID: card.ompCredentialID,
                     cachePath: "~/Library/Application Support/OpenUsage/antigravity/auth-\(card.id).json"
                 ),
                 id: card.id,
