@@ -317,6 +317,10 @@ struct ProviderAccountAssembly {
         }
         extraCards.sort { $0.id < $1.id }
 
+        let claudeSwapByIdentity = Dictionary(
+            claudeSwap.map { ($0.identityKey, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let allowsUnattributedPiUsage = records.count { $0.family == "claude" } == 1
         var cards: [ClaudeAccountCard] = []
         if let defaultIdentity = defaultClaudeIdentity,
@@ -330,16 +334,31 @@ struct ProviderAccountAssembly {
                 guard case .resolved(_, let value, _) = outcome.outcome else { return nil }
                 return organizationLabel(value)
             } ?? "Organization"
+            let matchedSwap = claudeSwapByIdentity[defaultIdentity].flatMap { slot -> ClaudeSwapAccount? in
+                guard let email = (slot.label ?? label).nilIfEmpty else { return nil }
+                return ClaudeSwapAccount(
+                    root: observer.homeDirectory().appendingPathComponent(".claude-swap-backup").path,
+                    slot: slot.slot,
+                    email: email,
+                    identityKey: defaultIdentity,
+                    organizationID: String(organization),
+                    organizationName: label
+                )
+            }
             cards.append(ClaudeAccountCard(
                 id: record.id, identityKey: defaultIdentity, organizationID: String(organization),
-                accountLabel: label, usesDesktopCredentials: false,
+                accountLabel: matchedSwap?.email ?? label, usesDesktopCredentials: false,
                 allowsUnattributedPiUsage: allowsUnattributedPiUsage, ownsDefaultHome: true,
+                swapAccount: matchedSwap,
                 organizationName: label
             ))
             identityKeys.removeValue(forKey: "claude")
             identityKeys[record.id] = defaultIdentity
         }
-        for organization in desktopOrganizations where organization.identityKey != defaultClaudeIdentity {
+        for organization in desktopOrganizations
+            where organization.identityKey != defaultClaudeIdentity
+               && claudeSwapByIdentity[organization.identityKey] == nil
+        {
             guard let record = records.first(where: {
                 $0.family == "claude" && $0.identityKey == organization.identityKey && !$0.removedTombstone
             }) else { continue }

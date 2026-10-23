@@ -44,7 +44,7 @@ enum ProviderCatalog {
                     // A lone Claude card carries no account label: nothing to tell it apart from.
                     provider: ClaudeProvider.makeProvider(
                         id: card.id,
-                        accountLabel: claudeCards.count == 1 ? nil : card.accountLabel
+                        accountLabel: (claudeCards.count + claudeSwapCards.count) == 1 ? nil : card.accountLabel
                     ),
                     authStore: ClaudeAuthStore(
                         desktopOrganization: card.organizationID,

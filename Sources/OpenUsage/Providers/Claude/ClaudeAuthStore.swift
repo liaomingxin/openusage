@@ -77,6 +77,7 @@ struct ClaudeAuthStore: Sendable {
     let desktopOnly: Bool
     let swapAccount: ClaudeSwapAccount?
     let preferOrganizationScopedDesktop: Bool
+    private let hasExplicitDesktopStore: Bool
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
@@ -93,6 +94,7 @@ struct ClaudeAuthStore: Sendable {
         self.environment = environment
         self.files = files
         self.keychain = keychain
+        self.hasExplicitDesktopStore = desktop != nil
         self.desktop = desktop ?? ClaudeDesktopAuthStore(files: files, now: now)
         self.desktopOrganization = desktopOrganization?.lowercased()
         self.expectedIdentityKey = expectedIdentityKey?.lowercased() ?? swapAccount?.identityKey
@@ -140,7 +142,7 @@ struct ClaudeAuthStore: Sendable {
         let hasUsableCLILogin = stored.contains {
             $0.hasUsableAccessToken && liveUsageAvailability($0) == .available
         }
-        if swapAccount != nil || forceDesktopFallback || !hasUsableCLILogin || preferOrganizationScopedDesktop {
+        if (swapAccount != nil && hasExplicitDesktopStore) || forceDesktopFallback || !hasUsableCLILogin || preferOrganizationScopedDesktop {
             let expectedUser = expectedIdentityKey?.split(separator: "|").first.map(String.init)
             let result = desktop.load(
                 allowInteraction: allowDesktopInteraction,

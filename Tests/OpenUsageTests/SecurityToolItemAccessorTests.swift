@@ -63,6 +63,10 @@ final class SecurityToolItemAccessorTests: XCTestCase {
         }
     }
 
+    func testHandlesClaudeSwapKeychainService() {
+        XCTAssertTrue(SecurityToolItemAccessor.handles(service: ClaudeSwapCredentialReader.keychainService))
+    }
+
     private final class RecordingProcessRunner: ProcessRunning, @unchecked Sendable {
         let result: ProcessResult
         var calls: [(arguments: [String], timeout: TimeInterval)] = []
